@@ -1,0 +1,77 @@
+[
+  {
+    "id": "5",
+    "name": "Malware DistributionDDDDD",
+    "value": "download,software,update,install,crack,keygen",
+    "description": "Tracks domains associated with malware distribution",
+    "active": false,
+    "created_at": "2024-01-12T13:45:00Z",
+    "lastScan": "2024-01-20T10:15:00Z",
+    "findingsCount": 15,
+    "updated_at": "2025-09-07T21:43:27.019016",
+    "last_updated": "2025-09-18T05:40:42.246190"
+  },
+  {
+    "id": "c3963d3b-7dcd-4afc-9269-5bf079d17e83",
+    "name": "Brand Impersonations",
+    "value": "microsoft,google,amazon,apple,meta,facebook",
+    "description": "Detects potential brand impersonation domains",
+    "active": false,
+    "created_at": "2025-08-24T17:20:16.476220",
+    "lastScan": null,
+    "findingsCount": 0,
+    "updated_at": "2025-09-07T21:43:27.592921",
+    "last_updated": "2025-09-18T08:49:59.628333"
+  },
+  {
+    "id": "82203236-b6b2-4a89-9e54-8549cfe942b8",
+    "name": "Test Crypto Scam Hash",
+    "value": "bitcoin,crypto,ethereum,investment,profit",
+    "description": "Test hash for cryptocurrency scams",
+    "active": false,
+    "created_at": "2025-09-05T08:45:17.586582",
+    "lastScan": null,
+    "findingsCount": 0,
+    "updated_at": "2025-09-07T21:43:29.333696",
+    "last_updated": "2025-09-18T08:50:00.224976"
+  },
+  {
+    "id": "4e19e219-92ad-4125-8b0b-1f40f75347aa",
+    "name": "Test Malware Hash",
+    "value": "download,software,update,install,crack,keygen",
+    "description": "Test hash for malware distribution",
+    "active": false,
+    "created_at": "2025-09-05T08:45:17.596526",
+    "lastScan": null,
+    "findingsCount": 0,
+    "updated_at": "2025-09-07T21:43:29.900720",
+    "last_updated": "2025-09-13T15:42:43.404759"
+  },
+  {
+    "name": "Dynamic Test Hash 1757561012",
+    "value": "test-phishing-indicator-123",
+    "description": "Dynamic test hash for flow verification",
+    "id": "test-hash-1757561012",
+    "created_at": "2025-09-10T23:23:32.297259",
+    "active": false,
+    "last_updated": "2025-09-13T15:42:42.638357"
+  },
+  {
+    "name": "Dynamic Test Hash 1757561159",
+    "value": "test-phishing-indicator-123",
+    "description": "Dynamic test hash for flow verification",
+    "id": "test-hash-1757561159",
+    "created_at": "2025-09-10T23:25:59.236195",
+    "active": false,
+    "last_updated": "2025-09-13T15:42:42.156717"
+  },
+  {
+    "name": "Simulated Test Hash 1757561381",
+    "value": "test-phishing-indicator-123",
+    "description": "Simulated test hash for flow verification",
+    "id": "test-hash-1757561381",
+    "created_at": "2025-09-10T23:29:41.359747",
+    "active": false,
+    "last_updated": "2025-09-13T15:42:59.027592"
+  }
+]

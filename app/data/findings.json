@@ -1,0 +1,718 @@
+{
+  "findings": [
+    {
+      "id": "test_storage_1757085623",
+      "status": "rejected",
+      "tags": [],
+      "asrm_rule_applied": null,
+      "discovered_at": "2025-07-29T11:20:23.280622",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": null,
+      "domain_name": "test-storage-domain.com",
+      "hash_id": "3",
+      "hash_name": "Phishing Indicatorscdc",
+      "first_seen": "2025-07-29T11:20:23.280617",
+      "create_date": "2025-07-29",
+      "expiration_date": "2026-07-29",
+      "website_title": "Test Storage Domain",
+      "registrar": "GoDaddy",
+      "registrar_count": 12345,
+      "admin_contact": {
+        "name": "DOMAIN ADMINISTRATOR",
+        "org": "TEST STORAGE LLC",
+        "email": [
+          "admin@test-storage-domain.com"
+        ],
+        "phone": "12068389035",
+        "country": "us",
+        "city": "SEATTLE",
+        "state": "WA"
+      },
+      "registrant_contact": {
+        "name": "REGISTRANT CONTACT",
+        "org": "TEST STORAGE LLC",
+        "email": [
+          "registrant@test-storage-domain.com"
+        ],
+        "phone": "12068389035",
+        "country": "us",
+        "city": "SEATTLE",
+        "state": "WA"
+      },
+      "ip_address": "199.30.228.112",
+      "ip_address_count": 3,
+      "ip_country": "US",
+      "ip_country_count": 239988363,
+      "ip_isp": "GoDaddy LLC",
+      "ip_isp_count": 108,
+      "ip_asn": 17318,
+      "ip_asn_count": 101,
+      "name_servers_data": [
+        {
+          "host": "ns1.godaddy.com",
+          "host_count": 45,
+          "domain": "godaddy.com",
+          "domain_count": 78,
+          "ip": [
+            "199.30.228.100"
+          ]
+        },
+        {
+          "host": "ns2.godaddy.com",
+          "host_count": 45,
+          "domain": "godaddy.com",
+          "domain_count": 78,
+          "ip": [
+            "199.30.228.101"
+          ]
+        }
+      ],
+      "mail_servers_data": [
+        {
+          "host": "mx.godaddy.com",
+          "host_count": 23,
+          "domain": "godaddy.com",
+          "domain_count": 1,
+          "ip": [
+            "199.30.228.115"
+          ]
+        }
+      ],
+      "ssl_certificates": [
+        {
+          "hash": "abc123def456",
+          "hash_count": 45,
+          "subject": "*.test-storage-domain.com",
+          "subject_count": 12,
+          "subject_organization": "Test Storage LLC",
+          "subject_org_count": 67,
+          "issuer": "DigiCert Inc",
+          "issuer_count": 12345,
+          "email": [
+            "admin@test-storage-domain.com"
+          ]
+        }
+      ],
+      "risk_score": 85,
+      "threat_profile": {
+        "phishing": {
+          "score": 0,
+          "evidence": []
+        },
+        "malware": {
+          "score": 0,
+          "evidence": []
+        },
+        "spam": {
+          "score": 0,
+          "evidence": []
+        }
+      },
+      "server_type": "nginx",
+      "server_type_count": 45678,
+      "google_analytics_id": "76641",
+      "google_analytics_id_count": 23,
+      "is_active": true,
+      "finding_id": "test_storage_1757085623",
+      "rejection_reason": "Bulk rejected by user",
+      "updated_by": "user",
+      "last_updated": "2025-09-14T22:04:44.036426",
+      "rejected_by": "user",
+      "rejection_timestamp": "2025-09-14T23:57:35.200Z",
+      "rejected_timestamp": "2025-09-15T02:04:44.032Z"
+    },
+    {
+      "id": "phishing_site_1757085800",
+      "status": "rejected",
+      "tags": [
+        "phishing",
+        "banking"
+      ],
+      "asrm_rule_applied": "rule_001",
+      "discovered_at": "2025-09-05T11:30:00.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": "PL-2025-001234",
+      "domain_name": "paypal-security-alert.com",
+      "hash_id": "1",
+      "hash_name": "Banking Keywords",
+      "first_seen": "2025-09-01T14:55:12.654321",
+      "create_date": "2025-09-01",
+      "expiration_date": "2026-09-01",
+      "website_title": "PayPal Security Alert",
+      "registrar": "Namecheap Inc.",
+      "registrar_count": 9876,
+      "admin_contact": {
+        "name": "ADMIN CONTACT",
+        "org": "SUSPICIOUS LLC",
+        "email": [
+          "admin@suspicious.com"
+        ],
+        "phone": "15551234567",
+        "country": "ru",
+        "city": "MOSCOW",
+        "state": "MOSCOW"
+      },
+      "registrant_contact": {
+        "name": "REGISTRANT CONTACT",
+        "org": "SUSPICIOUS LLC",
+        "email": [
+          "registrant@suspicious.com"
+        ],
+        "phone": "15551234567",
+        "country": "ru",
+        "city": "MOSCOW",
+        "state": "MOSCOW"
+      },
+      "ip_address": "192.168.1.100",
+      "ip_address_count": 1,
+      "ip_country": "RU",
+      "ip_country_count": 1234567,
+      "ip_isp": "Suspicious ISP",
+      "ip_isp_count": 5,
+      "ip_asn": 12345,
+      "ip_asn_count": 2,
+      "name_servers_data": [
+        {
+          "host": "ns1.suspicious.com",
+          "host_count": 2,
+          "domain": "suspicious.com",
+          "domain_count": 3,
+          "ip": [
+            "192.168.1.101"
+          ]
+        },
+        {
+          "host": "ns2.suspicious.com",
+          "host_count": 2,
+          "domain": "suspicious.com",
+          "domain_count": 3,
+          "ip": [
+            "192.168.1.102"
+          ]
+        }
+      ],
+      "mail_servers_data": [
+        {
+          "host": "mx.suspicious.com",
+          "host_count": 1,
+          "domain": "suspicious.com",
+          "domain_count": 1,
+          "ip": [
+            "192.168.1.103"
+          ]
+        }
+      ],
+      "ssl_certificates": [
+        {
+          "hash": "def456ghi789",
+          "hash_count": 1,
+          "subject": "*.paypal-security-alert.com",
+          "subject_count": 1,
+          "subject_organization": "Suspicious LLC",
+          "subject_org_count": 1,
+          "issuer": "Self-Signed",
+          "issuer_count": 1,
+          "email": [
+            "admin@suspicious.com"
+          ]
+        }
+      ],
+      "risk_score": 95,
+      "threat_profile": {
+        "phishing": {
+          "score": 95,
+          "evidence": [
+            "PayPal impersonation",
+            "Urgent security alert"
+          ]
+        },
+        "malware": {
+          "score": 0,
+          "evidence": []
+        },
+        "spam": {
+          "score": 0,
+          "evidence": []
+        }
+      },
+      "server_type": "apache",
+      "server_type_count": 12345,
+      "adsense_id_count": 0,
+      "google_analytics_id": null,
+      "google_analytics_id_count": 0,
+      "is_active": true,
+      "finding_id": "phishing_site_1757085800",
+      "last_updated": "2025-09-14T22:04:44.148215",
+      "rejection_reason": "Bulk rejected by user",
+      "rejected_by": "user",
+      "rejected_timestamp": "2025-09-15T02:04:44.145Z"
+    },
+    {
+      "id": "malware_domain_1757085900",
+      "status": "rejected",
+      "tags": [
+        "malware",
+        "suspicious"
+      ],
+      "asrm_rule_applied": null,
+      "discovered_at": "2025-09-10T08:15:30.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": null,
+      "domain_name": "malware-distribution.net",
+      "hash_id": "2",
+      "hash_name": "Brand Impersonation",
+      "first_seen": "2025-09-10T08:15:30.000000",
+      "create_date": "2025-09-10",
+      "expiration_date": "2026-09-10",
+      "website_title": "Software Download Center",
+      "registrar": "Privacy Protection Service",
+      "registrar_count": 5432,
+      "admin_contact": {
+        "name": "PRIVACY PROTECTED",
+        "org": "PRIVACY PROTECTION SERVICE",
+        "email": [
+          "privacy@protection.com"
+        ],
+        "phone": "15559876543",
+        "country": "us",
+        "city": "DENVER",
+        "state": "CO"
+      },
+      "registrant_contact": {
+        "name": "PRIVACY PROTECTED",
+        "org": "PRIVACY PROTECTION SERVICE",
+        "email": [
+          "privacy@protection.com"
+        ],
+        "phone": "15559876543",
+        "country": "us",
+        "city": "DENVER",
+        "state": "CO"
+      },
+      "ip_address": "10.0.0.1",
+      "ip_address_count": 1,
+      "ip_country": "US",
+      "ip_country_count": 987654321,
+      "ip_isp": "Anonymous ISP",
+      "ip_isp_count": 1,
+      "ip_asn": 99999,
+      "ip_asn_count": 1,
+      "name_servers_data": [
+        {
+          "host": "ns1.anonymous.com",
+          "host_count": 1,
+          "domain": "anonymous.com",
+          "domain_count": 1,
+          "ip": [
+            "10.0.0.2"
+          ]
+        }
+      ],
+      "mail_servers_data": [],
+      "ssl_certificates": [],
+      "risk_score": 75,
+      "threat_profile": {
+        "phishing": {
+          "score": 0,
+          "evidence": []
+        },
+        "malware": {
+          "score": 75,
+          "evidence": [
+            "Suspicious download patterns",
+            "Known malware distribution"
+          ]
+        },
+        "spam": {
+          "score": 0,
+          "evidence": []
+        }
+      },
+      "server_type": "nginx",
+      "server_type_count": 23456,
+      "adsense_id_count": 0,
+      "google_analytics_id": null,
+      "google_analytics_id_count": 0,
+      "is_active": true,
+      "finding_id": "malware_domain_1757085900",
+      "last_updated": "2025-09-14T22:04:52.427654",
+      "rejection_reason": "Bulk rejected by user",
+      "rejected_by": "user",
+      "rejected_timestamp": "2025-09-15T02:04:52.424Z"
+    },
+    {
+      "id": "phishing_bank_1757086000",
+      "status": "pending",
+      "tags": [
+        "phishing",
+        "banking",
+        "urgent"
+      ],
+      "asrm_rule_applied": "banking_phish_rule",
+      "discovered_at": "2025-09-15T14:30:00.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": "PL-2025-001500",
+      "domain_name": "secure-bank-alert.net",
+      "hash_id": "1",
+      "hash_name": "Banking Keywords",
+      "first_seen": "2025-09-10T08:15:30.123456",
+      "create_date": "2025-09-10",
+      "expiration_date": "2026-09-10",
+      "website_title": "Bank Security Alert - Urgent Action Required",
+      "registrar": "Namecheap",
+      "registrar_count": 25000,
+      "admin_contact": {
+        "name": "ADMIN CONTACT",
+        "org": "FAKE BANK LLC",
+        "email": [
+          "admin@secure-bank-alert.net"
+        ],
+        "phone": "15551234567",
+        "country": "ca",
+        "city": "TORONTO",
+        "state": "ON"
+      },
+      "registrant_contact": {
+        "name": "REGISTRANT CONTACT",
+        "org": "FAKE BANK LLC",
+        "email": [
+          "registrant@secure-bank-alert.net"
+        ],
+        "phone": "15551234567",
+        "country": "ca",
+        "city": "TORONTO",
+        "state": "ON"
+      },
+      "ip_address": "192.168.1.100",
+      "ip_address_count": 1,
+      "ip_country": "CA",
+      "ip_country_count": 5000,
+      "ip_isp": "Rogers Communications",
+      "ip_isp_count": 50,
+      "ip_asn": 812,
+      "ip_asn_count": 25,
+      "name_servers_data": [
+        {
+          "host": "ns1.namecheap.com",
+          "host_count": 100,
+          "domain": "namecheap.com",
+          "domain_count": 200,
+          "ip": [
+            "192.168.1.101"
+          ]
+        }
+      ],
+      "mail_servers_data": [
+        {
+          "host": "mail.secure-bank-alert.net",
+          "host_count": 5,
+          "domain": "secure-bank-alert.net",
+          "domain_count": 1,
+          "ip": [
+            "192.168.1.102"
+          ]
+        }
+      ],
+      "ssl_certificates": [
+        {
+          "hash": "def456ghi789",
+          "hash_count": 10,
+          "subject": "*.secure-bank-alert.net",
+          "subject_count": 3,
+          "subject_organization": "Fake Bank LLC",
+          "subject_org_count": 5,
+          "issuer": "Let's Encrypt",
+          "issuer_count": 50000,
+          "email": [
+            "admin@secure-bank-alert.net"
+          ]
+        }
+      ],
+      "risk_score": 95,
+      "response_code": 200,
+      "is_active": true,
+      "server_type": "nginx/1.18.0",
+      "last_updated": "2025-09-14T22:03:30.400532",
+      "rejection_reason": "Bulk rejected by user",
+      "rejected_by": "user",
+      "rejected_timestamp": "2025-09-15T02:03:30.393Z"
+    },
+    {
+      "id": "malware_site_1757086100",
+      "status": "pending",
+      "tags": [
+        "malware",
+        "suspicious"
+      ],
+      "asrm_rule_applied": null,
+      "discovered_at": "2025-09-20T09:45:00.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": false,
+      "phishlabs_case_number": null,
+      "domain_name": "download-software-free.org",
+      "hash_id": "2",
+      "hash_name": "Malware Indicators",
+      "first_seen": "2025-09-18T16:20:45.789012",
+      "create_date": "2025-09-18",
+      "expiration_date": "2026-09-18",
+      "website_title": "Free Software Downloads - Latest Updates",
+      "registrar": "GoDaddy",
+      "registrar_count": 15000,
+      "admin_contact": {
+        "name": "ADMIN",
+        "org": "SOFTWARE DISTRIBUTION INC",
+        "email": [
+          "admin@download-software-free.org"
+        ],
+        "phone": "18005551234",
+        "country": "us",
+        "city": "NEW YORK",
+        "state": "NY"
+      },
+      "registrant_contact": {
+        "name": "REGISTRANT",
+        "org": "SOFTWARE DISTRIBUTION INC",
+        "email": [
+          "registrant@download-software-free.org"
+        ],
+        "phone": "18005551234",
+        "country": "us",
+        "city": "NEW YORK",
+        "state": "NY"
+      },
+      "ip_address": "10.0.0.50",
+      "ip_address_count": 2,
+      "ip_country": "US",
+      "ip_country_count": 100000,
+      "ip_isp": "Comcast Cable",
+      "ip_isp_count": 200,
+      "ip_asn": 7922,
+      "ip_asn_count": 500,
+      "name_servers_data": [
+        {
+          "host": "ns1.godaddy.com",
+          "host_count": 200,
+          "domain": "godaddy.com",
+          "domain_count": 300,
+          "ip": [
+            "10.0.0.51"
+          ]
+        }
+      ],
+      "mail_servers_data": [
+        {
+          "host": "mx1.download-software-free.org",
+          "host_count": 10,
+          "domain": "download-software-free.org",
+          "domain_count": 2,
+          "ip": [
+            "10.0.0.52"
+          ]
+        }
+      ],
+      "ssl_certificates": [
+        {
+          "hash": "ghi789jkl012",
+          "hash_count": 2,
+          "subject": "download-software-free.org",
+          "subject_count": 1,
+          "subject_organization": "Software Distribution Inc",
+          "subject_org_count": 1,
+          "issuer": "DigiCert Inc",
+          "issuer_count": 100000,
+          "email": [
+            "admin@download-software-free.org"
+          ]
+        }
+      ],
+      "risk_score": 75,
+      "response_code": 200,
+      "is_active": true,
+      "server_type": "Apache/2.4.41",
+      "last_updated": "2025-09-14T19:10:27.861851"
+    },
+    {
+      "id": "legitimate_site_1757086200",
+      "status": "pending",
+      "tags": [
+        "legitimate",
+        "business"
+      ],
+      "asrm_rule_applied": "Brand Impersonation",
+      "discovered_at": "2025-09-25T11:00:00.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": null,
+      "domain_name": "legitimate-business.com",
+      "hash_id": "4",
+      "hash_name": "Business Keywords",
+      "first_seen": "2025-09-20T12:30:15.456789",
+      "create_date": "2025-09-20",
+      "expiration_date": "2027-09-20",
+      "website_title": "Legitimate Business Solutions",
+      "registrar": "Cloudflare",
+      "registrar_count": 50000,
+      "admin_contact": {
+        "name": "BUSINESS ADMIN",
+        "org": "LEGITIMATE BUSINESS CORP",
+        "email": [
+          "admin@legitimate-business.com"
+        ],
+        "phone": "14165551234",
+        "country": "us",
+        "city": "SAN FRANCISCO",
+        "state": "CA"
+      },
+      "registrant_contact": {
+        "name": "BUSINESS REGISTRANT",
+        "org": "LEGITIMATE BUSINESS CORP",
+        "email": [
+          "registrant@legitimate-business.com"
+        ],
+        "phone": "14165551234",
+        "country": "us",
+        "city": "SAN FRANCISCO",
+        "state": "CA"
+      },
+      "ip_address": "172.16.0.100",
+      "ip_address_count": 5,
+      "ip_country": "US",
+      "ip_country_count": 500000,
+      "ip_isp": "Cloudflare Inc",
+      "ip_isp_count": 1000,
+      "ip_asn": 13335,
+      "ip_asn_count": 2000,
+      "name_servers_data": [
+        {
+          "host": "ns1.cloudflare.com",
+          "host_count": 1000,
+          "domain": "cloudflare.com",
+          "domain_count": 5000,
+          "ip": [
+            "172.16.0.101"
+          ]
+        }
+      ],
+      "mail_servers_data": [
+        {
+          "host": "mail.legitimate-business.com",
+          "host_count": 50,
+          "domain": "legitimate-business.com",
+          "domain_count": 1,
+          "ip": [
+            "172.16.0.102"
+          ]
+        }
+      ],
+      "ssl_certificates": [
+        {
+          "hash": "jkl012mno345",
+          "hash_count": 100,
+          "subject": "*.legitimate-business.com",
+          "subject_count": 50,
+          "subject_organization": "Legitimate Business Corp",
+          "subject_org_count": 100,
+          "issuer": "DigiCert Inc",
+          "issuer_count": 200000,
+          "email": [
+            "admin@legitimate-business.com"
+          ]
+        }
+      ],
+      "risk_score": 15,
+      "response_code": 200,
+      "is_active": true,
+      "server_type": "Cloudflare",
+      "last_updated": "2025-09-14T22:03:30.507267",
+      "rejection_reason": "Bulk rejected by user",
+      "rejected_by": "user",
+      "rejected_timestamp": "2025-09-15T02:03:30.504Z"
+    },
+    {
+      "id": "expired_domain_1757086300",
+      "status": "pending",
+      "tags": [
+        "expired",
+        "inactive"
+      ],
+      "asrm_rule_applied": null,
+      "discovered_at": "2025-09-30T16:15:00.000000",
+      "asrm_triggered": false,
+      "pl_submission": false,
+      "rejected": true,
+      "phishlabs_case_number": null,
+      "domain_name": "old-expired-site.net",
+      "hash_id": "5",
+      "hash_name": "Expired Domains",
+      "first_seen": "2025-09-01T10:00:00.000000",
+      "create_date": "2025-09-01",
+      "expiration_date": "2025-09-15",
+      "website_title": "This Site Has Expired",
+      "registrar": "Name.com",
+      "registrar_count": 5000,
+      "admin_contact": {
+        "name": "EXPIRED ADMIN",
+        "org": "OLD COMPANY LLC",
+        "email": [
+          "admin@old-expired-site.net"
+        ],
+        "phone": "13035551234",
+        "country": "us",
+        "city": "CHICAGO",
+        "state": "IL"
+      },
+      "registrant_contact": {
+        "name": "EXPIRED REGISTRANT",
+        "org": "OLD COMPANY LLC",
+        "email": [
+          "registrant@old-expired-site.net"
+        ],
+        "phone": "13035551234",
+        "country": "us",
+        "city": "CHICAGO",
+        "state": "IL"
+      },
+      "ip_address": "203.0.113.50",
+      "ip_address_count": 1,
+      "ip_country": "US",
+      "ip_country_count": 10000,
+      "ip_isp": "Name.com Inc",
+      "ip_isp_count": 25,
+      "ip_asn": 15169,
+      "ip_asn_count": 100,
+      "name_servers_data": [
+        {
+          "host": "ns1.name.com",
+          "host_count": 50,
+          "domain": "name.com",
+          "domain_count": 100,
+          "ip": [
+            "203.0.113.51"
+          ]
+        }
+      ],
+      "mail_servers_data": [],
+      "ssl_certificates": [],
+      "risk_score": 5,
+      "response_code": 404,
+      "is_active": false,
+      "server_type": "nginx/1.16.1",
+      "last_updated": "2025-09-30T16:15:00.000000"
+    }
+  ],
+  "metadata": {
+    "created_at": "2025-01-15T10:30:00.000000",
+    "last_updated": "2025-09-14T22:04:52.427662",
+    "total_findings": 7
+  }
+}

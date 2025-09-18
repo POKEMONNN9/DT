@@ -1,0 +1,7 @@
+Flask==2.3.3
+python-dotenv==1.0.0
+requests==2.31.0
+APScheduler==3.10.4
+
+# Note: APScheduler is optional - the application will work without it
+# but automated scheduling will be disabled
