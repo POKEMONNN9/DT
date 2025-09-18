@@ -1,0 +1,7794 @@
+// ===================================================================== //
+// DomainTools Monitor Framework - Enhanced JavaScript                  //
+// Modern, Performance-Optimized Frontend with Smooth Animations       //
+// ===================================================================== //
+
+// =============================================================================
+// GLOBAL CONFIGURATION & UTILITIES
+// =============================================================================
+
+const DTMonitor = {
+    config: {
+        apiTimeout: 30000,
+        notificationDuration: 5000,
+        animationDuration: 250,
+        debounceDelay: 300
+    },
+    
+    cache: new Map(),
+    
+    // Error handling with detailed logging
+    handleError: function(error, userMessage = 'An unexpected error occurred') {
+        console.error('DTMonitor Error:', {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent
+        });
+        
+        // Show user-friendly message
+        DTMonitor.notification.show(userMessage, 'error');
+        
+        // Optional: Send error to backend for logging
+        this.logError(error, userMessage);
+    },
+    
+    logError: function(error, userMessage) {
+        try {
+            fetch('/api/utils/log_error', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    error: error.message,
+                    stack: error.stack,
+                    userMessage: userMessage,
+                    timestamp: new Date().toISOString(),
+                    page: window.location.pathname
+                })
+            }).catch(() => {}); // Silent fail for error logging
+        } catch (e) {
+            // Silent fail - don't show errors for error logging
+        }
+    },
+    
+    // Debounce utility
+    debounce: function(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    },
+    
+    // Loading state management
+    setLoading: function(element, isLoading = true) {
+        if (!element) return;
+        
+        if (isLoading) {
+            element.classList.add('loading');
+            element.disabled = true;
+        } else {
+            element.classList.remove('loading');
+            element.disabled = false;
+        }
+    },
+    
+    // Animation utilities
+    fadeIn: function(element, duration = 250) {
+        if (!element) return Promise.resolve();
+        
+        return new Promise(resolve => {
+            element.style.opacity = '0';
+            element.style.display = 'block';
+            
+            const animation = element.animate([
+                { opacity: 0, transform: 'translateY(10px)' },
+                { opacity: 1, transform: 'translateY(0)' }
+            ], {
+                duration: duration,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                fill: 'forwards'
+            });
+            
+            animation.onfinish = () => {
+                element.style.opacity = '';
+                element.style.transform = '';
+                resolve();
+            };
+        });
+    },
+    
+    fadeOut: function(element, duration = 250) {
+        if (!element) return Promise.resolve();
+        
+        return new Promise(resolve => {
+            const animation = element.animate([
+                { opacity: 1, transform: 'translateY(0)' },
+                { opacity: 0, transform: 'translateY(-10px)' }
+            ], {
+                duration: duration,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                fill: 'forwards'
+            });
+            
+            animation.onfinish = () => {
+                element.style.display = 'none';
+                element.style.opacity = '';
+                element.style.transform = '';
+                resolve();
+            };
+        });
+    }
+};
+
+// =============================================================================
+// THEME MANAGEMENT
+// =============================================================================
+
+DTMonitor.theme = {
+    current: 'light',
+    
+    init: function() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        this.apply(savedTheme);
+        
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                if (!localStorage.getItem('theme')) {
+                    this.apply(e.matches ? 'dark' : 'light');
+                }
+            });
+        }
+    },
+    
+    toggle: function() {
+        const newTheme = this.current === 'dark' ? 'light' : 'dark';
+        this.apply(newTheme);
+        localStorage.setItem('theme', newTheme);
+        
+        // Smooth transition effect
+        document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
+        setTimeout(() => {
+            document.body.style.transition = '';
+        }, 300);
+    },
+    
+    apply: function(theme) {
+        this.current = theme;
+        const body = document.body;
+        const themeIcon = document.getElementById('themeIcon');
+        
+        if (theme === 'dark') {
+            body.setAttribute('data-theme', 'dark');
+            if (themeIcon) themeIcon.className = 'fas fa-sun';
+        } else {
+            body.removeAttribute('data-theme');
+            if (themeIcon) themeIcon.className = 'fas fa-moon';
+        }
+    }
+};
+
+// =============================================================================
+// NOTIFICATION SYSTEM
+// =============================================================================
+
+DTMonitor.notification = {
+    container: null,
+    queue: [],
+    
+    init: function() {
+        console.log('Initializing notification system...');
+        this.container = document.getElementById('notification');
+        if (!this.container) {
+            console.log('Notification container not found, creating one...');
+            this.createContainer();
+        } else {
+            console.log('Notification container found:', this.container);
+        }
+    },
+    
+    createContainer: function() {
+        console.log('Creating notification container...');
+        this.container = document.createElement('div');
+        this.container.id = 'notification';
+        this.container.className = 'notification';
+        document.body.appendChild(this.container);
+        console.log('Notification container created and added to body');
+    },
+    
+    show: function(message, type = 'info', duration = DTMonitor.config.notificationDuration) {
+        console.log(`[NOTIFICATION] Showing ${type}: ${message}`);
+        
+        if (!this.container) {
+            console.log('Container not available, initializing...');
+            this.init();
+        }
+        
+        // Clear any existing timeout
+        if (this.container.timeoutId) {
+            clearTimeout(this.container.timeoutId);
+        }
+        
+        // Update content and show
+        this.container.innerHTML = `
+            <div class="notification-content">
+                <i class="fas ${this.getIcon(type)}"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        this.container.className = `notification ${type} show`;
+        
+        // Add click to dismiss
+        this.container.onclick = () => this.hide();
+        
+        // Auto-hide
+        this.container.timeoutId = setTimeout(() => {
+            this.hide();
+        }, duration);
+        
+        // Add smooth entrance animation
+        this.container.style.transform = 'translateX(100%)';
+        requestAnimationFrame(() => {
+            this.container.style.transform = 'translateX(0)';
+        });
+        
+        console.log('Notification displayed successfully');
+    },
+    
+    hide: function() {
+        if (!this.container) return;
+        
+        this.container.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            this.container.classList.remove('show');
+            this.container.innerHTML = '';
+            this.container.className = 'notification';
+            this.container.onclick = null;
+        }, 300);
+    },
+    
+    getIcon: function(type) {
+        const icons = {
+            success: 'fa-check-circle',
+            error: 'fa-exclamation-circle',
+            warning: 'fa-exclamation-triangle',
+            info: 'fa-info-circle'
+        };
+        return icons[type] || icons.info;
+    }
+};
+
+// =============================================================================
+// API CLIENT
+// =============================================================================
+
+DTMonitor.api = {
+    baseURL: '/api',
+    
+    request: async function(endpoint, options = {}) {
+        const url = `${this.baseURL}${endpoint}`;
+        const defaultOptions = {
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            timeout: DTMonitor.config.apiTimeout
+        };
+        
+        const config = { ...defaultOptions, ...options };
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+            
+            const response = await fetch(url, {
+                ...config,
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            return data;
+            
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                throw new Error('Request timed out. Please check your connection and try again.');
+            }
+            
+            // Network errors
+            if (!navigator.onLine) {
+                throw new Error('No internet connection. Please check your network and try again.');
+            }
+            
+            // API-specific error handling
+            if (error.message.includes('403')) {
+                throw new Error('Authentication failed. Please check your API credentials.');
+            } else if (error.message.includes('401')) {
+                throw new Error('Invalid credentials. Please verify your API key.');
+            } else if (error.message.includes('429')) {
+                throw new Error('Too many requests. Please wait a moment and try again.');
+            } else if (error.message.includes('500')) {
+                throw new Error('Server error. Please try again later or contact support.');
+            }
+            
+            throw error;
+        }
+    },
+    
+    get: function(endpoint) {
+        return this.request(endpoint, { method: 'GET' });
+    },
+    
+    post: function(endpoint, data = {}) {
+        return this.request(endpoint, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+    
+    put: function(endpoint, data = {}) {
+        return this.request(endpoint, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    },
+    
+    delete: function(endpoint, data = {}) {
+        return this.request(endpoint, { 
+            method: 'DELETE',
+            body: data && Object.keys(data).length > 0 ? JSON.stringify(data) : undefined
+        });
+    },
+    
+    // Toast notification method for backward compatibility
+    showToast: function(message, type = 'info', duration = 5000) {
+        console.log(`[TOAST] ${type.toUpperCase()}: ${message}`); // Debug logging
+        
+        if (DTMonitor.notification && DTMonitor.notification.show) {
+            console.log('Using DTMonitor.notification.show');
+            DTMonitor.notification.show(message, type, duration);
+        } else {
+            console.log('DTMonitor.notification not available, falling back to console');
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            
+            // Fallback: try to show a simple alert or create basic notification
+            try {
+                this.showFallbackNotification(message, type);
+            } catch (e) {
+                console.error('Fallback notification failed:', e);
+            }
+        }
+    },
+    
+    // Fallback notification method
+    showFallbackNotification: function(message, type) {
+        // Create a simple notification element if the main system isn't working
+        let existingNotification = document.getElementById('fallback-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+        
+        const notification = document.createElement('div');
+        notification.id = 'fallback-notification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : type === 'warning' ? '#ffc107' : '#17a2b8'};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            max-width: 300px;
+            word-wrap: break-word;
+        `;
+        
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 5000);
+    },
+    
+    // Additional scan functions
+    runAllScans: function() { 
+        DTMonitor.api.showLoading('Running all scans...');
+        DTMonitor.api.post('/scan/all', {})
+            .then(response => {
+                DTMonitor.api.hideLoading();
+                DTMonitor.notification.show('All scans started successfully', 'success');
+            })
+            .catch(error => {
+                DTMonitor.api.hideLoading();
+                DTMonitor.notification.show('Failed to start scans: ' + error.message, 'error');
+            });
+    },
+    
+    runSelectedScan: function() {
+        const selected = document.querySelector('input[name="scanHash"]:checked');
+        if (!selected) {
+            DTMonitor.notification.show('Please select a hash to scan', 'warning');
+            return;
+        }
+        DTMonitor.scanning.runSingle(selected.value);
+    },
+    
+    viewScanHistory: function() {
+        DTMonitor.notification.show('Showing scan history...', 'info');
+        if (typeof DTMonitor !== 'undefined' && DTMonitor.scanning) {
+            DTMonitor.scanning.viewHistory();
+        } else {
+            console.log('View scan history requested.');
+            window.location.href = '/scan-history';
+        }
+    },
+    
+    exportResults: function() {
+        if (typeof DTMonitor !== 'undefined' && DTMonitor.scanning) {
+            DTMonitor.scanning.exportResults();
+        } else {
+            console.log('Export results requested.');
+            window.location.href = '/api/scanning/export';
+        }
+    },
+    
+    // Scheduler functions
+    startScheduler: function() {
+        DTMonitor.api.post('/scheduler/start', {})
+            .then(() => DTMonitor.notification.show('Scheduler started', 'success'))
+            .catch(err => DTMonitor.notification.show('Failed to start scheduler', 'error'));
+    },
+    
+    stopScheduler: function() {
+        DTMonitor.api.post('/scheduler/stop', {})
+            .then(() => DTMonitor.notification.show('Scheduler stopped', 'success'))
+            .catch(err => DTMonitor.notification.show('Failed to stop scheduler', 'error'));
+    },
+    
+    refreshSchedulerStatus: function() {
+        DTMonitor.api.get('/scheduler/status')
+            .then(status => {
+                // Update scheduler status display
+                DTMonitor.notification.show('Scheduler status refreshed', 'info');
+            })
+            .catch(err => DTMonitor.notification.show('Failed to get scheduler status', 'error'));
+    },
+    
+    // Export functions
+    exportFindingsToCSV: function() {
+        window.location.href = '/api/export/findings';
+    },
+    
+    // Settings functions
+    saveAllSettings: function() {
+        const formData = this.collectAllSettings();
+        this.saveSettings(formData);
+    },
+    
+    testDomainToolsConnection: function() {
+        const statusIndicator = document.getElementById('api-status');
+        if (statusIndicator) {
+            statusIndicator.className = 'status-badge warning';
+            statusIndicator.innerHTML = '<i class="fas fa-circle"></i> Testing...';
+        }
+        
+        DTMonitor.api.get('/test/domaintools')
+            .then(result => {
+                DTMonitor.notification.show('DomainTools connection successful', 'success');
+                if (statusIndicator) {
+                    statusIndicator.className = 'status-badge success';
+                    statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+                }
+            })
+            .catch(error => {
+                // Check if it's a 400 error (API reachable but invalid credentials)
+                if (error.status === 400) {
+                    DTMonitor.notification.show('DomainTools API reachable but credentials invalid', 'warning');
+                    if (statusIndicator) {
+                        statusIndicator.className = 'status-badge warning';
+                        statusIndicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i> API Reachable';
+                    }
+                } else {
+                    DTMonitor.notification.show('DomainTools connection failed: ' + error.message, 'error');
+                    if (statusIndicator) {
+                        statusIndicator.className = 'status-badge error';
+                        statusIndicator.innerHTML = '<i class="fas fa-times-circle"></i> Failed';
+                    }
+                }
+            });
+    },
+    
+    testPhishLabsConnection: function() {
+        DTMonitor.api.get('/test/phishlabs')
+            .then(result => {
+                DTMonitor.notification.show('PhishLabs connection successful', 'success');
+            })
+            .catch(error => {
+                // Check if it's a 400 error (API reachable but invalid credentials)
+                if (error.status === 400) {
+                    DTMonitor.notification.show('PhishLabs API reachable but credentials invalid', 'warning');
+                } else {
+                    DTMonitor.notification.show('PhishLabs connection failed: ' + error.message, 'error');
+                }
+            });
+    },
+    
+    testAllConnections: function() {
+        DTMonitor.notification.show('Testing all connections...', 'info');
+        this.testDomainToolsConnection();
+        this.testPhishLabsConnection();
+    },
+
+    saveAllSettings: function() {
+        const formData = this.collectAllSettings();
+        this.saveSettings(formData);
+    },
+
+    collectAllSettings: function() {
+        const formData = {};
+        const inputs = document.querySelectorAll('#settingsForm input, #settingsForm select, #settingsForm textarea');
+        
+        inputs.forEach(input => {
+            if (input.name) {
+                if (input.type === 'checkbox') {
+                    formData[input.name] = input.checked;
+                } else {
+                    formData[input.name] = input.value;
+                }
+            }
+        });
+        
+        console.log('Collected settings data:', formData);
+        return formData;
+    },
+
+    saveSettings: async function(formData) {
+        try {
+            console.log('Saving settings to backend:', formData);
+            const response = await DTMonitor.api.post('/settings', formData);
+            if (response.success) {
+                DTMonitor.notification.show('Settings saved successfully!', 'success');
+            } else {
+                DTMonitor.notification.show('Failed to save settings: ' + response.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            DTMonitor.notification.show('Error saving settings: ' + error.message, 'error');
+        }
+    },
+
+    // Initialize settings tabs
+    initSettingsTabs: function() {
+        console.log('DTMonitor: Initializing settings tabs...');
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        
+        console.log('DTMonitor: Found tab buttons:', tabButtons.length);
+        console.log('DTMonitor: Found tab panes:', tabPanes.length);
+        
+        tabButtons.forEach((button, index) => {
+            console.log(`DTMonitor: Setting up tab ${index}:`, button.getAttribute('data-tab'));
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('DTMonitor: Tab clicked:', this.getAttribute('data-tab'));
+                
+                // Remove active class from all tabs and panes
+                tabButtons.forEach(tab => tab.classList.remove('active'));
+                tabPanes.forEach(pane => pane.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                this.classList.add('active');
+                
+                // Show corresponding tab pane
+                const targetTab = this.getAttribute('data-tab');
+                const targetPane = document.getElementById(targetTab);
+                console.log('DTMonitor: Target tab:', targetTab, 'Target pane:', targetPane);
+                if (targetPane) {
+                    targetPane.classList.add('active');
+                    console.log('DTMonitor: Tab switched to:', targetTab);
+                    
+                    // Load dynamic content for specific tabs
+                    if (targetTab === 'tags-section') {
+                        this.loadTags();
+                    } else if (targetTab === 'scan-history') {
+                        this.loadScanHistory();
+                    }
+                } else {
+                    console.error('DTMonitor: Tab pane not found:', targetTab);
+                }
+            });
+        });
+    },
+
+    // Load tags for tag management
+    loadTags: function() {
+        console.log('Loading tags...');
+        const tagsList = document.getElementById('tagsList');
+        if (tagsList) {
+            // Load tags from backend or local storage
+            DTMonitor.api.get('/tags/list')
+                .then(response => {
+                    if (response.success && response.tags) {
+                        this.renderTags(response.tags);
+                    } else {
+                        console.error('Failed to load tags:', response.message);
+                        DTMonitor.notification.show('Failed to load tags', 'error');
+                    }
+            })
+            .catch(error => {
+                    console.error('Error loading tags:', error);
+                    DTMonitor.notification.show('Error loading tags', 'error');
+                });
+        }
+    },
+
+    // Render tags in the UI
+    renderTags: function(tags) {
+        const tagsList = document.getElementById('tagsList');
+        if (!tagsList) return;
+
+        if (tags.length === 0) {
+            tagsList.innerHTML = '<p class="no-data">No tags found</p>';
+            return;
+        }
+
+        tagsList.innerHTML = tags.map(tag => `
+            <div class="tag-item" data-tag-id="${tag.id}">
+                <div class="tag-content">
+                    <span class="tag-name">${tag.name}</span>
+                    <span class="tag-description">${tag.description || 'No description'}</span>
+                </div>
+                <div class="tag-actions">
+                    <button class="btn btn-sm btn-outline" onclick="editTag('${tag.id}', '${tag.name.replace(/'/g, "\\'")}', '${(tag.description || '').replace(/'/g, "\\'")}')">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteTag('${tag.id}', '${tag.name.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    // Load scan history
+    loadScanHistory: function() {
+        console.log('Loading scan history...');
+        const historyList = document.getElementById('scanHistoryList');
+        if (historyList) {
+            DTMonitor.api.get('/api/scan/history')
+                .then(response => {
+                    console.log('Scan history API response:', response);
+                    if (response.activities && response.activities.length > 0) {
+                        const history = response.activities;
+                        historyList.innerHTML = history.map(scan => 
+                            `<div class="scan-item">
+                                <div class="scan-info">
+                                    <strong>${scan.scan_type}</strong> - ${scan.started_at_est || new Date(scan.started_at).toLocaleString('en-US', {timeZone: 'America/New_York'})}
+                                </div>
+                                <div class="scan-status ${scan.status}">
+                                    ${scan.status} (${scan.findings_count || 0} findings)
+                                </div>
+                            </div>`
+                        ).join('');
+                    } else {
+                        historyList.innerHTML = '<p>No scan history available</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading scan history:', error);
+                    historyList.innerHTML = '<p>Error loading scan history</p>';
+                });
+        }
+    },
+    
+    // Add new tag
+    addTag: function() {
+        const tagName = document.getElementById('newTagName').value.trim();
+        if (!tagName) {
+            DTMonitor.notification.show('Please enter a tag name', 'warning');
+            return;
+        }
+
+        DTMonitor.api.post('/tags/add', { name: tagName })
+            .then(response => {
+                if (response.success) {
+                    DTMonitor.notification.show('Tag added successfully', 'success');
+                    document.getElementById('newTagName').value = '';
+                    this.loadTags();
+                } else {
+                    DTMonitor.notification.show('Failed to add tag: ' + response.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error adding tag:', error);
+                DTMonitor.notification.show('Error adding tag: ' + error.message, 'error');
+            });
+    },
+
+    // Edit tag
+    editTag: function(tagId, currentName, currentDescription) {
+        const newName = prompt('Enter new tag name:', currentName);
+        if (newName === null) return; // User cancelled
+        
+        const newDescription = prompt('Enter new description:', currentDescription || '');
+        if (newDescription === null) return; // User cancelled
+
+        if (!newName.trim()) {
+            DTMonitor.notification.show('Tag name cannot be empty', 'warning');
+            return;
+        }
+
+        DTMonitor.api.put('/tags/update', { 
+            id: tagId, 
+            name: newName.trim(), 
+            description: newDescription.trim() 
+        })
+        .then(response => {
+            if (response.success) {
+                    DTMonitor.notification.show('Tag updated successfully', 'success');
+                this.loadTags();
+            } else {
+                DTMonitor.notification.show('Failed to update tag: ' + response.message, 'error');
+            }
+                })
+                .catch(error => {
+            console.error('Error updating tag:', error);
+            DTMonitor.notification.show('Error updating tag', 'error');
+        });
+    },
+
+    // Delete tag
+    deleteTag: function(tagId, tagName) {
+        if (!confirm(`Are you sure you want to delete the tag "${tagName}"?`)) {
+            return;
+        }
+
+        DTMonitor.api.delete('/tags/delete', { id: tagId })
+        .then(response => {
+            if (response.success) {
+                DTMonitor.notification.show('Tag deleted successfully', 'success');
+                this.loadTags();
+            } else {
+                DTMonitor.notification.show('Failed to delete tag: ' + response.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting tag:', error);
+            DTMonitor.notification.show('Error deleting tag', 'error');
+        });
+    },
+
+    // Export scan history
+    exportScanHistory: function() {
+        DTMonitor.notification.show('Exporting scan history...', 'info');
+        
+        fetch('/api/scan/history/export')
+        .then(response => response.blob())
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `scan_history_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            DTMonitor.notification.show('Scan history exported successfully', 'success');
+        })
+        .catch(error => {
+            console.error('Error exporting scan history:', error);
+            DTMonitor.notification.show('Failed to export scan history', 'error');
+        });
+    },
+
+    // Clear scan history
+    clearScanHistory: function() {
+        if (confirm('Are you sure you want to clear all scan history? This action cannot be undone.')) {
+            DTMonitor.api.delete('/scan/history')
+                .then(response => {
+                    if (response.success) {
+                        DTMonitor.notification.show('Scan history cleared', 'success');
+                        this.loadScanHistory();
+                    } else {
+                        DTMonitor.notification.show('Failed to clear scan history: ' + response.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error clearing scan history:', error);
+                    DTMonitor.notification.show('Error clearing scan history: ' + error.message, 'error');
+                });
+        }
+    },
+    
+    testDomainToolsTagging: function() {
+        DTMonitor.api.get('/test/domaintools-tagging')
+            .then(result => {
+                DTMonitor.notification.show('DomainTools tagging test successful', 'success');
+            })
+            .catch(error => {
+                DTMonitor.notification.show('DomainTools tagging test failed: ' + error.message, 'error');
+            });
+    },
+    
+    filterFindings: function() {
+        const statusFilter = document.getElementById('statusFilter').value;
+        const riskFilter = document.getElementById('riskFilter').value;
+        const sourceFilter = document.getElementById('sourceFilter').value;
+        
+        // Apply filters to findings display
+        const findings = document.querySelectorAll('.finding-item');
+        findings.forEach(finding => {
+            let show = true;
+            
+            if (statusFilter !== 'all') {
+                const status = finding.dataset.status;
+                if (status !== statusFilter) show = false;
+            }
+            
+            if (riskFilter !== 'all') {
+                const risk = parseInt(finding.dataset.risk || '0');
+                switch (riskFilter) {
+                    case 'high':
+                        if (risk < 80) show = false;
+                        break;
+                    case 'medium':
+                        if (risk < 50 || risk >= 80) show = false;
+                        break;
+                    case 'low':
+                        if (risk >= 50) show = false;
+                        break;
+                }
+            }
+            
+            if (sourceFilter !== 'all') {
+                const source = finding.dataset.source;
+                if (source !== sourceFilter) show = false;
+            }
+            
+            finding.style.display = show ? 'block' : 'none';
+        });
+    }
+};
+
+// =============================================================================
+// SCHEDULER MANAGEMENT
+// =============================================================================
+
+DTMonitor.scheduler = {
+    start: async function() {
+        const button = document.querySelector('[onclick*="startScheduler"]');
+        DTMonitor.setLoading(button, true);
+        
+        try {
+            DTMonitor.notification.show('Starting scheduler...', 'info');
+            
+            const result = await DTMonitor.api.post('/scheduler/start');
+            
+            if (result.success) {
+                DTMonitor.notification.show('Scheduler started successfully', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(result.message || 'Failed to start scheduler');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to start scheduler. Please try again.');
+        } finally {
+            DTMonitor.setLoading(button, false);
+        }
+    },
+    
+    stop: async function() {
+        const button = document.querySelector('[onclick*="stopScheduler"]');
+        DTMonitor.setLoading(button, true);
+        
+        try {
+            DTMonitor.notification.show('Stopping scheduler...', 'info');
+            
+            const result = await DTMonitor.api.post('/scheduler/stop');
+            
+            if (result.success) {
+                DTMonitor.notification.show('Scheduler stopped successfully', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(result.message || 'Failed to stop scheduler');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to stop scheduler. Please try again.');
+        } finally {
+            DTMonitor.setLoading(button, false);
+        }
+    },
+    
+    refresh: function() {
+        DTMonitor.notification.show('Refreshing scheduler status...', 'info');
+        setTimeout(() => location.reload(), 500);
+    }
+};
+
+
+
+// =============================================================================
+// HASH MANAGEMENT
+// =============================================================================
+
+DTMonitor.hash = {
+    modal: null,
+    form: null,
+    
+    init: function() {
+        console.log('=== INITIALIZING HASH MANAGEMENT ===');
+        this.refreshReferences();
+        console.log('Hash management initialized - Modal:', !!this.modal, 'Form:', !!this.form);
+        this.loadHashes();
+    },
+    
+    refreshReferences: function() {
+        console.log('=== REFRESHING DOM REFERENCES ===');
+        
+        // Get fresh references to DOM elements with retry
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        while (attempts < maxAttempts) {
+            this.modal = document.getElementById('hashModal');
+            this.form = document.getElementById('hashForm');
+            
+            if (this.modal && this.form) {
+                console.log('✅ DOM references found successfully');
+                break;
+            }
+            
+            attempts++;
+            console.warn(`DOM references not found (attempt ${attempts}/${maxAttempts})`);
+            
+            if (attempts < maxAttempts) {
+                // Brief wait before retry
+                const wait = 100 * attempts;
+                console.log(`Waiting ${wait}ms before retry...`);
+                // Synchronous wait for DOM
+                const start = Date.now();
+                while (Date.now() - start < wait) {
+                    // Wait
+                }
+            }
+        }
+        
+        console.log('Final reference state - Modal:', !!this.modal, 'Form:', !!this.form);
+        
+        // Enhanced form event listener management
+        if (this.form) {
+            // Remove any existing listeners to prevent duplicates
+            if (this.boundSaveHandler) {
+                this.form.removeEventListener('submit', this.boundSaveHandler);
+                console.log('Removed existing form listener');
+            }
+            
+            // Create and bind new handler
+            this.boundSaveHandler = (event) => {
+                console.log('Form submit event triggered');
+                event.preventDefault();
+                event.stopPropagation();
+                return this.save(event);
+            };
+            
+            // Add event listener
+            this.form.addEventListener('submit', this.boundSaveHandler);
+            console.log('✅ Form event listener attached');
+            
+            // Also handle enter key in form fields
+            const formInputs = this.form.querySelectorAll('input, textarea');
+            formInputs.forEach(input => {
+                input.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        if (input.tagName.toLowerCase() !== 'textarea') {
+                            event.preventDefault();
+                            this.form.requestSubmit();
+                        }
+                    }
+                });
+            });
+            
+            console.log(`✅ Enter key handlers added to ${formInputs.length} form fields`);
+            
+        } else {
+            console.error('❌ Hash form not found in DOM');
+        }
+        
+        return { modal: !!this.modal, form: !!this.form };
+    },
+    
+    showAddModal: function() {
+        console.log('showAddModal called');
+        this.refreshReferences();
+        console.log('Modal element:', this.modal);
+        this.populateModal({}, 'Add Search Hash');
+        this.showModal();
+    },
+    
+    edit: async function(hashId) {
+        console.log('=== EDIT HASH FUNCTION CALLED ===');
+        console.log('Hash ID:', hashId);
+        
+        if (!hashId) {
+            console.error('No hash ID provided to edit function');
+            DTMonitor.notification.show('Invalid hash ID', 'error');
+            return;
+        }
+        
+        // Always refresh references before starting
+        this.refreshReferences();
+        console.log('Modal available:', !!this.modal, 'Form available:', !!this.form);
+        
+        try {
+            DTMonitor.notification.show('Loading hash details...', 'info');
+            
+            // Try to get hash from API first
+            const response = await fetch(`/api/hash/get/${hashId}`);
+            console.log('API response status:', response.status);
+            
+            if (response.ok) {
+                const responseData = await response.json();
+                console.log('Raw API response:', responseData);
+                
+                // Handle both direct hash object and wrapped response
+                let hash;
+                if (responseData.hash) {
+                    // Response is wrapped: { success: true, hash: { ... } }
+                    hash = responseData.hash;
+                } else if (responseData.id) {
+                    // Response is direct hash object: { id: "2", name: "...", ... }
+                    hash = responseData;
+                } else {
+                    throw new Error('Invalid response format from API');
+                }
+                
+                console.log('Extracted hash data for editing:', hash);
+                this.populateModal(hash, 'Edit Search Hash');
+                this.showModal();
+                
+            } else {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to load hash details');
+            }
+        } catch (error) {
+            console.warn('API failed, attempting to use fallback data:', error);
+            
+            // Try to get hash data from currently loaded hashes as fallback
+            const hashGrid = document.getElementById('hashGrid');
+            const hashCard = hashGrid ? hashGrid.querySelector(`[data-hash-id="${hashId}"]`) : null;
+            
+            if (hashCard) {
+                // Extract data from the card for fallback editing
+                const hash = {
+                    id: hashId,
+                    name: hashCard.querySelector('.hash-name')?.textContent?.trim() || `Hash ${hashId}`,
+                    value: hashCard.querySelector('.hash-value code')?.textContent?.trim() || '',
+                    description: hashCard.querySelector('.hash-description p')?.textContent?.trim() || '',
+                    active: hashCard.classList.contains('active')
+                };
+                
+                console.log('Using fallback hash data:', hash);
+                this.populateModal(hash, 'Edit Search Hash');
+                this.showModal();
+                DTMonitor.notification.show('Editing hash (offline mode)', 'warning');
+            } else {
+                // Last resort: create minimal hash for editing
+                const hash = {
+                    id: hashId,
+                    name: `Hash ${hashId}`,
+                    value: '',
+                    description: 'Please update the hash details',
+                    active: true
+                };
+                
+                console.log('Using minimal hash data:', hash);
+                this.populateModal(hash, 'Edit Search Hash');
+                this.showModal();
+                DTMonitor.notification.show('Hash loaded for editing (limited data available)', 'warning');
+            }
+        }
+    },
+    
+    populateModal: function(hash, title) {
+        console.log('=== POPULATING MODAL ===');
+        console.log('Hash data:', hash);
+        console.log('Modal title:', title);
+        
+        // Always refresh references first
+        this.refreshReferences();
+        
+        if (!this.modal) {
+            console.error('Modal not found in populateModal');
+            DTMonitor.notification.show('Modal not available. Please refresh the page.', 'error');
+            return;
+        }
+        
+        // Set modal title
+        const titleElement = document.getElementById('modalTitle');
+        if (titleElement) {
+            titleElement.textContent = title;
+            console.log('Modal title set to:', title);
+        } else {
+            console.warn('modalTitle element not found');
+        }
+        
+        // Clear and reset form first
+        if (this.form) {
+            this.form.reset();
+            console.log('Form reset');
+        }
+        
+        // Map hash object properties to form fields correctly
+        const fieldMappings = {
+            'hashId': hash.id || '',
+            'hashName': hash.name || '',
+            'hashValue': hash.value || '',
+            'hashDescription': hash.description || '',
+            'hashActive': hash.active !== false
+        };
+        
+        console.log('Field mappings:', fieldMappings);
+        
+        // Populate form fields with validation
+        Object.entries(fieldMappings).forEach(([fieldId, value]) => {
+            const element = document.getElementById(fieldId);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = Boolean(value);
+                    console.log(`Set checkbox ${fieldId} to:`, Boolean(value));
+                } else {
+                    element.value = String(value);
+                    console.log(`Set field ${fieldId} to:`, String(value));
+                }
+            } else {
+                console.warn(`Form field ${fieldId} not found in DOM`);
+            }
+        });
+        
+        console.log('Modal population complete');
+    },
+    
+    save: async function(event) {
+        console.log('=== SAVE HASH FUNCTION CALLED ===');
+        
+        // Prevent any default form submission
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.log('Form submission prevented');
+        }
+        
+        // Ensure we have fresh references to DOM elements
+        this.refreshReferences();
+        
+        if (!this.modal) {
+            console.error('Modal not found during save - trying direct lookup');
+            this.modal = document.getElementById('hashModal');
+            if (!this.modal) {
+                DTMonitor.notification.show('Modal not available. Please refresh the page.', 'error');
+                return false;
+            }
+        }
+        
+        if (!this.form) {
+            console.error('Form not found during save - trying direct lookup');
+            this.form = document.getElementById('hashForm');
+            if (!this.form) {
+                DTMonitor.notification.show('Form not available. Please refresh the page.', 'error');
+                return false;
+            }
+        }
+        
+        console.log('Form and modal validated - proceeding with save');
+        
+        const submitButton = this.form.querySelector('button[type="submit"]');
+        const allButtons = this.modal.querySelectorAll('button');
+        
+        // Prevent multiple submissions
+        if (this.form.hasAttribute('data-saving')) {
+            console.log('Save already in progress, ignoring duplicate call');
+            return false;
+        }
+        
+        // Set saving state
+        this.form.setAttribute('data-saving', 'true');
+        
+        // Set loading state
+        if (submitButton) {
+            DTMonitor.setLoading(submitButton, true);
+        }
+        allButtons.forEach(btn => btn.disabled = true);
+        
+        try {
+            console.log('Collecting form data...');
+            
+            // Get form data with validation
+            const formData = new FormData(this.form);
+            const data = {
+                id: formData.get('hashId') || null,
+                name: (formData.get('hashName') || '').trim(),
+                value: (formData.get('hashValue') || '').trim(), 
+                description: (formData.get('hashDescription') || '').trim(),
+                active: formData.has('hashActive') && formData.get('hashActive') === 'on'
+            };
+            
+            console.log('Form data collected:', {
+                ...data,
+                isEdit: !!data.id,
+                nameLength: data.name.length,
+                valueLength: data.value.length
+            });
+            
+            // Enhanced client-side validation
+            const validationErrors = [];
+            
+            if (!data.name) {
+                validationErrors.push('Hash name is required');
+            } else if (data.name.length < 2) {
+                validationErrors.push('Hash name must be at least 2 characters long');
+            } else if (data.name.length > 100) {
+                validationErrors.push('Hash name cannot exceed 100 characters');
+            }
+            
+            if (!data.value) {
+                validationErrors.push('Search pattern is required');
+            } else if (data.value.length < 1) {
+                validationErrors.push('Search pattern cannot be empty');
+            }
+            
+            if (data.description && data.description.length > 500) {
+                validationErrors.push('Description cannot exceed 500 characters');
+            }
+            
+            if (validationErrors.length > 0) {
+                throw new Error('Validation failed:\n• ' + validationErrors.join('\n• '));
+            }
+            
+            // Duplicate name checking with better error handling
+            const isEdit = !!data.id;
+            console.log('Operation type:', isEdit ? 'EDIT' : 'NEW');
+            
+            try {
+                console.log('Checking for duplicate names...');
+                const existingHashes = await DTMonitor.api.get('/hash/list');
+                console.log('Duplicate check API response:', existingHashes);
+                const hashList = existingHashes.hashes || existingHashes;
+                
+                if (Array.isArray(hashList)) {
+                    console.log(`Checking ${hashList.length} existing hashes for duplicates`);
+                    const duplicateName = hashList.find(h => {
+                        const isSameHash = isEdit && String(h.id) === String(data.id);
+                        const isSameName = h.name.toLowerCase().trim() === data.name.toLowerCase().trim();
+                        console.log(`Hash ${h.id}: name="${h.name}", isSameHash=${isSameHash}, isSameName=${isSameName}`);
+                        return !isSameHash && isSameName;
+                    });
+                    
+                    if (duplicateName) {
+                        throw new Error(`❌ A hash with the name "${data.name}" already exists. Please choose a different name.`);
+                    }
+                    console.log('✅ No duplicate names found');
+                } else {
+                    console.warn('Hash list format unexpected, skipping duplicate check. Expected array, got:', typeof hashList, hashList);
+                }
+            } catch (duplicateError) {
+                if (duplicateError.message && duplicateError.message.includes('already exists')) {
+                    throw duplicateError; // Re-throw duplicate errors
+                }
+                console.warn('Could not check for duplicate names, continuing...', duplicateError);
+            }
+            
+            // Prepare API call
+            const endpoint = isEdit ? `/api/hash/update/${data.id}` : '/api/hash/add';
+            const method = isEdit ? 'PUT' : 'POST';
+            
+            console.log('Making API call:', method, endpoint);
+            DTMonitor.notification.show(`${isEdit ? 'Updating' : 'Creating'} hash...`, 'info');
+            
+            // Make API call with enhanced error handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            
+            const response = await fetch(endpoint, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            let result;
+            try {
+                result = await response.json();
+            } catch (parseError) {
+                console.error('Failed to parse API response:', parseError);
+                throw new Error('Server returned invalid response format');
+            }
+            
+            console.log('API response:', {
+                status: response.status,
+                ok: response.ok,
+                result: result
+            });
+            
+            if (response.ok && result.success) {
+                console.log('✅ Hash saved successfully');
+                DTMonitor.notification.show(`Hash ${isEdit ? 'updated' : 'created'} successfully`, 'success');
+                
+                // Close modal
+                this.closeModal();
+                
+                // Refresh hash list
+                try {
+                    console.log('Refreshing hash list...');
+                    await this.loadHashes();
+                    console.log('✅ Hash list refreshed successfully');
+                } catch (reloadError) {
+                    console.warn('Failed to reload hashes, falling back to page reload:', reloadError);
+                    DTMonitor.notification.show('Hash saved. Refreshing page...', 'info');
+                    setTimeout(() => location.reload(), 1500);
+                }
+                
+                return true;
+                
+            } else {
+                // Handle API errors
+                const errorMessage = result.message || `Failed to ${isEdit ? 'update' : 'create'} hash`;
+                console.error('API error:', errorMessage);
+                throw new Error(errorMessage);
+            }
+            
+        } catch (error) {
+            console.error('Save error:', error);
+            
+            // Handle specific error types
+            if (error.name === 'AbortError') {
+                DTMonitor.notification.show('Request timed out. Please check your connection and try again.', 'error');
+            } else if (error.message && error.message.includes('already exists')) {
+                // Duplicate name error
+                DTMonitor.notification.show(error.message, 'warning', 8000);
+            } else if (error.message && error.message.includes('Validation failed')) {
+                // Validation error
+                DTMonitor.notification.show(error.message.replace('Validation failed:\n', ''), 'warning', 6000);
+            } else {
+                // Generic error
+                DTMonitor.handleError(error, 'Failed to save hash. Please check your input and try again.');
+            }
+            
+            return false;
+            
+        } finally {
+            // Always clean up loading states
+            console.log('Cleaning up save operation...');
+            
+            this.form.removeAttribute('data-saving');
+            
+            if (submitButton) {
+                DTMonitor.setLoading(submitButton, false);
+            }
+            
+            allButtons.forEach(btn => btn.disabled = false);
+            
+            console.log('Save operation cleanup complete');
+        }
+    },
+    
+    delete: async function(hashId) {
+        const card = document.querySelector(`[data-hash-id="${hashId}"]`);
+        const hashName = card ? card.querySelector('.hash-name')?.textContent || `Hash ${hashId}` : `Hash ${hashId}`;
+        
+        if (!confirm(`Are you sure you want to delete "${hashName}"?\n\nThis action cannot be undone and will remove all associated findings and history.`)) {
+            return;
+        }
+        
+        // Add loading state to card
+        if (card) {
+            card.classList.add('loading');
+        }
+        
+        try {
+            DTMonitor.notification.show('Deleting hash...', 'info');
+            
+            const response = await fetch(`/api/hash/delete/${hashId}`, {
+                method: 'DELETE'
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                DTMonitor.notification.show('Hash deleted successfully', 'success');
+                
+                // Animate card removal
+                if (card) {
+                    card.style.transition = 'all 0.3s ease';
+                    card.style.transform = 'scale(0.8)';
+                    card.style.opacity = '0';
+                    setTimeout(() => {
+                        card.remove();
+                        
+                        // Check if no cards remain
+                        const container = document.getElementById('hashGrid');
+                        if (container && container.children.length === 0) {
+                            this.displayNoHashes();
+                        }
+                    }, 300);
+                }
+            } else {
+                throw new Error(result.message || 'Failed to delete hash');
+            }
+        } catch (error) {
+            console.warn('API not available for delete, showing mock success:', error);
+            
+            // Mock functionality for development
+            DTMonitor.notification.show('Hash deleted (demo mode)', 'success');
+            
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.transform = 'scale(0.8)';
+                card.style.opacity = '0';
+                setTimeout(() => {
+                    card.remove();
+                    
+                    // Check if no cards remain
+                    const container = document.getElementById('hashGrid');
+                    if (container && container.children.length === 0) {
+                        this.displayNoHashes();
+                    }
+                }, 300);
+            }
+        } finally {
+            // Remove loading state
+            if (card && card.parentNode) {
+                card.classList.remove('loading');
+            }
+        }
+    },
+    
+    toggle: async function(hashId) {
+        const card = document.querySelector(`[data-hash-id="${hashId}"]`);
+        if (!card) {
+            console.error('Hash card not found for ID:', hashId);
+            return;
+        }
+        
+        // Get current status from the card
+        const isCurrentlyActive = card.classList.contains('active');
+        const newStatus = !isCurrentlyActive;
+        
+        console.log(`Toggling hash ${hashId}: current=${isCurrentlyActive}, new=${newStatus}`);
+        
+        // Add updating class for animation
+        card.classList.add('updating');
+        
+        // Show loading state on button
+        const toggleBtn = card.querySelector('.toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.disabled = true;
+            // Store original content to restore later
+            toggleBtn.dataset.originalContent = toggleBtn.innerHTML;
+            toggleBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+        }
+        
+        try {
+            DTMonitor.notification.show(`${newStatus ? 'Activating' : 'Deactivating'} hash...`, 'info');
+            
+            const response = await fetch(`/api/hash/toggle/${hashId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    active: newStatus
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                console.log('Hash toggle successful, updating UI...');
+                this.updateCardStatus(card, newStatus, hashId);
+                
+                // Re-enable the button
+                if (toggleBtn) {
+                    toggleBtn.disabled = false;
+                }
+                
+                DTMonitor.notification.show(`Hash ${newStatus ? 'activated' : 'deactivated'} successfully`, 'success');
+            } else {
+                throw new Error(result.message || 'Failed to toggle hash status');
+            }
+        } catch (error) {
+            console.error('Hash toggle failed:', error);
+            DTMonitor.notification.show('Failed to toggle hash: ' + error.message, 'error');
+            
+            // Re-enable button on error
+            if (toggleBtn) {
+                toggleBtn.disabled = false;
+                this.updateHashToggleButton(toggleBtn, isCurrentlyActive);
+            }
+        } finally {
+            // Remove updating class after animation
+            setTimeout(() => {
+                card.classList.remove('updating');
+                
+                        // Debug: Check if event handlers are still attached
+        console.log('Card updated, checking event handlers...');
+        const updatedToggleBtn = card.querySelector('.toggle-btn');
+        if (updatedToggleBtn) {
+            console.log('Toggle button found, onclick attribute:', updatedToggleBtn.getAttribute('onclick'));
+            console.log('Toggle button disabled state:', updatedToggleBtn.disabled);
+            console.log('Toggle button classes:', updatedToggleBtn.className);
+        }
+            }, 600);
+        }
+    },
+    
+    updateCardStatus: function(card, newStatus, hashId) {
+        // Update card class - preserve base class and only toggle active/inactive
+        card.classList.remove('active', 'inactive');
+        card.classList.add(newStatus ? 'active' : 'inactive');
+        
+        // Update status icon with animation
+        const statusIcon = card.querySelector('.hash-status');
+        if (statusIcon) {
+            statusIcon.className = `hash-status ${newStatus ? 'active' : 'inactive'}`;
+            const icon = statusIcon.querySelector('i');
+            if (icon) {
+                icon.className = `fas ${newStatus ? 'fa-check-circle' : 'fa-pause-circle'}`;
+            }
+        }
+        
+        // Update toggle button
+        const toggleBtn = card.querySelector('.btn-toggle');
+        if (toggleBtn) {
+            toggleBtn.className = `btn btn-toggle toggle-btn ${newStatus ? 'active' : 'inactive'}`;
+            toggleBtn.title = `${newStatus ? 'Deactivate' : 'Activate'} Hash`;
+            
+            // Update icon and text without destroying event handlers
+            const icon = toggleBtn.querySelector('i');
+            if (icon) {
+                icon.className = `fas ${newStatus ? 'fa-pause' : 'fa-play'}`;
+            }
+            const textNode = toggleBtn.childNodes[1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ` ${newStatus ? 'Deactivate' : 'Activate'}`;
+            } else {
+                // Fallback if text node structure is different
+                const textSpan = toggleBtn.querySelector('.btn-text');
+                if (textSpan) {
+                    textSpan.textContent = newStatus ? 'Deactivate' : 'Activate';
+                }
+            }
+        }
+        
+        // Update top border color with transition
+        card.style.transition = 'all 0.3s ease';
+    },
+    
+    // Helper function to update hash toggle button text and icon
+    updateHashToggleButton: function(toggleBtn, isActive) {
+        if (isActive) {
+            toggleBtn.title = 'Deactivate Hash';
+            const icon = toggleBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-pause';
+            const textNode = toggleBtn.childNodes[1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ' Deactivate';
+            }
+        } else {
+            toggleBtn.title = 'Activate Hash';
+            const icon = toggleBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-play';
+            const textNode = toggleBtn.childNodes[1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ' Activate';
+            }
+        }
+    },
+    
+    showModal: function() {
+        console.log('=== SHOWING HASH MODAL ===');
+        
+        // Always refresh modal reference to ensure it's current
+        this.refreshReferences();
+        
+        if (!this.modal) {
+            console.error('Hash modal not found after refresh!');
+            DTMonitor.notification.show('Modal not found. Please refresh the page.', 'error');
+            return;
+        }
+        
+        console.log('Modal found, showing...', this.modal);
+        
+        // Ensure modal is properly displayed
+        this.modal.style.display = 'block';
+        this.modal.style.opacity = '1';
+        
+        // Focus first input after a small delay to ensure modal is rendered
+        setTimeout(() => {
+            const firstInput = this.modal.querySelector('input[type="text"], textarea');
+            if (firstInput) {
+                firstInput.focus();
+                console.log('Focused first input:', firstInput.id);
+            }
+        }, 150);
+        
+        console.log('Modal display set to block');
+    },
+    
+    closeModal: function() {
+        console.log('=== CLOSING HASH MODAL ===');
+        
+        // Always refresh modal reference
+        this.refreshReferences();
+        
+        if (!this.modal) {
+            console.warn('Modal not found when closing');
+            return;
+        }
+        
+        // Remove event handlers
+        if (this.modalKeyHandler) {
+            document.removeEventListener('keydown', this.modalKeyHandler);
+            this.modalKeyHandler = null;
+        }
+        
+        if (this.modalClickHandler) {
+            this.modal.removeEventListener('click', this.modalClickHandler);
+            this.modalClickHandler = null;
+        }
+        
+        // Hide modal
+        this.modal.style.display = 'none';
+        console.log('Modal hidden');
+        
+        // Remove modal-open class from body
+        document.body.classList.remove('modal-open');
+        
+        // Reset form if available
+        if (this.form) {
+            this.form.reset();
+            this.form.removeAttribute('data-saving');
+            console.log('Form reset');
+        }
+        
+        // Clear any loading states
+        const buttons = this.modal.querySelectorAll('button');
+        buttons.forEach(btn => {
+            DTMonitor.setLoading(btn, false);
+            btn.disabled = false;
+        });
+        
+        console.log('✅ Modal closed successfully');
+    },
+    
+    loadHashes: async function() {
+        console.log('Loading hashes...');
+        const container = document.getElementById('hashGrid');
+        if (!container) {
+            console.error('Hash grid container not found');
+            return;
+        }
+        
+        // Show loading state
+        container.innerHTML = '<div class="loading-state"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+        
+        try {
+            // Try API first with timeout protection
+            console.log('Trying API endpoint...');
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('API timeout')), 8000)
+            );
+            
+            const apiPromise = DTMonitor.api.get('/hash/list');
+            const hashes = await Promise.race([apiPromise, timeoutPromise]);
+            
+            console.log('API response:', hashes);
+            const hashList = hashes.hashes || hashes;
+            
+            // Display hashes
+            if (Array.isArray(hashList) && hashList.length > 0) {
+                container.innerHTML = hashList.map(hash => this.createHashCard(hash)).join('');
+                
+                // Set up event delegation for all hash card interactions
+                this.setupHashCardEventDelegation();
+            } else {
+                this.displayNoHashes();
+            }
+            
+        } catch (error) {
+            console.warn('API not available, trying JSON file:', error);
+            try {
+                console.log('Fetching search_hashes.json...');
+                const response = await fetch('/search_hashes.json', { 
+                    cache: 'no-cache',  // Prevent cache issues
+                    timeout: 5000 
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const hashes = await response.json();
+                console.log('JSON response:', hashes);
+                this.displayHashes(hashes);
+                
+            } catch (jsonError) {
+                console.warn('JSON file not available, using demo data:', jsonError);
+                // Show error state with retry button
+                container.innerHTML = `
+                    <div class="error-state">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h3>Failed to Load Hashes</h3>
+                        <p>Could not connect to the server. Please check your connection.</p>
+                        <button onclick="DTMonitor.hash.loadHashes()" class="btn btn-primary">
+                            <i class="fas fa-refresh"></i> Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    },
+    
+    displayHashes: function(hashData) {
+        const container = document.getElementById('hashGrid');
+        if (!container) return;
+        
+        // Handle both API response format {hashes: []} and direct array []
+        let hashes;
+        if (Array.isArray(hashData)) {
+            hashes = hashData;
+        } else if (hashData && hashData.hashes && Array.isArray(hashData.hashes)) {
+            hashes = hashData.hashes;
+        } else {
+            console.error('Invalid hash data format:', hashData);
+            this.displayNoHashes();
+            return;
+        }
+        
+        if (hashes.length === 0) {
+            this.displayNoHashes();
+            return;
+        }
+        
+        console.log(`Displaying ${hashes.length} hashes`);
+        container.innerHTML = hashes.map(hash => this.createHashCard(hash)).join('');
+        
+        // Debug: verify DTMonitor.hash.edit is accessible after DOM update
+        console.log('DTMonitor.hash.edit function:', typeof DTMonitor.hash.edit);
+        
+        // Force refresh references after DOM update
+        setTimeout(() => {
+            this.refreshReferences();
+            console.log('References refreshed after DOM update');
+        }, 100);
+        
+        // Add entrance animations
+        const cards = container.querySelectorAll('.hash-card');
+        cards.forEach((card, index) => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                DTMonitor.fadeIn(card);
+            }, index * 100);
+        });
+        
+        // Set up event delegation for all hash card interactions
+        this.setupHashCardEventDelegation();
+    },
+    
+    createHashCard: function(hash) {
+        return `
+            <div class="hash-card ${hash.active ? 'active' : 'inactive'}" data-hash-id="${hash.id}">
+                <div class="hash-card-header">
+                    <div class="hash-status ${hash.active ? 'active' : 'inactive'}">
+                        <i class="fas ${hash.active ? 'fa-check-circle' : 'fa-pause-circle'}"></i>
+                    </div>
+                    <h3 class="hash-name">${this.escapeHtml(hash.name)}</h3>
+                </div>
+                
+                <div class="hash-card-content">
+                    <div class="hash-value">
+                        <label>Search Pattern:</label>
+                        <code>${this.escapeHtml(hash.value)}</code>
+                    </div>
+                    
+                    ${hash.description ? `
+                        <div class="hash-description">
+                            <label>Description:</label>
+                            <p>${this.escapeHtml(hash.description)}</p>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="hash-stats">
+                        <span class="stat">
+                            <i class="fas fa-clock"></i>
+                            Last Scan: ${hash.lastScan || 'Never'}
+                        </span>
+                        <span class="stat">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Findings: ${hash.findingsCount || 0}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="hash-card-actions">
+                    <button class="btn btn-toggle toggle-btn ${hash.active ? 'active' : 'inactive'}" 
+                            data-action="toggle" 
+                            data-hash-id="${hash.id}"
+                            title="${hash.active ? 'Deactivate' : 'Activate'} Hash">
+                        <i class="fas ${hash.active ? 'fa-pause' : 'fa-play'}"></i>
+                        ${hash.active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button class="btn btn-secondary btn-small edit-btn" 
+                            data-action="edit" 
+                            data-hash-id="${hash.id}"
+                            title="Edit Hash">
+                        <i class="fas fa-edit"></i>
+                        Edit
+                    </button>
+                    <button class="btn btn-info btn-small run-scan-btn" 
+                            data-action="run-scan" 
+                            data-hash-id="${hash.id}"
+                            title="Run Single Scan">
+                        <i class="fas fa-play"></i>
+                        Run Scan
+                    </button>
+                    <button class="btn btn-danger btn-small delete-btn" 
+                            data-action="delete" 
+                            data-hash-id="${hash.id}"
+                            title="Delete Hash">
+                        <i class="fas fa-trash"></i>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        `;
+        },
+    
+    displayDemoHashes: function() {
+        const demoHashes = [
+            { id: 1, name: 'Banking Keywords', value: 'bank,secure,login', description: 'Monitor for banking-related phishing attempts', active: true, lastScan: '14:45', findingsCount: 3 },
+            { id: 2, name: 'Brand Impersonation', value: 'microsoft,google,amazon', description: 'Track brand impersonation attempts', active: true, lastScan: '14:30', findingsCount: 2 },
+            { id: 3, name: 'Phishing Indicators', value: 'verify,urgent,suspend', description: 'Common phishing language patterns', active: true, lastScan: '14:15', findingsCount: 5 },
+            { id: 4, name: 'Social Media', value: 'facebook,instagram,twitter', description: 'Social media platform impersonation', active: false, lastScan: 'Never', findingsCount: 0 }
+        ];
+        
+        this.displayHashes(demoHashes);
+        
+        // Set up event delegation for demo hash cards
+        this.setupHashCardEventDelegation();
+    },
+    
+    displayNoHashes: function() {
+        const container = document.getElementById('hashGrid');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="no-hashes-message">
+                <div class="no-hashes-icon">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h3>No Search Hashes Found</h3>
+                <p>No search hashes have been configured yet. Create your first hash to start monitoring for threats.</p>
+                <button data-action="show-add-modal" class="btn btn-primary">
+                    <i class="fas fa-plus"></i>
+                    Create First Hash
+                </button>
+            </div>
+        `;
+        
+        // Set up event delegation for the no-hashes button
+        this.setupHashCardEventDelegation();
+    },
+    
+    escapeHtml: function(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    },
+    
+    // Rules management functions
+    showRulesModal: function() {
+        console.log('showRulesModal called');
+        // Close any other open modals first
+        this.closeAllModals();
+        const modal = document.getElementById('rulesModal');
+        if (modal) {
+            modal.style.display = 'block';
+            this.loadRules();
+            console.log('Rules modal opened');
+        } else {
+            console.error('Rules modal not found');
+        }
+    },
+
+    // Regex Guide Modal function
+    showRegexGuideModal: function() {
+        // Close any other open modals first
+        this.closeAllModals();
+        
+        const modal = document.getElementById('regexGuideModal');
+        if (modal) {
+            modal.style.display = 'block';
+        } else {
+            console.error('Regex guide modal not found');
+        }
+    },
+    
+    closeRulesModal: function() {
+        const modal = document.getElementById('rulesModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    },
+
+    closeRegexGuideModal: function() {
+        const modal = document.getElementById('regexGuideModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    },
+
+    // Close all modals to ensure only one is open at a time
+    closeAllModals: function() {
+        const modals = ['rulesModal', 'regexGuideModal', 'addRuleModal', 'hashModal'];
+        modals.forEach(modalId => {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        });
+    },
+    
+    loadRules: async function() {
+        try {
+            console.log('Loading ASRM rules...');
+            
+            const response = await DTMonitor.api.get('/asrm/list');
+            
+            if (response.success) {
+                const rules = response.rules || [];
+                console.log(`Loaded ${rules.length} ASRM rules:`, rules);
+                
+                const container = document.getElementById('rulesList');
+                if (container) {
+                    console.log('Found rules container:', container);
+                    container.innerHTML = '';
+                    
+                    if (rules.length === 0) {
+                        container.innerHTML = `
+                            <div class="no-rules-card">
+                                <div class="no-rules-content">
+                                    <h4>No Auto-Submission Rules Found</h4>
+                                    <p>No auto-submission rules have been configured yet. Rules allow you to automatically submit findings to PhishLabs based on conditions like risk score, keywords, or other criteria.</p>
+                                    <p>Use the "Add New Rule" button above to create your first rule.</p>
+                                </div>
+                            </div>
+                        `;
+            } else {
+                        // Use innerHTML approach like displayRules for consistency
+                        const allRuleCardsHtml = rules.map(rule => this.createRuleCard(rule)).join('');
+                        console.log('🔍 All rule cards HTML:', allRuleCardsHtml);
+                        
+                        container.innerHTML = allRuleCardsHtml;
+                        console.log('🔍 Container innerHTML after insertion:', container.innerHTML);
+                        
+                        // Initialize consistent dimensions for all rule cards after they're rendered
+                        const ruleCards = container.querySelectorAll('.rule-card');
+                        console.log(`🔍 Found ${ruleCards.length} rule cards in DOM after insertion:`, ruleCards);
+                        
+                        ruleCards.forEach(ruleCard => {
+                            const ruleId = ruleCard.dataset.ruleId;
+                            console.log(`🔍 Rule card ${ruleId} found:`, ruleCard);
+                            
+                            if (ruleId) {
+                                this.initializeRuleCardDimensions(ruleCard, ruleId);
+                            }
+                        });
+                        
+                        // Set up event delegation for rule card buttons
+                        this.setupRuleCardEventDelegation();
+                    }
+                } else {
+                    console.error('Rules container not found!');
+                }
+            } else {
+                console.error('Failed to load rules:', response.message);
+                DTMonitor.api.showToast('Failed to load rules: ' + response.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error loading rules:', error);
+            DTMonitor.api.showToast('Error loading rules: ' + error.message, 'error');
+        }
+    },
+
+    // Initialize rule card dimensions for consistency
+    initializeRuleCardDimensions: function(ruleCard, ruleId) {
+        // Wait for the card to be fully rendered
+        setTimeout(() => {
+            const dimensions = {
+                width: ruleCard.offsetWidth,
+                height: ruleCard.offsetHeight,
+                scrollWidth: ruleCard.scrollWidth,
+                scrollHeight: ruleCard.scrollHeight
+            };
+            
+            // Store original dimensions
+            ruleCard.dataset.originalDimensions = JSON.stringify(dimensions);
+            
+            // Set CSS custom properties
+            ruleCard.style.setProperty('--rule-card-height', dimensions.height + 'px');
+            ruleCard.style.setProperty('--rule-card-width', dimensions.width + 'px');
+            
+            console.log(`Initialized dimensions for rule card ${ruleId}:`, dimensions);
+        }, 100);
+    },
+    
+    displayRules: function(rules) {
+        const container = document.getElementById('rulesList');
+        if (!container) return;
+
+        if (!Array.isArray(rules) || rules.length === 0) {
+            container.innerHTML = `
+                <div class="no-rules-card">
+                    <div class="no-rules-content">
+                        <h4>No Auto-Submission Rules Found</h4>
+                        <p>No auto-submission rules have been configured yet. Rules allow you to automatically submit findings to PhishLabs based on conditions like risk score, keywords, or other criteria.</p>
+                        <p>Use the "Add New Rule" button above to create your first rule.</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = rules.map(rule => this.createRuleCard(rule)).join('');
+        
+        // Set up event delegation for rule interactions
+        this.setupRuleCardEventDelegation();
+    },
+    
+    displayDemoRules: function() {
+        const demoRules = [
+            {
+                id: 'demo-1',
+                name: 'High Risk Auto-Submit',
+                description: 'Automatically submit high-risk findings to PhishLabs',
+                active: true,
+                conditions: ['Risk Score > 80', 'Contains Banking Keywords'],
+                created_at: '2024-01-15T10:30:00Z'
+            },
+            {
+                id: 'demo-2',
+                name: 'Brand Protection',
+                description: 'Submit brand impersonation attempts',
+                active: false,
+                conditions: ['Brand Keywords', 'Suspicious TLD'],
+                created_at: '2024-01-14T09:15:00Z'
+            }
+        ];
+        this.displayRules(demoRules);
+    },
+    
+    createRuleCard: function(rule) {
+        // Convert ASRM conditions array to human-readable strings
+        const conditions = Array.isArray(rule.conditions) ? 
+            rule.conditions.map(c => {
+                if (typeof c === 'object' && c.field && c.operator && c.value) {
+                    return `${c.field} ${c.operator} ${c.value}`;
+                }
+                return typeof c === 'string' ? c : JSON.stringify(c);
+            }) : [];
+        
+        const createdDate = rule.created_at ? new Date(rule.created_at).toLocaleDateString() : 'Unknown';
+        const isEnabled = rule.enabled !== undefined ? rule.enabled : rule.active;
+        
+        // Create description from rule data if not provided
+        const description = rule.description || 
+            `Auto-submit to PhishLabs as ${rule.threat_type || 'Unknown'} threat for ${rule.brand || 'Unknown'} brand`;
+        
+        const ruleCardHtml = `
+            <div class="rule-card ${isEnabled ? 'active' : 'inactive'}" data-rule-id="${rule.id}">
+                <div class="rule-content">
+                    <div class="rule-header">
+                        <div class="rule-info">
+                            <h5>${this.escapeHtml(rule.name)}</h5>
+                            <p class="rule-description">${this.escapeHtml(description)}</p>
+                            <div class="rule-details">
+                                <span class="detail-badge">${this.escapeHtml(rule.brand || 'No Brand')}</span>
+                                <span class="detail-badge">${this.escapeHtml(rule.threat_type || 'Unknown Type')}</span>
+                                <span class="detail-badge">${this.escapeHtml(rule.case_type || 'Unknown Case')}</span>
+                            </div>
+                        </div>
+                        <div class="rule-status ${isEnabled ? 'active' : 'inactive'}">
+                            <i class="fas ${isEnabled ? 'fa-check-circle' : 'fa-pause-circle'}"></i>
+                            ${isEnabled ? 'Active' : 'Inactive'}
+                        </div>
+                    </div>
+                    
+                    <div class="rule-conditions">
+                        <h6>Conditions:</h6>
+                        <div class="condition-list">
+                            ${conditions.map(condition => `<span class="condition-tag">${this.escapeHtml(condition)}</span>`).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="rule-meta">
+                        <small class="text-muted">Created: ${createdDate}</small>
+                        ${rule.hash_name ? `<small class="text-muted"> | Hash: ${this.escapeHtml(rule.hash_name)}</small>` : ''}
+                    </div>
+                </div>
+                
+                <div class="rule-actions">
+                    <button class="rule-btn edit edit-rule-btn" 
+                            data-action="edit" 
+                            data-rule-id="${rule.id}"
+                            title="Edit Rule">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="rule-btn toggle toggle-rule-btn" 
+                            data-action="toggle" 
+                            data-rule-id="${rule.id}"
+                            title="${isEnabled ? 'Disable' : 'Enable'} Rule">
+                        <i class="fas ${isEnabled ? 'fa-pause' : 'fa-play'}"></i> ${isEnabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button class="rule-btn delete delete-rule-btn" 
+                            data-action="delete" 
+                            data-rule-id="${rule.id}"
+                            title="Delete Rule">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        console.log(`🔍 Generated rule card HTML for ${rule.id}:`, ruleCardHtml);
+        return ruleCardHtml;
+    },
+    
+    showAddRuleModal: function() {
+        console.log('showAddRuleModal called');
+        const modal = document.getElementById('addRuleModal');
+        if (modal) {
+            // Prepare all data BEFORE showing the modal
+            const form = modal.querySelector('form');
+            if (form) {
+                form.reset();
+                // Clear edit state
+                delete form.dataset.editingRuleId;
+            }
+            
+            // Clear conditions
+            this.clearConditions();
+            
+            // Load all required data
+            Promise.all([
+                this.loadHashesForRule(),
+                this.loadPhishLabsBrands(),
+                this.loadPhishLabsCaseTypes(),
+                this.loadThreatCategories()
+            ]).then(() => {
+                // Reset modal title and button text
+                const headerTitle = modal.querySelector('.header-text h2');
+                if (headerTitle) {
+                    headerTitle.textContent = 'Add New Auto-Submission Rule';
+                }
+                
+                const submitBtn = modal.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    const btnText = submitBtn.querySelector('span');
+                    if (btnText) btnText.textContent = 'Create Rule';
+                }
+                
+                // NOW show the modal after all data is prepared
+                modal.style.display = 'block';
+                console.log('Add rule modal opened smoothly');
+            }).catch(error => {
+                console.error('Failed to load modal data:', error);
+                // Show modal anyway but with error
+                modal.style.display = 'block';
+                DTMonitor.api.showToast('Some data failed to load, but modal is available', 'warning');
+            });
+        } else {
+            console.error('Add rule modal not found');
+        }
+    },
+    
+    closeRuleModal: function() {
+        const modal = document.getElementById('addRuleModal');
+        if (modal) {
+            modal.style.display = 'none';
+            // Reset form
+            const form = modal.querySelector('form');
+            if (form) {
+                form.reset();
+                // Clear edit state
+                delete form.dataset.editingRuleId;
+            }
+            // Clear conditions
+            this.clearConditions();
+            
+            // Reset modal title and button text
+            const headerTitle = modal.querySelector('.header-text h2');
+            if (headerTitle) {
+                headerTitle.textContent = 'Add New Auto-Submission Rule';
+            }
+            
+            const submitBtn = modal.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                const btnText = submitBtn.querySelector('span');
+                if (btnText) btnText.textContent = 'Save Rule';
+            }
+            
+            console.log('Add rule modal closed and reset');
+        }
+    },
+    
+    loadHashesForRule: async function() {
+        try {
+            const response = await fetch('/search_hashes.json');
+            const hashes = await response.json();
+            const select = document.getElementById('ruleHash');
+            if (select && Array.isArray(hashes)) {
+                select.innerHTML = '<option value="">Select Hash</option>';
+                hashes.forEach(hash => {
+                    const option = document.createElement('option');
+                    option.value = hash.id;
+                    option.textContent = hash.name;
+                    select.appendChild(option);
+                });
+                console.log(`Loaded ${hashes.length} hashes for rule creation`);
+            }
+        } catch (error) {
+            console.warn('Failed to load hashes for rule:', error);
+        }
+    },
+    
+    loadPhishLabsBrands: async function() {
+        try {
+            const response = await fetch('/api/phishlabs/brands');
+            const brands = await response.json();
+            const select = document.getElementById('ruleBrand');
+            if (select && Array.isArray(brands)) {
+                select.innerHTML = '<option value="">Select Brand</option>';
+                brands.forEach(brand => {
+                    const option = document.createElement('option');
+                    option.value = brand.id || brand.brandId;
+                    option.textContent = brand.name || brand.brandName;
+                    select.appendChild(option);
+                });
+                console.log(`Loaded ${brands.length} brands from PhishLabs`);
+            }
+        } catch (error) {
+            console.warn('Failed to load PhishLabs brands:', error);
+            // Fallback - show message
+            const select = document.getElementById('ruleBrand');
+            if (select) {
+                select.innerHTML = '<option value="">PhishLabs brands unavailable</option>';
+            }
+        }
+    },
+    
+    loadPhishLabsCaseTypes: async function() {
+        // Use static case types for consistent behavior
+        // PhishLabs API case types may not match our expected "threat"/"domain" values
+        const select = document.getElementById('ruleCaseType');
+        if (select) {
+            select.innerHTML = `
+                <option value="">Select Case Type</option>
+                <option value="threat">Threat Case</option>
+                <option value="domain">Domain Case</option>
+            `;
+            console.log('Loaded static case types for rule creation');
+        }
+    },
+    
+    loadThreatCategories: function() {
+        // Load static threat categories from constants
+        const threatCategories = {
+            '1201': 'Domain without Content',
+            '1229': 'Redirects to your Website',
+            '1208': 'Corporate logo',
+            '1204': 'Parked Domain',
+            '1213': 'Content Related to your Organization',
+            '1205': 'Content Unrelated to your Organization',
+            '1209': 'Content Related to your Industry',
+            '1210': 'Monetized links',
+            '1219': 'Malicious Activity',
+            '1222': 'Redirects to Third Party',
+            '1228': 'Redirects to Competitor',
+            '1224': 'Content Unavailable - Site Login Required',
+            '1211': 'Adult content',
+            '1221': 'Phishing',
+            '1233': 'Cryptocurrency Scam',
+            '0': 'Unknown'
+        };
+        
+        const select = document.getElementById('ruleThreatCategory');
+        if (select) {
+            select.innerHTML = '<option value="">Select Threat Category</option>';
+            Object.entries(threatCategories).forEach(([code, name]) => {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+            console.log('Loaded threat categories from constants');
+        }
+    },
+    
+    clearConditions: function() {
+        const container = document.getElementById('conditionsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="no-conditions-message">
+                    <i class="fas fa-info-circle"></i>
+                    <span>No conditions added yet. Click "Add Condition" to define when this rule should trigger.</span>
+                </div>
+            `;
+        }
+    },
+    
+    handleCaseTypeChange: function() {
+        const caseTypeSelect = document.getElementById('ruleCaseType');
+        const threatTypeGroup = document.getElementById('threatTypeGroup');
+        const threatCategoryGroup = document.getElementById('threatCategoryGroup');
+        
+        if (!caseTypeSelect) return;
+        
+        const selectedValue = caseTypeSelect.value;
+        
+        // Hide both groups initially
+        if (threatTypeGroup) threatTypeGroup.style.display = 'none';
+        if (threatCategoryGroup) threatCategoryGroup.style.display = 'none';
+        
+        // Show appropriate group based on case type
+        if (selectedValue === 'threat') {
+            if (threatTypeGroup) threatTypeGroup.style.display = 'block';
+            this.loadThreatTypes();
+        } else if (selectedValue === 'domain') {
+            if (threatCategoryGroup) threatCategoryGroup.style.display = 'block';
+        }
+        
+        console.log('Case type changed to:', selectedValue);
+    },
+    
+    loadThreatTypes: async function() {
+        try {
+            const response = await fetch('/api/phishlabs/threat-types');
+            const threatTypes = await response.json();
+            const select = document.getElementById('ruleThreatType');
+            if (select && Array.isArray(threatTypes)) {
+                select.innerHTML = '<option value="">Select Threat Type</option>';
+                threatTypes.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type.id || type.threatTypeId;
+                    option.textContent = type.name || type.threatTypeName;
+                    select.appendChild(option);
+                });
+                console.log(`Loaded ${threatTypes.length} threat types from PhishLabs API`);
+            }
+        } catch (error) {
+            console.error('Failed to load PhishLabs threat types:', error);
+            // No fallback - threat types must come from PhishLabs API
+            const select = document.getElementById('ruleThreatType');
+            if (select) {
+                select.innerHTML = '<option value="">PhishLabs threat types unavailable</option>';
+                select.disabled = true;
+            }
+        }
+    },
+    
+    addCondition: function() {
+        const container = document.getElementById('conditionsContainer');
+        if (!container) return;
+        
+        // Remove no-conditions message if it exists
+        const noConditionsMsg = container.querySelector('.no-conditions-message');
+        if (noConditionsMsg) {
+            noConditionsMsg.remove();
+        }
+        
+        // Check if this is the first condition
+        const existingConditions = container.querySelectorAll('.condition-item');
+        const isFirstCondition = existingConditions.length === 0;
+        
+        const conditionId = 'condition_' + Date.now();
+        
+        // Build condition HTML with logical operator for non-first conditions
+        let conditionHtml = '';
+        
+        if (!isFirstCondition) {
+            conditionHtml += `
+                <div class="logical-operator" data-condition-id="${conditionId}">
+                    <select name="logical_operator_${conditionId}" required>
+                        <option value="AND">AND</option>
+                        <option value="OR">OR</option>
+                    </select>
+                    <span class="operator-label">Logical Operator</span>
+                </div>
+            `;
+        }
+        
+        conditionHtml += `
+            <div class="condition-item" data-condition-id="${conditionId}">
+                <div class="condition-field">
+                    <label>Field</label>
+                    <select name="condition_field_${conditionId}" required id="field_select_${conditionId}">
+                        <option value="">Loading fields...</option>
+                    </select>
+                </div>
+                <div class="condition-operator">
+                    <label>Operator</label>
+                    <select name="condition_operator_${conditionId}" required>
+                        <option value="">Select Operator</option>
+                    </select>
+                </div>
+                <div class="condition-value">
+                    <label>Value</label>
+                    <input type="text" name="condition_value_${conditionId}" placeholder="Enter value(s)" required>
+                </div>
+                <button type="button" class="condition-remove" onclick="DTMonitor.hash.removeCondition('${conditionId}')" title="Remove Condition">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+        
+        container.insertAdjacentHTML('beforeend', conditionHtml);
+        
+        // Load field options for the new condition
+        this.loadFieldOptions(conditionId);
+        
+        console.log('Added condition:', conditionId, 'Is first:', isFirstCondition);
+    },
+    
+    removeCondition: function(conditionId) {
+        // Remove both the logical operator and condition
+        const logicalOperator = document.querySelector(`.logical-operator[data-condition-id="${conditionId}"]`);
+        const condition = document.querySelector(`.condition-item[data-condition-id="${conditionId}"]`);
+        
+        if (logicalOperator) {
+            logicalOperator.remove();
+        }
+        if (condition) {
+            condition.remove();
+        }
+        
+        // Check if no conditions remain
+        const container = document.getElementById('conditionsContainer');
+        const remainingConditions = container.querySelectorAll('.condition-item');
+        if (remainingConditions.length === 0) {
+            this.clearConditions();
+        }
+        
+        console.log('Removed condition:', conditionId);
+    },
+    
+    saveRule: async function(event) {
+        event.preventDefault();
+        
+        try {
+            // Collect form data
+            const formData = new FormData(event.target);
+            const conditions = this.collectConditions();
+            
+            if (conditions.length === 0) {
+                DTMonitor.notification.show('Please add at least one condition for the rule', 'error');
+                return;
+            }
+            
+            const ruleData = {
+                name: formData.get('ruleName'),
+                hash_id: formData.get('ruleHash'),
+                case_type: formData.get('ruleCaseType'),
+                brand: formData.get('ruleBrand'),
+                threat_type: formData.get('ruleThreatType') || '',
+                threat_category: formData.get('ruleThreatCategory') || '',
+                conditions: conditions,
+                enabled: true
+            };
+            
+            // Check if we're editing an existing rule
+            const editingRuleId = event.target.dataset.editingRuleId;
+            
+            let response;
+            let successMessage;
+            
+            if (editingRuleId) {
+                // Update existing rule
+                response = await DTMonitor.api.put(`/asrm/update/${editingRuleId}`, ruleData);
+                successMessage = 'Rule updated successfully';
+            } else {
+                // Create new rule
+                response = await DTMonitor.api.post('/asrm/add', ruleData);
+                successMessage = 'Rule created successfully';
+            }
+            
+            if (response.success) {
+                DTMonitor.notification.show(successMessage, 'success');
+                this.closeRuleModal();
+                
+                // Add immediate UI feedback instead of full reload
+                if (editingRuleId) {
+                    // For updates, reload the rules to show changes
+                    this.loadRules();
+                } else {
+                    // For new rules, add the new rule card immediately
+                    this.addNewRuleCard(response.rule || response);
+                }
+            } else {
+                throw new Error(response.message || 'Failed to save rule');
+            }
+        } catch (error) {
+            console.error('Error saving rule:', error);
+            DTMonitor.notification.show('Failed to save rule: ' + error.message, 'error');
+        }
+    },
+    
+    collectConditions: function() {
+        const conditions = [];
+        const conditionItems = document.querySelectorAll('.condition-item');
+        
+        conditionItems.forEach((item, index) => {
+            const conditionId = item.dataset.conditionId;
+            const field = item.querySelector(`[name="condition_field_${conditionId}"]`).value;
+            const operator = item.querySelector(`[name="condition_operator_${conditionId}"]`).value;
+            const value = item.querySelector(`[name="condition_value_${conditionId}"]`).value;
+            
+            if (field && operator && value) {
+                const condition = {
+                    field: field,
+                    operator: operator,
+                    value: value
+                };
+                
+                // Add logical operator for all conditions except the first
+                if (index > 0) {
+                    const logicalOperatorElement = document.querySelector(`.logical-operator[data-condition-id="${conditionId}"] select`);
+                    if (logicalOperatorElement) {
+                        condition.logic = logicalOperatorElement.value || 'AND';
+                    } else {
+                        condition.logic = 'AND'; // Default fallback
+                    }
+                }
+                
+                conditions.push(condition);
+            }
+        });
+        
+        return conditions;
+    },
+    
+    loadFieldOptions: async function(conditionId) {
+        try {
+            const response = await fetch('/api/asrm/field-options');
+            const data = await response.json();
+            
+            if (data.success && data.fields) {
+                const select = document.getElementById(`field_select_${conditionId}`);
+                if (select) {
+                    select.innerHTML = '<option value="">Select Field</option>';
+                    
+                    data.fields.forEach(field => {
+                        const option = document.createElement('option');
+                        option.value = field.key;
+                        option.textContent = field.display_name;
+                        option.dataset.type = field.type;
+                        option.dataset.operatorType = field.operator_type || field.type;
+                        option.dataset.defaultOperator = field.default_operator;
+                        select.appendChild(option);
+                    });
+                    
+                    // Add event listener to update operators when field changes
+                    select.addEventListener('change', (e) => {
+                        const selectedOption = e.target.selectedOptions[0];
+                        if (selectedOption && selectedOption.dataset.operatorType) {
+                            this.loadOperatorOptions(conditionId, selectedOption.dataset.operatorType, selectedOption.dataset.defaultOperator);
+                        }
+                    });
+                    
+                    console.log(`Loaded ${data.fields.length} field options for condition ${conditionId}`);
+                }
+            } else {
+                console.error('Failed to load field options:', data.message);
+                // Fallback to basic options
+                this.loadBasicFieldOptions(conditionId);
+            }
+        } catch (error) {
+            console.error('Error loading field options:', error);
+            // Fallback to basic options
+            this.loadBasicFieldOptions(conditionId);
+        }
+    },
+    
+    loadOperatorOptions: async function(conditionId, operatorType, defaultOperator) {
+        try {
+            const response = await fetch(`/api/asrm/operators/${operatorType}`);
+            const data = await response.json();
+            
+            if (data.success && data.operators) {
+                const select = document.querySelector(`select[name="condition_operator_${conditionId}"]`);
+                if (select) {
+                    select.innerHTML = '<option value="">Select Operator</option>';
+                    
+                    data.operators.forEach(operator => {
+                        const option = document.createElement('option');
+                        option.value = operator.value;
+                        option.textContent = operator.label;
+                        option.title = operator.description;
+                        select.appendChild(option);
+                    });
+                    
+                    // Set default operator if provided
+                    if (defaultOperator) {
+                        select.value = defaultOperator;
+                    }
+                    
+                    console.log(`Loaded ${data.operators.length} operators for type ${operatorType} in condition ${conditionId}`);
+                }
+            } else {
+                console.error('Failed to load operator options:', data.message);
+                this.loadBasicOperatorOptions(conditionId);
+            }
+        } catch (error) {
+            console.error('Error loading operator options:', error);
+            this.loadBasicOperatorOptions(conditionId);
+        }
+    },
+
+    loadBasicOperatorOptions: function(conditionId) {
+        // Fallback with basic operator options
+        const select = document.querySelector(`select[name="condition_operator_${conditionId}"]`);
+        if (select) {
+            select.innerHTML = `
+                <option value="">Select Operator</option>
+                <option value=">=">>= (greater than or equal)</option>
+                <option value=">">> (greater than)</option>
+                <option value="==">=</option>
+                <option value="<="><= (less than or equal)</option>
+                <option value="<">< (less than)</option>
+                <option value="!=">!= (not equals)</option>
+                <option value="contains">contains</option>
+                <option value="not_contains">does not contain</option>
+                <option value="equals">equals</option>
+                <option value="regex">matches regex</option>
+                <option value="not_regex">does not match regex</option>
+            `;
+        }
+    },
+
+    loadBasicFieldOptions: function(conditionId) {
+        // Fallback with basic field options
+        const select = document.getElementById(`field_select_${conditionId}`);
+        if (select) {
+            select.innerHTML = `
+                <option value="">Select Field</option>
+                <option value="min_risk_score" data-operator-type="number" data-default-operator=">=">Risk Score</option>
+                <option value="domain_keywords" data-operator-type="list" data-default-operator="contains">Domain Keywords</option>
+                <option value="title_keywords" data-operator-type="list" data-default-operator="contains">Title Keywords</option>
+                <option value="registrar" data-operator-type="string" data-default-operator="contains">Registrar</option>
+                <option value="ip_country" data-operator-type="exact_match" data-default-operator="=">IP Country</option>
+                <option value="name_servers" data-operator-type="list" data-default-operator="contains">Name Servers</option>
+            `;
+            
+            // Add event listener for fallback options too
+            select.addEventListener('change', (e) => {
+                const selectedOption = e.target.selectedOptions[0];
+                if (selectedOption && selectedOption.dataset.operatorType) {
+                    this.loadOperatorOptions(conditionId, selectedOption.dataset.operatorType, selectedOption.dataset.defaultOperator);
+                }
+            });
+        }
+    },
+    
+    // CRUD Operations for ASRM Rules
+    editRule: async function(ruleId) {
+        try {
+            console.log('Editing rule:', ruleId);
+            
+            // Fetch the rule data first
+            const response = await DTMonitor.api.get(`/asrm/get/${ruleId}`);
+            if (!response || response.error || !response.success) {
+                DTMonitor.api.showToast('Failed to load rule data for editing', 'error');
+                return;
+            }
+            
+            const rule = response.rule;
+            
+            // Get the modal reference
+            const modal = document.getElementById('addRuleModal');
+            if (!modal) {
+                DTMonitor.api.showToast('Edit modal not found', 'error');
+                return;
+            }
+            
+            // Prepare all data BEFORE showing the modal to prevent glitching
+            const form = modal.querySelector('form');
+            if (form) {
+                // Load dropdown options first
+                await this.loadHashesForRule();
+                await this.loadPhishLabsBrands();
+                await this.loadPhishLabsCaseTypes();
+                await this.loadThreatCategories();
+                
+                // Clear and populate conditions BEFORE showing modal
+                this.clearConditions();
+                if (rule.conditions && Array.isArray(rule.conditions)) {
+                    for (let i = 0; i < rule.conditions.length; i++) {
+                        const condition = rule.conditions[i];
+                        
+                        // Add a new condition
+                        this.addCondition();
+                        
+                        // Wait for the condition to be added to DOM
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
+                        // Get all condition items and find the one we just added
+                        const conditionItems = document.querySelectorAll('.condition-item');
+                        const currentCondition = conditionItems[conditionItems.length - 1];
+                        
+                        if (currentCondition) {
+                            const conditionId = currentCondition.dataset.conditionId;
+                            
+                            // Load field options first and wait for completion
+                            await this.loadFieldOptions(conditionId);
+                            
+                            // Wait a bit more for the field options to be fully loaded
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            
+                            // Populate field select
+                            const fieldSelect = document.getElementById(`field_select_${conditionId}`);
+                            if (fieldSelect) {
+                                fieldSelect.value = condition.field || '';
+                                // Trigger change event to update dependent fields
+                                fieldSelect.dispatchEvent(new Event('change'));
+                                
+                                // Wait for operator options to load after field change
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                                                        
+                            // Populate operator select
+                            const operatorSelect = document.querySelector(`select[name="condition_operator_${conditionId}"]`);
+                            if (operatorSelect) {
+                                operatorSelect.value = condition.operator || '';
+                            }
+                            
+                            // Populate value input
+                            const valueInput = document.querySelector(`input[name="condition_value_${conditionId}"]`);
+                            if (valueInput) {
+                                valueInput.value = condition.value || '';
+                            }
+                            
+                            // Set logical operator for non-first conditions
+                            if (i > 0 && condition.logic) {
+                                const logicSelect = document.querySelector(`select[name="logical_operator_${conditionId}"]`);
+                                if (logicSelect) {
+                                    logicSelect.value = condition.logic;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Set basic information
+                const nameField = document.getElementById('ruleName');
+                const hashField = document.getElementById('ruleHash');
+                const caseTypeField = document.getElementById('ruleCaseType');
+                const brandField = document.getElementById('ruleBrand');
+                const threatTypeField = document.getElementById('ruleThreatType');
+                
+                if (nameField) nameField.value = rule.name || '';
+                if (hashField) hashField.value = rule.hash_id || '';
+                if (caseTypeField) caseTypeField.value = rule.case_type || '';
+                if (brandField) brandField.value = rule.brand || '';
+                if (threatTypeField) threatTypeField.value = rule.threat_type || '';
+                
+                // Store rule ID for update
+                form.dataset.editingRuleId = ruleId;
+                
+                // Update modal title
+                const headerTitle = modal.querySelector('.header-text h2');
+                if (headerTitle) {
+                    headerTitle.textContent = `Edit Auto-Submission Rule: ${rule.name}`;
+                }
+                
+                // Update submit button text
+                const submitBtn = modal.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    const btnText = submitBtn.querySelector('span');
+                    if (btnText) btnText.textContent = 'Update Rule';
+                }
+            }
+            
+            // NOW show the modal after all data is prepared
+            modal.style.display = 'block';
+            console.log('Edit modal opened smoothly with rule data');
+            
+        } catch (error) {
+            console.error('Failed to edit rule:', error);
+            DTMonitor.api.showToast('Failed to load rule for editing', 'error');
+        }
+    },
+    
+    toggleRule: async function(ruleId) {
+        try {
+            console.log('Toggling rule:', ruleId);
+            
+            // Get the rule card element
+            const ruleCard = document.querySelector(`[data-rule-id="${ruleId}"]`);
+            if (!ruleCard) {
+                console.error('Rule card not found');
+                return;
+            }
+            
+            // Capture card dimensions BEFORE toggle
+            console.log('Card dimensions BEFORE toggle:', {
+                width: ruleCard.offsetWidth,
+                height: ruleCard.offsetHeight,
+                scrollWidth: ruleCard.scrollWidth,
+                scrollHeight: ruleCard.scrollHeight,
+                classes: ruleCard.className,
+                computedHeight: window.getComputedStyle(ruleCard).height,
+                computedWidth: window.getComputedStyle(ruleCard).width
+            });
+            
+            // Get current status from the card
+            const isCurrentlyEnabled = ruleCard.classList.contains('active');
+            const newStatus = !isCurrentlyEnabled;
+            
+            console.log(`Current status: ${isCurrentlyEnabled}, New status: ${newStatus}`);
+            
+            // Show loading state
+            const toggleBtn = ruleCard.querySelector('.toggle-rule-btn');
+            if (toggleBtn) {
+                toggleBtn.disabled = true;
+                // Store original content to restore later
+                toggleBtn.dataset.originalContent = toggleBtn.innerHTML;
+                toggleBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+            }
+            
+            // Make API call
+            const response = await DTMonitor.api.put(`/asrm/toggle/${ruleId}`);
+            
+            if (response.success) {
+                console.log('Toggle successful, updating UI...');
+                
+                // Update the UI immediately
+                this.updateRuleCardStatus(ruleId, response.rule);
+                
+                // Capture card dimensions AFTER toggle
+                setTimeout(() => {
+                    console.log('Card dimensions AFTER toggle:', {
+                        width: ruleCard.offsetWidth,
+                        height: ruleCard.offsetHeight,
+                        scrollWidth: ruleCard.scrollWidth,
+                        scrollHeight: ruleCard.scrollHeight,
+                        classes: ruleCard.className,
+                        computedHeight: window.getComputedStyle(ruleCard).height,
+                        computedWidth: window.getComputedStyle(ruleCard).width
+                    });
+                }, 100);
+                
+                // Re-enable the button
+                if (toggleBtn) {
+                    toggleBtn.disabled = false;
+                }
+                
+                // Show success message
+                const status = response.rule.enabled ? 'enabled' : 'disabled';
+                DTMonitor.api.showToast(`Rule ${status} successfully`, 'success');
+                
+            } else {
+                throw new Error(response.message || 'Failed to toggle rule');
+            }
+            
+        } catch (error) {
+            console.error('Failed to toggle rule:', error);
+            DTMonitor.api.showToast('Failed to toggle rule: ' + error.message, 'error');
+            
+            // Re-enable the button on error
+            const ruleCard = document.querySelector(`[data-rule-id="${ruleId}"]`);
+            if (ruleCard) {
+                const toggleBtn = ruleCard.querySelector('.toggle-rule-btn');
+                if (toggleBtn) {
+                    toggleBtn.disabled = false;
+                    this.updateToggleButtonText(toggleBtn, ruleCard.classList.contains('active'));
+                }
+            }
+        }
+    },
+
+    // Function to update rule card status after toggle
+    updateRuleCardStatus: function(ruleId, updatedRule) {
+        const ruleCard = document.querySelector(`[data-rule-id="${ruleId}"]`);
+        if (!ruleCard) {
+            console.warn('Rule card not found, reloading rules');
+            this.loadRules();
+            return;
+        }
+        
+        console.log('Updating rule card status:', updatedRule);
+
+        // Set up MutationObserver to monitor style changes
+        this.setupRuleCardStyleObserver(ruleCard, ruleId);
+
+        // Update the card's main CSS class
+        if (updatedRule.enabled) {
+            ruleCard.classList.remove('inactive');
+            ruleCard.classList.add('active');
+        } else {
+            ruleCard.classList.remove('active');
+            ruleCard.classList.add('inactive');
+        }
+
+        // Force consistent dimensions after state change
+        this.forceRuleCardConsistentDimensions(ruleCard, ruleId);
+
+        // Update the toggle button
+        const toggleBtn = ruleCard.querySelector('.toggle-rule-btn');
+        if (toggleBtn) {
+            toggleBtn.disabled = false;
+            this.updateToggleButtonText(toggleBtn, updatedRule.enabled);
+        }
+
+        // Update the status indicator
+        const statusIndicator = ruleCard.querySelector('.rule-status');
+        if (statusIndicator) {
+            if (updatedRule.enabled) {
+                statusIndicator.textContent = 'Active';
+                statusIndicator.className = 'rule-status active';
+                const icon = statusIndicator.querySelector('i');
+                if (icon) icon.className = 'fas fa-check-circle';
+            } else {
+                statusIndicator.textContent = 'Inactive';
+                statusIndicator.className = 'rule-status inactive';
+                const icon = statusIndicator.querySelector('i');
+                if (icon) icon.className = 'fas fa-pause-circle';
+            }
+        }
+
+        // Update the edit button to always be enabled
+        const editBtn = ruleCard.querySelector('.edit-rule-btn');
+        if (editBtn) {
+            editBtn.disabled = false;
+            editBtn.title = 'Edit Rule';
+        }
+
+        console.log('Rule card status updated successfully');
+    },
+
+    // Force consistent dimensions on rule cards
+    forceRuleCardConsistentDimensions: function(ruleCard, ruleId) {
+        // Store original dimensions if not already stored
+        if (!ruleCard.dataset.originalDimensions) {
+            ruleCard.dataset.originalDimensions = JSON.stringify({
+                width: ruleCard.offsetWidth,
+                height: ruleCard.offsetHeight,
+                scrollWidth: ruleCard.scrollWidth,
+                scrollHeight: ruleCard.scrollHeight
+            });
+        }
+
+        // Get original dimensions
+        const originalDimensions = JSON.parse(ruleCard.dataset.originalDimensions);
+        
+        // Set CSS custom properties for consistent sizing
+        ruleCard.style.setProperty('--rule-card-height', originalDimensions.height + 'px');
+        ruleCard.style.setProperty('--rule-card-width', originalDimensions.width + 'px');
+        
+        // TEMPORARILY remove CSS classes that might be causing size changes
+        const originalClasses = ruleCard.className;
+        ruleCard.className = 'rule-card'; // Keep only base class
+        
+        // Apply forced dimensions using inline styles with !important equivalent
+        ruleCard.style.setProperty('width', originalDimensions.width + 'px', 'important');
+        ruleCard.style.setProperty('height', originalDimensions.height + 'px', 'important');
+        ruleCard.style.setProperty('min-height', '400px', 'important');
+        ruleCard.style.setProperty('max-width', '100%', 'important');
+        ruleCard.style.setProperty('flex-shrink', '0', 'important');
+        ruleCard.style.setProperty('flex-grow', '0', 'important');
+        
+        // Force content areas to maintain consistent sizing
+        const contentAreas = ruleCard.querySelectorAll('.rule-header, .rule-info, .rule-details, .rule-actions');
+        contentAreas.forEach(area => {
+            area.style.setProperty('width', '100%', 'important');
+            area.style.setProperty('max-width', '100%', 'important');
+            area.style.setProperty('flex-shrink', '0', 'important');
+        });
+
+        console.log(`Forced consistent dimensions for rule card ${ruleId}:`, originalDimensions);
+        
+        // Now restore the appropriate state class
+        setTimeout(() => {
+            if (ruleCard.classList.contains('active')) {
+                ruleCard.classList.add('active');
+            } else if (ruleCard.classList.contains('inactive')) {
+                ruleCard.classList.add('inactive');
+            }
+            
+            // Verify dimensions after forcing
+            const currentDimensions = {
+                width: ruleCard.offsetWidth,
+                height: ruleCard.offsetHeight,
+                scrollWidth: ruleCard.scrollWidth,
+                scrollHeight: ruleCard.scrollHeight
+            };
+            console.log(`Dimensions after forcing consistency for ${ruleId}:`, currentDimensions);
+            
+            // Check if dimensions are now consistent
+            if (Math.abs(currentDimensions.height - originalDimensions.height) > 5) {
+                console.warn(`⚠️ Height still inconsistent for ${ruleId}:`, {
+                    original: originalDimensions.height,
+                    current: currentDimensions.height,
+                    difference: currentDimensions.height - originalDimensions.height
+                });
+                
+                // Try one more aggressive approach - force dimensions again
+                this.forceDimensionsAggressively(ruleCard, ruleId, originalDimensions);
+            } else {
+                console.log(`✅ Dimensions now consistent for ${ruleId}`);
+            }
+        }, 50);
+    },
+
+    // Aggressive dimension forcing as fallback
+    forceDimensionsAggressively: function(ruleCard, ruleId, originalDimensions) {
+        console.log(`🔄 Trying aggressive dimension forcing for ${ruleId}`);
+        
+        // Remove ALL classes temporarily
+        const allClasses = ruleCard.className;
+        ruleCard.className = '';
+        
+        // Apply dimensions directly to the element
+        ruleCard.style.cssText = `
+            width: ${originalDimensions.width}px !important;
+            height: ${originalDimensions.height}px !important;
+            min-height: 400px !important;
+            max-width: 100% !important;
+            flex-shrink: 0 !important;
+            flex-grow: 0 !important;
+            padding: 24px !important;
+            margin: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            position: relative !important;
+            overflow: hidden !important;
+            border-radius: 8px !important;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1) !important;
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+        `;
+        
+        // Restore classes
+        setTimeout(() => {
+            ruleCard.className = allClasses;
+            
+            // Final verification
+            const finalDimensions = {
+                width: ruleCard.offsetWidth,
+                height: ruleCard.offsetHeight,
+                scrollWidth: ruleCard.scrollWidth,
+                scrollHeight: ruleCard.scrollHeight
+            };
+            
+            console.log(`Final dimensions after aggressive forcing for ${ruleId}:`, finalDimensions);
+            
+            if (Math.abs(finalDimensions.height - originalDimensions.height) > 5) {
+                console.error(`❌ Failed to maintain consistent dimensions for ${ruleId} even with aggressive approach`);
+            } else {
+                console.log(`✅ Aggressive approach successful for ${ruleId}`);
+            }
+        }, 100);
+    },
+
+    // Setup MutationObserver to monitor style changes on rule cards
+    setupRuleCardStyleObserver: function(ruleCard, ruleId) {
+        // Disconnect any existing observer for this card
+        if (ruleCard._styleObserver) {
+            ruleCard._styleObserver.disconnect();
+        }
+
+        // Create new observer
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                    console.log('The "style" attribute was modified.');
+                    console.log('Old style:', mutation.oldValue); // Requires attributeOldValue: true in config
+                    console.log('New style:', ruleCard.style.cssText);
+                    console.log('Rule ID:', ruleId);
+                    console.log('Card dimensions before:', {
+                        width: ruleCard.offsetWidth,
+                        height: ruleCard.offsetHeight,
+                        scrollWidth: ruleCard.scrollWidth,
+                        scrollHeight: ruleCard.scrollHeight
+                    });
+                    
+                    // Log computed styles that might affect sizing
+                    const computedStyle = window.getComputedStyle(ruleCard);
+                    console.log('Computed styles affecting size:', {
+                        boxSizing: computedStyle.boxSizing,
+                        width: computedStyle.width,
+                        height: computedStyle.height,
+                        padding: computedStyle.padding,
+                        margin: computedStyle.margin,
+                        border: computedStyle.border,
+                        display: computedStyle.display,
+                        position: computedStyle.position
+                    });
+                    
+                    // Check if any inline styles are causing size changes
+                    if (ruleCard.style.width || ruleCard.style.height) {
+                        console.warn('⚠️ Inline width/height detected that may cause size changes:', {
+                            inlineWidth: ruleCard.style.width,
+                            inlineHeight: ruleCard.style.height
+                        });
+                    }
+                }
+            });
+        });
+
+        // Start observing with attributeOldValue: true to capture old values
+        observer.observe(ruleCard, {
+            attributes: true,
+            attributeOldValue: true,
+            attributeFilter: ['style']
+        });
+
+        // Store observer reference on the card element
+        ruleCard._styleObserver = observer;
+
+        console.log(`Style observer set up for rule card ${ruleId}`);
+    },
+
+    // Cleanup function to remove style observers
+    cleanupRuleCardStyleObservers: function() {
+        const ruleCards = document.querySelectorAll('[data-rule-id]');
+        ruleCards.forEach(card => {
+            if (card._styleObserver) {
+                card._styleObserver.disconnect();
+                delete card._styleObserver;
+                console.log('Style observer cleaned up for rule card');
+            }
+        });
+    },
+
+    // Enable debugging mode for rule cards
+    enableRuleCardDebugging: function() {
+        const ruleCards = document.querySelectorAll('[data-rule-id]');
+        ruleCards.forEach(card => {
+            // Add debug class
+            card.classList.add('debug-sizing');
+            
+            // Add data attributes for debugging
+            card.setAttribute('data-dimensions', `${card.offsetWidth}x${card.offsetHeight}`);
+            
+            // Update dimensions on resize
+            const resizeObserver = new ResizeObserver((entries) => {
+                entries.forEach(entry => {
+                    const card = entry.target;
+                    card.setAttribute('data-dimensions', `${entry.contentRect.width}x${entry.contentRect.height}`);
+                    console.log(`Rule card ${card.dataset.ruleId} resized to:`, entry.contentRect);
+                });
+            });
+            
+            resizeObserver.observe(card);
+            card._resizeObserver = resizeObserver;
+            
+            console.log(`Debug mode enabled for rule card ${card.dataset.ruleId}`);
+        });
+        
+        console.log('Rule card debugging enabled for all cards');
+    },
+
+    // Disable debugging mode for rule cards
+    disableRuleCardDebugging: function() {
+        const ruleCards = document.querySelectorAll('[data-rule-id]');
+        ruleCards.forEach(card => {
+            // Remove debug class
+            card.classList.remove('debug-sizing');
+            
+            // Remove resize observer
+            if (card._resizeObserver) {
+                card._resizeObserver.disconnect();
+                delete card._resizeObserver;
+            }
+            
+            // Remove data attributes
+            card.removeAttribute('data-dimensions');
+        });
+        
+        console.log('Rule card debugging disabled for all cards');
+    },
+    
+    // Helper function to update toggle button text and icon
+    updateToggleButtonText: function(toggleBtn, isEnabled) {
+        if (isEnabled) {
+            toggleBtn.title = 'Disable Rule';
+            const icon = toggleBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-pause';
+            const textNode = toggleBtn.childNodes[1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ' Disable';
+            }
+        } else {
+            toggleBtn.title = 'Enable Rule';
+            const icon = toggleBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-play';
+            const textNode = toggleBtn.childNodes[1];
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                textNode.textContent = ' Enable';
+            }
+        }
+    },
+
+    // New function to remove a specific rule card immediately
+    removeRuleCard: function(ruleId) {
+        const ruleCard = document.querySelector(`[data-rule-id="${ruleId}"]`);
+        if (!ruleCard) return;
+        
+        // Add fade out animation
+        ruleCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        ruleCard.style.opacity = '0';
+        ruleCard.style.transform = 'scale(0.9)';
+        
+        // Remove after animation
+        setTimeout(() => {
+            ruleCard.remove();
+            
+            // Check if no rules remain and show no-rules message
+            const container = document.getElementById('rulesList');
+            if (container && container.children.length === 0) {
+                container.innerHTML = `
+                    <div class="no-rules-card">
+                        <div class="no-rules-content">
+                            <h4>No Auto-Submission Rules Found</h4>
+                            <p>No auto-submission rules have been configured yet. Rules allow you to automatically submit findings to PhishLabs based on conditions like risk score, keywords, or other criteria.</p>
+                            <p>Use the "Add New Rule" button above to create your first rule.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }, 300);
+    },
+    
+    // New function to add a rule card immediately without full reload
+    addNewRuleCard: function(newRule) {
+        const container = document.getElementById('rulesList');
+        if (!container) return;
+        
+        // Remove no-rules message if it exists
+        const noRulesCard = container.querySelector('.no-rules-card');
+        if (noRulesCard) {
+            noRulesCard.remove();
+        }
+        
+        // Create and add the new rule card
+        const ruleCardHtml = this.createRuleCard(newRule);
+        container.insertAdjacentHTML('beforeend', ruleCardHtml);
+        
+        // Add entrance animation to the new card
+        const newCard = container.lastElementChild;
+        if (newCard) {
+            newCard.style.opacity = '0';
+            newCard.style.transform = 'scale(0.9)';
+            newCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            
+            // Trigger animation
+            setTimeout(() => {
+                newCard.style.opacity = '1';
+                newCard.style.transform = 'scale(1)';
+            }, 50);
+        }
+    },
+    
+    // Delete rule functionality
+    deleteRule: async function(ruleId) {
+        try {
+            console.log('Deleting rule:', ruleId);
+            
+            if (!confirm('Are you sure you want to delete this rule? This action cannot be undone.')) {
+                return;
+            }
+            
+            const response = await DTMonitor.api.delete(`/asrm/delete/${ruleId}`);
+            if (response && response.success) {
+                DTMonitor.notification.show('Rule deleted successfully', 'success');
+                this.removeRuleCard(ruleId);
+            } else {
+                throw new Error(response?.message || 'Failed to delete rule');
+            }
+        } catch (error) {
+            console.error('Failed to delete rule:', error);
+            DTMonitor.notification.show('Failed to delete rule: ' + error.message, 'error');
+        }
+    },
+
+    // New function to update a rule card after editing
+    updateRuleCardFromResponse: function(ruleId, updatedRuleData) {
+        const ruleCard = document.querySelector(`[data-rule-id="${ruleId}"]`);
+        if (!ruleCard) {
+            // If card not found, just reload the rules
+            this.loadRules();
+            return;
+        }
+        
+        // Create new card HTML with updated data
+        const newCardHtml = this.createRuleCard(updatedRuleData);
+        
+        // Create a temporary container to hold the new card
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = newCardHtml;
+        const newCard = tempDiv.firstElementChild;
+        
+        // Add fade effect
+        newCard.style.opacity = '0';
+        newCard.style.transform = 'scale(0.95)';
+        newCard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        
+        // Replace the old card
+        ruleCard.parentNode.insertBefore(newCard, ruleCard);
+        ruleCard.remove();
+        
+        // Animate in the new card
+        setTimeout(() => {
+            newCard.style.opacity = '1';
+            newCard.style.transform = 'scale(1)';
+        }, 50);
+    },
+    
+    // Set up event delegation for rule card buttons
+    setupRuleCardEventDelegation: function() {
+        const container = document.getElementById('rulesList');
+        if (!container) return;
+        
+        // Remove any existing event listeners to prevent duplicates
+        if (container._ruleEventDelegationHandler) {
+            container.removeEventListener('click', container._ruleEventDelegationHandler);
+        }
+        
+        // Create event delegation handler
+        const eventHandler = (event) => {
+            const button = event.target.closest('.rule-btn');
+            if (!button) return;
+            
+            const action = button.dataset.action;
+            const ruleId = button.dataset.ruleId;
+            
+            if (!action || !ruleId) return;
+            
+            console.log(`Rule button clicked: ${action} for rule ${ruleId}`);
+            
+            // Prevent default and stop propagation
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Handle different actions
+            switch (action) {
+                case 'edit':
+                    this.editRule(ruleId);
+                    break;
+                case 'toggle':
+                    this.toggleRule(ruleId);
+                    break;
+                case 'delete':
+                    this.deleteRule(ruleId);
+                    break;
+                default:
+                    console.warn('Unknown action:', action);
+            }
+        };
+        
+        // Store reference to handler for cleanup
+        container._ruleEventDelegationHandler = eventHandler;
+        
+        // Add event listener
+        container.addEventListener('click', eventHandler);
+        
+        console.log('Rule card event delegation set up successfully');
+    },
+    
+    // Set up event delegation for hash card buttons
+    setupHashCardEventDelegation: function() {
+        const container = document.getElementById('hashGrid');
+        if (!container) return;
+        
+        // Remove any existing event listeners to prevent duplicates
+        if (container._hashEventDelegationHandler) {
+            container.removeEventListener('click', container._hashEventDelegationHandler);
+        }
+        
+        // Create event delegation handler
+        const eventHandler = (event) => {
+            const button = event.target.closest('.btn');
+            if (!button) return;
+            
+            const action = button.dataset.action;
+            const hashId = button.dataset.hashId;
+            
+            if (!action || !hashId) return;
+            
+            console.log(`Hash button clicked: ${action} for hash ${hashId}`);
+            
+            // Prevent default and stop propagation
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Handle different actions
+            switch (action) {
+                case 'edit':
+                    this.edit(hashId);
+                    break;
+                case 'toggle':
+                    this.toggle(hashId);
+                    break;
+                case 'delete':
+                    this.delete(hashId);
+                    break;
+                case 'run-scan':
+                    DTMonitor.scanning.runSingle(hashId);
+                    break;
+                case 'show-add-modal':
+                    this.showAddModal();
+                    break;
+                default:
+                    console.warn('Unknown hash action:', action);
+            }
+        };
+        
+        // Store reference to handler for cleanup
+        container._hashEventDelegationHandler = eventHandler;
+        
+        // Add event listener
+        container.addEventListener('click', eventHandler);
+        
+        console.log('Hash card event delegation set up successfully');
+        console.log('Container element:', container);
+        console.log('Event handler attached:', !!container._hashEventDelegationHandler);
+    },
+};
+
+// =============================================================================
+// FINDINGS MANAGEMENT
+// =============================================================================
+
+// DUPLICATE - COMMENTED OUT (Main definition is at line 4839)
+// If you need to recover this version, uncomment the entire block below.
+/*
+DTMonitor.findings = {
+    currentData: [],
+    filters: {},
+    
+    init: function() {
+        this.loadFindings();
+        this.initFilters();
+    },
+    
+    loadFindings: async function() {
+        try {
+            const findings = await DTMonitor.api.get('/findings/list');
+            this.currentData = findings;
+            this.displayFindings(findings);
+        } catch (error) {
+            console.warn('API not available, using window data:', error);
+            if (window.findingsData) {
+                this.currentData = window.findingsData;
+                this.displayFindings(window.findingsData);
+            } else {
+                this.displayNoFindings();
+            }
+        }
+    },
+    
+    updateStatus: async function(findingId, status) {
+        try {
+            DTMonitor.notification.show(`Updating finding status to ${status}...`, 'info');
+            
+            const result = await DTMonitor.api.post('/findings/update_status', {
+                finding_id: findingId,
+                status: status
+            });
+            
+            if (result.success) {
+                DTMonitor.notification.show(`Finding ${status} successfully`, 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                throw new Error(result.message || 'Failed to update status');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to update finding status. Please try again.');
+        }
+    },
+    
+    submitToPhishLabs: async function(findingId) {
+        try {
+            // Check if finding is already approved or rejected
+            const row = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+            if (!row) {
+                DTMonitor.notification.show('Finding not found', 'error');
+                return;
+            }
+            
+            const status = row.dataset.status;
+            if (status === 'approved') {
+                DTMonitor.notification.show('Cannot submit already approved finding', 'warning');
+                return;
+            }
+            
+            if (status === 'rejected') {
+                DTMonitor.notification.show('Cannot submit rejected finding', 'warning');
+                return;
+            }
+            
+            DTMonitor.notification.show('Submitting to PhishLabs...', 'info');
+            
+            const result = await DTMonitor.api.post('/phishlabs/submit', {
+                finding_id: findingId
+            });
+            
+            if (result.success) {
+                DTMonitor.notification.show('Successfully submitted to PhishLabs', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                throw new Error(result.message || 'Submission failed');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to submit to PhishLabs. Please try again.');
+        }
+    },
+    
+    exportToCSV: function() {
+        try {
+            DTMonitor.notification.show('Exporting findings to CSV...', 'info');
+            
+            const params = new URLSearchParams();
+            Object.entries(this.filters).forEach(([key, value]) => {
+                if (value && value !== 'all') {
+                    params.append(key, value);
+                }
+            });
+            
+            window.location.href = `/api/findings/export?${params.toString()}`;
+            DTMonitor.notification.show('CSV export started', 'success');
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to export findings.');
+        }
+    },
+    
+    initFilters: function() {
+        const filterElements = ['statusFilter', 'riskFilter', 'hashFilter'];
+        filterElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', DTMonitor.debounce(() => {
+                    this.applyFilters();
+                }, DTMonitor.config.debounceDelay));
+            }
+        });
+    },
+    
+    
+    displayFindings: function(findings) {
+        const container = document.getElementById('findingsContainer');
+        if (!container) return;
+        
+        if (!Array.isArray(findings) || findings.length === 0) {
+            this.displayNoFindings();
+            return;
+        }
+        
+        container.innerHTML = findings.map(finding => this.createFindingCard(finding)).join('');
+        
+        // Add entrance animations
+        const cards = container.querySelectorAll('.finding-card');
+        cards.forEach((card, index) => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                DTMonitor.fadeIn(card);
+            }, index * 50);
+        });
+    },
+    
+    createFindingCard: function(finding) {
+        const riskClass = finding.risk_score >= 80 ? 'high' : finding.risk_score >= 50 ? 'medium' : 'low';
+        
+        return `
+            <div class="finding-card ${finding.status}" data-finding-id="${finding.id}">
+                <div class="finding-header">
+                    <div class="finding-domain">
+                        <h3>${this.escapeHtml(finding.domain)}</h3>
+                        <span class="risk-badge risk-${riskClass}">
+                            Risk: ${finding.risk_score || 'Unknown'}
+                        </span>
+                    </div>
+                    <div class="finding-status status-${finding.status}">
+                        ${finding.status}
+                    </div>
+                </div>
+                
+                <div class="finding-content">
+                    <div class="finding-details">
+                        <div class="detail-item">
+                            <label>Hash:</label>
+                            <span>${this.escapeHtml(finding.hash_name || 'Unknown')}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Discovered:</label>
+                            <span>${this.formatDate(finding.discovered_date)}</span>
+                        </div>
+                        ${finding.registrar ? `
+                            <div class="detail-item">
+                                <label>Registrar:</label>
+                                <span>${this.escapeHtml(finding.registrar)}</span>
+                            </div>
+                        ` : ''}
+                        ${finding.country ? `
+                            <div class="detail-item">
+                                <label>Country:</label>
+                                <span>${this.escapeHtml(finding.country)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${finding.notes ? `
+                        <div class="finding-notes">
+                            <label>Notes:</label>
+                            <p>${this.escapeHtml(finding.notes)}</p>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div class="finding-actions">
+                    ${finding.status === 'pending' ? `
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'approved')" class="btn btn-success btn-small">
+                            <i class="fas fa-check"></i>
+                            Approve
+                        </button>
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'rejected')" class="btn btn-danger btn-small">
+                            <i class="fas fa-times"></i>
+                            Reject
+                        </button>
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'on_hold')" class="btn btn-warning btn-small">
+                            <i class="fas fa-pause"></i>
+                            Hold
+                        </button>
+                    ` : ''}
+                    
+                    ${finding.status === 'approved' && !finding.phishlabs_case_number ? `
+                        <button onclick="DTMonitor.findings.submitToPhishLabs('${finding.id}')" class="btn btn-primary btn-small">
+                            <i class="fas fa-shield-alt"></i>
+                            Submit to PhishLabs
+                        </button>
+                    ` : ''}
+                    
+                    ${finding.phishlabs_case_number ? `
+                        <span class="case-number">
+                            <i class="fas fa-shield-alt"></i>
+                            Case: ${finding.phishlabs_case_number}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    },
+    
+    displayNoFindings: function() {
+        const container = document.getElementById('findingsContainer');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="no-findings-message">
+                <div class="no-findings-icon">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h3>No Findings Available</h3>
+                <p>No findings match your current filters. Try adjusting the filters or run a new scan to discover threats.</p>
+                <button onclick="window.location.href='/scan'" class="btn btn-primary">
+                    <i class="fas fa-radar"></i>
+                    Run New Scan
+                </button>
+            </div>
+        `;
+    },
+    
+    formatDate: function(dateString) {
+        if (!dateString) return 'Unknown';
+        try {
+            return new Date(dateString).toLocaleDateString();
+        } catch (error) {
+            return dateString;
+        }
+    },
+    
+    escapeHtml: function(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+};
+*/
+
+// =============================================================================
+// MODAL MANAGEMENT
+// =============================================================================
+
+DTMonitor.modal = {
+    closeOnOutsideClick: function(event) {
+        const modals = document.querySelectorAll('.modal');
+        modals.forEach(modal => {
+            if (event.target === modal) {
+                DTMonitor.fadeOut(modal).then(() => {
+                    modal.style.display = 'none';
+                });
+            }
+        });
+    },
+    
+    closeOnEscape: function(event) {
+        if (event.key === 'Escape') {
+            const modals = document.querySelectorAll('.modal:not([style*="display: none"])');
+            modals.forEach(modal => {
+                DTMonitor.fadeOut(modal).then(() => {
+                    modal.style.display = 'none';
+                });
+            });
+        }
+    },
+    
+    init: function() {
+        window.addEventListener('click', this.closeOnOutsideClick);
+        document.addEventListener('keydown', this.closeOnEscape);
+    }
+};
+
+// =============================================================================
+// INITIALIZATION AND LEGACY FUNCTION WRAPPERS
+// =============================================================================
+
+// Initialize everything when DOM is ready
+// Execute full scan function for hashes page
+function executeFullScan() {
+    const button = event.target.closest('.btn-modern');
+    if (button) {
+        button.classList.add('loading');
+        button.disabled = true;
+    }
+    
+    DTMonitor.notification.show('Starting full scan of all active hashes...', 'info');
+    
+    fetch('/api/scan/full', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            DTMonitor.notification.show(data.message, 'success');
+            // Refresh the page to show updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            DTMonitor.notification.show(data.message, 'error');
+            if (button) {
+                button.classList.remove('loading');
+                button.disabled = false;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        DTMonitor.notification.show('Failed to start full scan', 'error');
+        if (button) {
+            button.classList.remove('loading');
+            button.disabled = false;
+        }
+    });
+}
+
+// System Status Toast Functions
+function showSystemStatus() {
+    const toast = document.getElementById('systemStatusToast');
+    if (toast) {
+        toast.style.display = 'block';
+        toast.classList.remove('hiding', 'auto-hide');
+        refreshSystemStatus();
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (toast.style.display !== 'none') {
+                hideSystemStatusToast();
+            }
+        }, 5000);
+    }
+}
+
+function hideSystemStatusToast() {
+    const toast = document.getElementById('systemStatusToast');
+    if (toast) {
+        toast.classList.add('hiding');
+        setTimeout(() => {
+            toast.style.display = 'none';
+            toast.classList.remove('hiding');
+        }, 300);
+    }
+}
+
+function refreshSystemStatus() {
+    // Update status indicators
+    const apiStatus = document.getElementById('apiStatus');
+    const schedulerStatus = document.getElementById('schedulerStatus');
+    const phishlabsStatus = document.getElementById('phishlabsStatus');
+    
+    // Reset status items
+    const statusItems = document.querySelectorAll('.status-item');
+    statusItems.forEach(item => {
+        item.className = 'status-item';
+    });
+    
+    if (apiStatus) apiStatus.textContent = 'Checking...';
+    if (schedulerStatus) schedulerStatus.textContent = 'Checking...';
+    if (phishlabsStatus) phishlabsStatus.textContent = 'Checking...';
+    
+    // Fetch system status from backend
+    fetch('/api/status')
+    .then(response => response.json())
+    .then(data => {
+        // Update API status
+        if (apiStatus) {
+            const status = data.api_status || 'Unknown';
+            apiStatus.textContent = status;
+            const apiItem = apiStatus.closest('.status-item');
+            if (apiItem) {
+                if (status === 'Connected') {
+                    apiItem.classList.add('connected');
+                } else {
+                    apiItem.classList.add('disconnected');
+                }
+            }
+        }
+        
+        // Update Scheduler status
+        if (schedulerStatus) {
+            const status = data.scheduler_status || 'Unknown';
+            schedulerStatus.textContent = status;
+            const schedulerItem = schedulerStatus.closest('.status-item');
+            if (schedulerItem) {
+                if (status === 'Running') {
+                    schedulerItem.classList.add('running');
+                } else {
+                    schedulerItem.classList.add('stopped');
+                }
+            }
+        }
+        
+        // Update PhishLabs status
+        if (phishlabsStatus) {
+            const status = data.phishlabs_status || 'Unknown';
+            phishlabsStatus.textContent = status;
+            const phishlabsItem = phishlabsStatus.closest('.status-item');
+            if (phishlabsItem) {
+                if (status === 'Connected') {
+                    phishlabsItem.classList.add('connected');
+                } else {
+                    phishlabsItem.classList.add('disconnected');
+                }
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching system status:', error);
+        if (apiStatus) {
+            apiStatus.textContent = 'Error';
+            const apiItem = apiStatus.closest('.status-item');
+            if (apiItem) apiItem.classList.add('disconnected');
+        }
+        if (schedulerStatus) {
+            schedulerStatus.textContent = 'Error';
+            const schedulerItem = schedulerStatus.closest('.status-item');
+            if (schedulerItem) schedulerItem.classList.add('stopped');
+        }
+        if (phishlabsStatus) {
+            phishlabsStatus.textContent = 'Error';
+            const phishlabsItem = phishlabsStatus.closest('.status-item');
+            if (phishlabsItem) phishlabsItem.classList.add('disconnected');
+        }
+    });
+}
+
+// Scan History Functions
+function refreshScanHistory() {
+    const historyList = document.getElementById('scanHistoryList');
+    if (!historyList) return;
+    
+    historyList.innerHTML = '<div class="loading-message">Loading scan history...</div>';
+    
+    fetch('/api/scan/history')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.activities) {
+            displayScanHistory(data.activities);
+        } else {
+            historyList.innerHTML = '<div class="no-data-message">No scan history available</div>';
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching scan history:', error);
+        historyList.innerHTML = '<div class="error-message">Error loading scan history</div>';
+    });
+}
+
+function displayScanHistory(activities) {
+    const historyList = document.getElementById('scanHistoryList');
+    if (!historyList) return;
+    
+    if (activities.length === 0) {
+        historyList.innerHTML = '<div class="no-data-message">No scan activities found</div>';
+        return;
+    }
+    
+    const historyHTML = activities.map(activity => {
+        const statusClass = activity.status === 'completed' ? 'success' : 
+                          activity.status === 'failed' ? 'error' : 'warning';
+        const typeIcon = activity.scan_type === 'manual' ? 'fas fa-hand-paper' :
+                        activity.scan_type === 'scheduled' ? 'fas fa-clock' : 'fas fa-radar';
+        
+        return `
+            <div class="scan-history-item">
+                <div class="scan-history-header">
+                    <div class="scan-type">
+                        <i class="${typeIcon}"></i>
+                        <span>${activity.scan_type.charAt(0).toUpperCase() + activity.scan_type.slice(1)} Scan</span>
+                    </div>
+                    <div class="scan-status ${statusClass}">
+                        <i class="fas fa-circle"></i>
+                        <span>${activity.status}</span>
+                    </div>
+                </div>
+                <div class="scan-history-details">
+                    <div class="scan-info">
+                        <span class="scan-hash">${activity.hash_name || 'All Hashes'}</span>
+                        <span class="scan-time">${activity.started_at_est || new Date(activity.started_at).toLocaleString('en-US', {timeZone: 'America/New_York'})}</span>
+                    </div>
+                    <div class="scan-metrics">
+                        <span class="scan-duration">${activity.duration_seconds ? activity.duration_seconds.toFixed(1) + 's' : 'N/A'}</span>
+                        <span class="scan-findings">${activity.findings_count || 0} findings</span>
+                    </div>
+                </div>
+                ${activity.error_message ? `<div class="scan-error">${activity.error_message}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    historyList.innerHTML = historyHTML;
+}
+
+function filterScanHistory() {
+    const filter = document.getElementById('historyFilter')?.value || 'all';
+    const limit = document.getElementById('historyLimit')?.value || '25';
+    
+    // For now, just refresh with current filter settings
+    // In a full implementation, this would filter the displayed results
+    refreshScanHistory();
+}
+
+// function exportScanHistory() {
+//     DTMonitor.notification.show('Exporting scan history...', 'info');
+    
+//     fetch('/api/scan/history/export')
+//     .then(response => response.blob())
+//     .then(blob => {
+//         const url = window.URL.createObjectURL(blob);
+//         const a = document.createElement('a');
+//         a.href = url;
+//         a.download = `scan_history_${new Date().toISOString().split('T')[0]}.json`;
+//         document.body.appendChild(a);
+//         a.click();
+//         window.URL.revokeObjectURL(url);
+//         document.body.removeChild(a);
+//         DTMonitor.notification.show('Scan history exported successfully', 'success');
+//     })
+//     .catch(error => {
+//         console.error('Error exporting scan history:', error);
+//         DTMonitor.notification.show('Failed to export scan history', 'error');
+//     });
+// }
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM Content Loaded - Initializing DTMonitor...');
+    
+    // Check DTMonitor availability
+    console.log('DTMonitor availability check:');
+    console.log('- DTMonitor defined:', typeof DTMonitor !== 'undefined');
+    console.log('- DTMonitor.saveAllSettings:', typeof DTMonitor !== 'undefined' && DTMonitor.saveAllSettings);
+    
+    // Initialize notification system first
+    if (DTMonitor.notification) {
+        console.log('Initializing notification system...');
+    DTMonitor.notification.init();
+    } else {
+        console.error('DTMonitor.notification not available!');
+    }
+    
+    // Initialize hash management
+    if (DTMonitor.hash) {
+        console.log('Initializing hash management...');
+        DTMonitor.hash.init();
+    } else {
+        console.error('DTMonitor.hash not available!');
+    }
+    
+    // Initialize findings management
+    if (DTMonitor.findings) {
+        console.log('Initializing findings management...');
+        DTMonitor.findings.init();
+    } else {
+        console.error('DTMonitor.findings not available!');
+    }
+    
+    // Initialize settings management
+    if (document.querySelector('.settings-layout') && DTMonitor.settings) {
+        console.log('Initializing settings management...');
+        // Don't initialize here - will be done in the main initialization block
+    } else {
+        console.log('Settings layout not found or DTMonitor.settings not available');
+    }
+    
+    // Initialize scanning management
+    if (DTMonitor.scanning) {
+        console.log('Initializing scanning management...');
+        DTMonitor.scanning.init();
+    } else {
+        console.error('DTMonitor.scanning not available!');
+    }
+    
+    console.log('DTMonitor initialization complete');
+});
+
+// =============================================================================
+// LEGACY FUNCTION WRAPPERS FOR BACKWARD COMPATIBILITY
+// =============================================================================
+
+// Theme functions
+function toggleTheme() { DTMonitor.theme.toggle(); }
+
+// Notification functions
+function showNotification(message, type) { DTMonitor.notification.show(message, type); }
+
+// Scheduler functions
+function startScheduler() { DTMonitor.scheduler.start(); }
+function stopScheduler() { DTMonitor.scheduler.stop(); }
+function refreshSchedulerStatus() { DTMonitor.scheduler.refresh(); }
+
+// Scanning functions
+function runAllScans() { DTMonitor.scanning.runAll(); }
+function runSelectedScan() { DTMonitor.scanning.runSelected(); }
+function runSingleScan(hashId) { DTMonitor.scanning.runSingle(hashId); }
+
+// Hash management functions
+function showAddHashModal() { DTMonitor.hash.showAddModal(); }
+function editHash(hashId) { DTMonitor.hash.edit(hashId); }
+function toggleHash(hashId) { DTMonitor.hash.toggle(hashId); }
+function saveHash(event) { DTMonitor.hash.save(event); }
+function deleteHash(hashId) { DTMonitor.hash.delete(hashId); }
+function closeHashModal() { DTMonitor.hash.closeModal(); }
+
+// Findings functions
+function updateFindingStatus(findingId, status) { DTMonitor.findings.updateStatus(findingId, status); }
+function submitToPhishLabsDirect(findingId) { DTMonitor.findings.submitToPhishLabs(findingId); }
+function exportFindingsToCSV() { DTMonitor.findings.exportToCSV(); }
+function filterFindings() { DTMonitor.findings.applyFilters(); }
+
+// Debug and testing
+function testHashLoading() {
+    DTMonitor.notification.show('Testing hash loading functionality...', 'info');
+    DTMonitor.hash.loadHashes();
+}
+
+// Additional missing functions
+function forceLoadHashes() {
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.hash) {
+        DTMonitor.hash.loadHashes();
+    } else {
+        console.log('Refresh hashes requested.');
+        location.reload();
+    }
+}
+
+// function viewScanHistory() {
+//     if (typeof DTMonitor !== 'undefined' && DTMonitor.scanning) {
+//         DTMonitor.scanning.viewHistory();
+//     } else {
+//         console.log('View scan history requested.');
+//         window.location.href = '/scan-history';
+//     }
+// }
+
+// function exportResults() {
+//     if (typeof DTMonitor !== 'undefined' && DTMonitor.scanning) {
+//         DTMonitor.scanning.exportResults();
+//     } else {
+//         console.log('Export results requested.');
+//         window.location.href = '/api/scanning/export';
+//     }
+// }
+
+function approveFinding(findingId) { 
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.findings) {
+        DTMonitor.findings.approveFinding(findingId); 
+    } else {
+        console.error('Findings management requires DTMonitor to be loaded');
+    }
+}
+
+function rejectFinding(findingId) { 
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.findings) {
+        DTMonitor.findings.rejectFinding(findingId); 
+    } else {
+        console.error('Findings management requires DTMonitor to be loaded');
+    }
+}
+
+function showMetadata(findingId) { 
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.findings) {
+        DTMonitor.findings.showMetadata(findingId); 
+    } else {
+        console.error('Findings management requires DTMonitor to be loaded');
+    }
+}
+
+// Settings functions
+function saveAllSettings() {
+    console.log('=== GLOBAL saveAllSettings CALLED ===');
+    console.log('DTMonitor available:', typeof DTMonitor !== 'undefined');
+    console.log('DTMonitor.saveAllSettings available:', typeof DTMonitor !== 'undefined' && DTMonitor.saveAllSettings);
+
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.saveAllSettings) {
+        console.log('Using DTMonitor.saveAllSettings...');
+        DTMonitor.saveAllSettings(); 
+    } else {
+        console.warn('DTMonitor not ready, using fallback method...');
+        // Fallback: direct form submission
+        const form = document.getElementById('settingsForm');
+        if (form) {
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData);
+            
+            // Also collect all inputs manually to ensure we get everything
+            const allInputs = form.querySelectorAll('input, select, textarea');
+            allInputs.forEach(input => {
+                if (input.name) {
+                    if (input.type === 'checkbox') {
+                        data[input.name] = input.checked;
+                    } else {
+                        data[input.name] = input.value;
+                    }
+                }
+            });
+            
+            console.log('Fallback: collected form data:', data);
+            console.log('Fallback: number of fields collected:', Object.keys(data).length);
+            console.log('Fallback: form inputs found:', allInputs.length);
+            
+            // Direct fetch to backend
+            console.log('Fallback: sending data to /api/settings:', data);
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => {
+                console.log('Fallback: response status:', response.status);
+                return response.json();
+            })
+            .then(result => {
+                console.log('Fallback: response received:', result);
+                if (result.success) {
+                    alert('Settings saved successfully!');
+                } else {
+                    alert('Failed to save settings: ' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Fallback save error:', error);
+                alert('Error saving settings: ' + error.message);
+            });
+        } else {
+            console.error('Settings form not found');
+            alert('Settings form not found');
+        }
+    }
+}
+
+function testDomainToolsConnection() { 
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings && DTMonitor.settings.testDomainToolsConnection) {
+        DTMonitor.settings.testDomainToolsConnection(); 
+    } else {
+        console.warn('DTMonitor not available, using fallback test function');
+        testDomainToolsConnectionFallback();
+    }
+}
+
+function testPhishLabsConnection() { 
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings && DTMonitor.settings.testPhishLabsConnection) {
+        DTMonitor.settings.testPhishLabsConnection(); 
+    } else {
+        console.warn('DTMonitor not available, using fallback test function');
+        testPhishLabsConnectionFallback();
+    }
+}
+
+// Modern Settings Functions
+function testAllConnections() {
+    console.log('testAllConnections called');
+    console.log('DTMonitor exists:', typeof DTMonitor !== 'undefined');
+    if (typeof DTMonitor !== 'undefined') {
+        console.log('DTMonitor.testAllConnections exists:', typeof DTMonitor.testAllConnections === 'function');
+        console.log('DTMonitor.settings exists:', typeof DTMonitor.settings !== 'undefined');
+        if (DTMonitor.settings) {
+            console.log('DTMonitor.settings.testAllConnections exists:', typeof DTMonitor.settings.testAllConnections === 'function');
+        }
+    }
+    
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings && DTMonitor.settings.testAllConnections) {
+        console.log('Calling DTMonitor.settings.testAllConnections()');
+        DTMonitor.settings.testAllConnections();
+    } else {
+        console.error('Settings management requires DTMonitor to be loaded');
+        console.error('DTMonitor.settings.testAllConnections not found');
+    }
+}
+
+// Fallback test connection functions
+function testDomainToolsConnectionFallback() {
+    const statusIndicator = document.getElementById('api-status');
+    if (statusIndicator) {
+        statusIndicator.className = 'status-badge warning';
+        statusIndicator.innerHTML = '<i class="fas fa-circle"></i> Testing...';
+    }
+    
+    fetch('/test/domaintools', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        } else {
+            return response.json().then(data => {
+                // 400 status means API is reachable but credentials are invalid
+                return { success: false, message: data.message || 'Connection failed', reachable: true };
+            });
+        }
+    })
+    .then(data => {
+        if (statusIndicator) {
+            if (data.success) {
+                statusIndicator.className = 'status-badge success';
+                statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+            } else if (data.reachable) {
+                statusIndicator.className = 'status-badge warning';
+                statusIndicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i> API Reachable';
+            } else {
+                statusIndicator.className = 'status-badge error';
+                statusIndicator.innerHTML = '<i class="fas fa-times-circle"></i> Failed';
+            }
+        }
+        if (data.success) {
+            alert('DomainTools connection successful!');
+        } else if (data.reachable) {
+            alert('DomainTools API is reachable but credentials are invalid: ' + (data.message || 'Check your credentials'));
+        } else {
+            alert('DomainTools connection failed: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error testing DomainTools connection:', error);
+        if (statusIndicator) {
+            statusIndicator.className = 'status-badge error';
+            statusIndicator.innerHTML = '<i class="fas fa-times-circle"></i> Failed';
+        }
+        alert('Error testing DomainTools connection: ' + error.message);
+    });
+}
+
+function testPhishLabsConnectionFallback() {
+    fetch('/test/phishlabs', {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        } else {
+            return response.json().then(data => {
+                // 400 status means API is reachable but credentials are invalid
+                return { success: false, message: data.message || 'Connection failed', reachable: true };
+            });
+        }
+    })
+    .then(data => {
+        if (data.success) {
+            alert('PhishLabs connection successful!');
+        } else if (data.reachable) {
+            alert('PhishLabs API is reachable but credentials are invalid: ' + (data.message || 'Check your credentials'));
+        } else {
+            alert('PhishLabs connection failed: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error testing PhishLabs connection:', error);
+        alert('Error testing PhishLabs connection: ' + error.message);
+    });
+}
+
+// Duplicate function removed - using the one above
+
+// Debug function to check form data collection
+function debugFormData() {
+    console.log('=== DEBUGGING FORM DATA COLLECTION ===');
+    
+    const form = document.getElementById('settingsForm');
+    if (!form) {
+        console.error('Settings form not found!');
+        return;
+    }
+    
+    // Method 1: FormData
+    const formData = new FormData(form);
+    const data1 = Object.fromEntries(formData);
+    console.log('Method 1 - FormData:', data1);
+    console.log('Method 1 - Field count:', Object.keys(data1).length);
+    
+    // Method 2: Manual collection
+    const data2 = {};
+    const allInputs = form.querySelectorAll('input, select, textarea');
+    allInputs.forEach(input => {
+        if (input.name) {
+            if (input.type === 'checkbox') {
+                data2[input.name] = input.checked;
+            } else {
+                data2[input.name] = input.value;
+            }
+        }
+    });
+    console.log('Method 2 - Manual collection:', data2);
+    console.log('Method 2 - Field count:', Object.keys(data2).length);
+    
+    // Method 3: DTMonitor way
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings && DTMonitor.settings.collectFormData) {
+        const data3 = DTMonitor.settings.collectFormData();
+        console.log('Method 3 - DTMonitor way:', data3);
+        console.log('Method 3 - Field count:', Object.keys(data3).length);
+    }
+    
+    // Check specific fields
+    const criticalFields = [
+        'API_RETRY_ATTEMPTS',
+        'ENABLE_AUTOMATIC_SCANNING', 
+        'MAX_RESULTS_PER_PAGE',
+        'MAX_CONCURRENT_SCANS',
+        'PHISHLABS_ENABLED',
+        'PHISHLABS_USERNAME',
+        'PHISHLABS_PASSWORD',
+        'PHISHLABS_CUSTID',
+        'PHISHLABS_BASE_URL',
+        'MAX_RESULTS_PER_SCAN',
+        'EXPORT_DIRECTORY',
+        'LOG_LEVEL',
+        'LOG_DIRECTORY'
+    ];
+    
+    console.log('\\n=== CRITICAL FIELDS CHECK ===');
+    criticalFields.forEach(field => {
+        const element = form.querySelector(`[name="${field}"]`);
+        if (element) {
+            const value = element.type === 'checkbox' ? element.checked : element.value;
+            console.log(`${field}: ${value} (${element.type})`);
+        } else {
+            console.log(`${field}: NOT FOUND`);
+        }
+    });
+    
+    alert('Check console for debug output');
+}
+
+// Global functions for HTML onclick handlers
+function addTag() {
+    console.log('addTag called, checking DTMonitor...');
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.addTag) {
+        console.log('Calling DTMonitor.addTag...');
+        DTMonitor.addTag();
+    } else {
+        console.warn('DTMonitor not ready, using fallback method...');
+        // Fallback: direct tag addition
+        const tagName = document.getElementById('newTagName').value.trim();
+        if (!tagName) {
+            alert('Please enter a tag name');
+            return;
+        }
+        
+        fetch('/api/tags/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name: tagName })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert('Tag added successfully');
+                document.getElementById('newTagName').value = '';
+                // Reload tags
+                loadTagsFallback();
+            } else {
+                alert('Failed to add tag: ' + result.message);
+            }
+        })
+        .catch(error => {
+            console.error('Fallback addTag error:', error);
+            alert('Error adding tag: ' + error.message);
+        });
+    }
+}
+
+function loadTagsFallback() {
+    fetch('/api/tags/list')
+        .then(response => response.json())
+        .then(result => {
+            const tagsList = document.getElementById('tagsList');
+            if (tagsList && result.success) {
+                const tags = result.tags || [];
+                if (tags.length === 0) {
+                    tagsList.innerHTML = '<p class="no-data">No tags found</p>';
+                    return;
+                }
+                tagsList.innerHTML = tags.map(tag => `
+                    <div class="tag-item" data-tag-id="${tag.id}">
+                        <div class="tag-content">
+                            <span class="tag-name">${tag.name}</span>
+                            <span class="tag-description">${tag.description || 'No description'}</span>
+                        </div>
+                        <div class="tag-actions">
+                            <button class="btn btn-sm btn-outline" onclick="editTag('${tag.id}', '${tag.name.replace(/'/g, "\\'")}', '${(tag.description || '').replace(/'/g, "\\'")}')">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteTag('${tag.id}', '${tag.name.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading tags:', error);
+        });
+}
+
+// Global functions for tag edit and delete
+function editTag(tagId, currentName, currentDescription) {
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.editTag) {
+        DTMonitor.editTag(tagId, currentName, currentDescription);
+    } else {
+        // Fallback implementation
+        const newName = prompt('Enter new tag name:', currentName);
+        if (newName === null) return;
+        
+        const newDescription = prompt('Enter new description:', currentDescription || '');
+        if (newDescription === null) return;
+
+        if (!newName.trim()) {
+            alert('Tag name cannot be empty');
+            return;
+        }
+
+        fetch('/api/tags/update', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                id: tagId, 
+                name: newName.trim(), 
+                description: newDescription.trim() 
+            })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert('Tag updated successfully');
+                loadTagsFallback();
+            } else {
+                alert('Failed to update tag: ' + result.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error updating tag:', error);
+            alert('Error updating tag');
+        });
+    }
+}
+
+function deleteTag(tagId, tagName) {
+    if (!confirm(`Are you sure you want to delete the tag "${tagName}"?`)) {
+        return;
+    }
+
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.deleteTag) {
+        DTMonitor.deleteTag(tagId, tagName);
+    } else {
+        // Fallback implementation
+        fetch('/api/tags/delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: tagId })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert('Tag deleted successfully');
+                loadTagsFallback();
+            } else {
+                alert('Failed to delete tag: ' + result.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting tag:', error);
+            alert('Error deleting tag');
+        });
+    }
+}
+
+function exportScanHistory() { DTMonitor.api.exportScanHistory(); }
+
+function clearScanHistory() {
+    console.log('clearScanHistory called');
+    if (confirm('Are you sure you want to clear all scan history? This action cannot be undone.')) {
+        fetch('/api/scan/history', {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert('Scan history cleared successfully');
+                loadScanHistoryFallback();
+            } else {
+                alert('Failed to clear scan history: ' + result.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing scan history:', error);
+            alert('Error clearing scan history: ' + error.message);
+        });
+    }
+}
+
+function loadScanHistoryFallback() {
+    fetch('/api/scan/history')
+        .then(response => response.json())
+        .then(data => {
+            const historyList = document.getElementById('scanHistoryList');
+            if (historyList) {
+                console.log('Scan history API response:', data);
+                const activities = data.activities || [];
+                if (activities.length > 0) {
+                        historyList.innerHTML = activities.map(scan => 
+                            `<div class="scan-item">
+                                <div class="scan-info">
+                                    <strong>${scan.scan_type}</strong> - ${scan.started_at_est || new Date(scan.started_at).toLocaleString('en-US', {timeZone: 'America/New_York'})}
+                                </div>
+                                <div class="scan-status ${scan.status}">
+                                    ${scan.status} (${scan.findings_count || 0} findings)
+                                </div>
+                            </div>`
+                        ).join('');
+                } else {
+                    historyList.innerHTML = '<p>No scan history available</p>';
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading scan history:', error);
+            const historyList = document.getElementById('scanHistoryList');
+            if (historyList) {
+                historyList.innerHTML = '<p>Error loading scan history</p>';
+            }
+        });
+}
+
+function togglePassword(inputId) {
+    const input = document.getElementById(inputId);
+    const button = input.parentNode.querySelector('.password-toggle');
+    const icon = button.querySelector('i');
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+// Simple tab switching function that can be called directly
+function switchSettingsTab(tabName) {
+    console.log('Switching to tab:', tabName);
+    
+    // Remove active class from all tabs and panes
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    
+    tabButtons.forEach(tab => tab.classList.remove('active'));
+    tabPanes.forEach(pane => pane.classList.remove('active'));
+    
+    // Add active class to target tab and pane
+    const targetTab = document.querySelector(`[data-tab="${tabName}"]`);
+    const targetPane = document.getElementById(tabName);
+    
+    if (targetTab) {
+        targetTab.classList.add('active');
+        console.log('Tab button activated:', tabName);
+    }
+    
+    if (targetPane) {
+        targetPane.classList.add('active');
+        console.log('Tab pane activated:', tabName);
+    }
+}
+
+// Settings tab navigation functions
+function initSettingsTabs() {
+    console.log('Initializing settings tabs...');
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    
+    console.log('Found tab buttons:', tabButtons.length);
+    console.log('Found tab panes:', tabPanes.length);
+    
+    tabButtons.forEach((button, index) => {
+        console.log(`Setting up tab ${index}:`, button.getAttribute('data-tab'));
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Tab clicked:', this.getAttribute('data-tab'));
+            
+            // Remove active class from all tabs and panes
+            tabButtons.forEach(tab => tab.classList.remove('active'));
+            tabPanes.forEach(pane => pane.classList.remove('active'));
+            
+            // Add active class to clicked tab
+            this.classList.add('active');
+            
+            // Show corresponding tab pane
+            const targetTab = this.getAttribute('data-tab');
+            const targetPane = document.getElementById(targetTab);
+            console.log('Target tab:', targetTab, 'Target pane:', targetPane);
+            if (targetPane) {
+                targetPane.classList.add('active');
+                console.log('Tab switched to:', targetTab);
+            } else {
+                console.error('Tab pane not found:', targetTab);
+            }
+        });
+    });
+}
+
+// Initialize settings tabs when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded, initializing settings tabs...');
+    initSettingsTabs();
+    
+    // Load tags and scan history on page load
+    setTimeout(() => {
+        console.log('Loading tags and scan history on page load...');
+        loadTagsFallback();
+        loadScanHistoryFallback();
+    }, 1000);
+    
+    // Also try DTMonitor initialization
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings && DTMonitor.settings.initSettingsTabs) {
+        console.log('DTMonitor available, initializing settings tabs...');
+        DTMonitor.settings.initSettingsTabs();
+    }
+});
+
+// Also try to initialize after a short delay in case DOM isn't ready
+setTimeout(function() {
+    if (document.querySelectorAll('.tab-button').length > 0) {
+        console.log('Re-initializing settings tabs after delay...');
+        initSettingsTabs();
+        
+        if (typeof DTMonitor !== 'undefined' && DTMonitor.settings) {
+            DTMonitor.settings.initSettingsTabs();
+        }
+    }
+}, 500);
+
+// Rules management functions  
+function showRulesModal() { DTMonitor.hash.showRulesModal(); }
+function closeRulesModal() { DTMonitor.hash.closeRulesModal(); }
+function showAddRuleModal() { DTMonitor.hash.showAddRuleModal(); }
+function closeRuleModal() { DTMonitor.hash.closeRuleModal(); }
+function closeAddRuleModal() { DTMonitor.hash.closeRuleModal(); }
+function addCondition() { DTMonitor.hash.addCondition(); }
+function saveRule(event) { DTMonitor.hash.saveRule(event); }
+function handleCaseTypeChange() { DTMonitor.hash.handleCaseTypeChange(); }
+
+// Regex Guide Modal Functions
+function showRegexGuideModal() { DTMonitor.hash.showRegexGuideModal(); }
+function closeRegexGuideModal() { DTMonitor.hash.closeRegexGuideModal(); }
+
+// Debug function for testing modal functionality (can be removed later)
+window.debugTestEditModal = function(hashId = '2') {
+    console.log('Debug: Testing edit modal for hash ID:', hashId);
+    if (window.DTMonitor && DTMonitor.hash) {
+        DTMonitor.hash.edit(hashId);
+    } else {
+        console.error('DTMonitor.hash not available');
+    }
+};
+
+// Debug helper - add test hash function
+window.debugAddTestHash = function() {
+    console.log('Debug: Testing add hash from frontend');
+    if (window.DTMonitor && DTMonitor.hash) {
+        DTMonitor.hash.showAddModal();
+        // Auto-fill with test data
+        setTimeout(() => {
+            document.getElementById('hashName').value = 'Frontend Test Hash';
+            document.getElementById('hashValue').value = 'frontend,test,save';
+            document.getElementById('hashDescription').value = 'Testing from frontend';
+            document.getElementById('hashActive').checked = true;
+        }, 500);
+    } else {
+        console.error('DTMonitor.hash not available');
+    }
+};
+
+// Debug helper - test edit buttons after refresh
+window.debugTestEditButtons = function() {
+    console.log('=== DEBUGGING EDIT BUTTONS ===');
+    console.log('DTMonitor object:', typeof window.DTMonitor);
+    console.log('DTMonitor.hash object:', typeof window.DTMonitor?.hash);
+    console.log('DTMonitor.hash.edit function:', typeof window.DTMonitor?.hash?.edit);
+    
+    const editButtons = document.querySelectorAll('button[title="Edit Hash"]');
+    console.log('Edit buttons found:', editButtons.length);
+    
+    editButtons.forEach((button, index) => {
+        const hashCard = button.closest('.hash-card');
+        const hashId = hashCard?.dataset?.hashId;
+        console.log(`Button ${index}: Hash ID = ${hashId}`);
+        
+        // Test clicking the button programmatically
+        if (index === 0) {
+            console.log('Testing first edit button click...');
+            try {
+                button.click();
+                console.log('Button click executed successfully');
+            } catch (error) {
+                console.error('Button click failed:', error);
+            }
+        }
+    });
+    
+    // Test direct function call
+    if (editButtons.length > 0) {
+        const firstCard = editButtons[0].closest('.hash-card');
+        const firstHashId = firstCard?.dataset?.hashId;
+        if (firstHashId) {
+            console.log('Testing direct function call...');
+            try {
+                DTMonitor.hash.edit(firstHashId);
+                console.log('Direct function call successful');
+            } catch (error) {
+                console.error('Direct function call failed:', error);
+            }
+        }
+    }
+};
+
+// Simple test to force edit modal open
+window.forceEditModal = function() {
+    console.log('Forcing edit modal to open...');
+    const hashCards = document.querySelectorAll('.hash-card');
+    if (hashCards.length > 0) {
+        const firstHashId = hashCards[0].dataset.hashId;
+        console.log('Using hash ID:', firstHashId);
+        DTMonitor.hash.edit(firstHashId);
+    } else {
+        console.log('No hash cards found');
+    }
+};
+
+// Bulletproof edit function that always works
+window.editHashSafe = function(hashId) {
+    console.log('Safe edit function called for hash:', hashId);
+    try {
+        if (window.DTMonitor && DTMonitor.hash && DTMonitor.hash.edit) {
+            DTMonitor.hash.edit(hashId);
+            return true;
+        } else {
+            console.error('DTMonitor.hash.edit not available');
+            return false;
+        }
+    } catch (error) {
+        console.error('Error in safe edit function:', error);
+        return false;
+    }
+};
+
+// =============================================================================
+// ENHANCED FINDINGS MANAGEMENT
+// =============================================================================
+
+DTMonitor.findings = {
+    currentData: [],
+    filters: {},
+    currentSort: { field: 'first_seen', direction: 'desc' },
+    currentPage: 1,
+    itemsPerPage: 25,
+    selectedFindings: new Set(),
+    
+    init: function() {
+        console.log('Enhanced findings management initializing...');
+        console.log('Available elements:', {
+            statusFilter: !!document.getElementById('statusFilter'),
+            riskFilter: !!document.getElementById('riskFilter'),
+            toggleAdvancedFilters: !!document.getElementById('toggleAdvancedFilters'),
+            clearFilters: !!document.getElementById('clearFilters'),
+            selectAllCheckbox: !!document.getElementById('selectAllCheckbox'),
+            findingsTable: !!document.getElementById('findingsTable')
+        });
+        
+        this.loadFindings();
+        this.setupEventListeners();
+        this.updateBulkActions();
+        this.updateSummaryStats();
+        this.updatePagination();
+    },
+    
+    loadFindings: async function() {
+        console.log('Loading findings data...');
+        
+        try {
+            // Load findings from the page data
+            const findingsRows = document.querySelectorAll('#findingsTable tr[data-finding-id]');
+            this.currentData = Array.from(findingsRows).map(row => ({
+                id: row.dataset.findingId,
+                status: row.dataset.status,
+                risk: row.dataset.risk,
+                hash: row.dataset.hash,
+                domain: row.dataset.domain,
+                firstSeen: row.dataset.firstSeen,
+                registrar: row.dataset.registrar,
+                country: row.dataset.country,
+                asrmTriggered: row.dataset.asrmTriggered === 'true'
+            }));
+            
+            console.log('Loaded findings data:', this.currentData);
+            this.updateSummaryStats();
+            
+        } catch (error) {
+            console.error('Error loading findings:', error);
+            DTMonitor.notification.show('Error loading findings', 'error');
+        }
+    },
+    
+    // Setup event listeners for enhanced functionality
+    setupEventListeners: function() {
+        console.log('Setting up event listeners...');
+        
+        // Filter change listeners
+        const filterElements = ['statusFilter', 'riskFilter', 'hashFilter', 'asrmFilter', 
+                               'dateFromFilter', 'dateToFilter', 'domainFilter', 'registrarFilter', 'countryFilter'];
+        filterElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                console.log(`Adding event listener to ${id}`);
+                element.addEventListener('change', () => {
+                    console.log(`Filter changed: ${id}`);
+                    this.applyFilters();
+                });
+                
+                // Add input event for text inputs (domain filter)
+                if (id === 'domainFilter') {
+                    element.addEventListener('input', () => {
+                        console.log(`Filter input: ${id}`);
+                        this.applyFilters();
+                    });
+                }
+            } else {
+                console.log(`Element not found: ${id}`);
+            }
+        });
+        
+        
+        // Items per page change listener
+        const itemsPerPageElement = document.getElementById('itemsPerPage');
+        if (itemsPerPageElement) {
+            itemsPerPageElement.addEventListener('change', () => this.changeItemsPerPage());
+        }
+        
+        // Bulk selection listeners
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', () => this.toggleSelectAll());
+        }
+        
+        // Individual checkbox listeners
+        document.addEventListener('change', (e) => {
+            if (e.target.classList.contains('finding-checkbox')) {
+                const findingId = e.target.dataset.findingId;
+                if (e.target.checked) {
+                    this.selectedFindings.add(findingId);
+                } else {
+                    this.selectedFindings.delete(findingId);
+                }
+                this.updateBulkActions();
+                this.updateSelectAllCheckbox();
+            }
+        });
+        
+        // Advanced filters toggle
+        const toggleButton = document.getElementById('toggleAdvancedFilters');
+        if (toggleButton) {
+            toggleButton.addEventListener('click', () => this.toggleAdvancedFilters());
+        }
+        
+        // Clear filters
+        const clearButton = document.getElementById('clearFilters');
+        if (clearButton) {
+            clearButton.addEventListener('click', () => this.clearFilters());
+        }
+        
+        // Export button
+        const exportButton = document.getElementById('exportBtn');
+        if (exportButton) {
+            exportButton.addEventListener('click', () => this.showExportOptions());
+        }
+        
+        // Bulk action buttons
+        const bulkApprove = document.getElementById('bulkApprove');
+        if (bulkApprove) {
+            bulkApprove.addEventListener('click', () => this.bulkApprove());
+        }
+        
+        const bulkReject = document.getElementById('bulkReject');
+        if (bulkReject) {
+            bulkReject.addEventListener('click', () => this.bulkReject());
+        }
+        
+        const bulkSelectAll = document.getElementById('bulkSelectAll');
+        if (bulkSelectAll) {
+            bulkSelectAll.addEventListener('click', () => this.selectAll());
+        }
+        
+        // Pagination buttons
+        const firstPage = document.getElementById('firstPage');
+        if (firstPage) {
+            firstPage.addEventListener('click', () => this.goToPage(1));
+        }
+        
+        const prevPage = document.getElementById('prevPage');
+        if (prevPage) {
+            prevPage.addEventListener('click', () => this.previousPage());
+        }
+        
+        const nextPage = document.getElementById('nextPage');
+        if (nextPage) {
+            nextPage.addEventListener('click', () => this.nextPage());
+        }
+        
+        const lastPage = document.getElementById('lastPage');
+        if (lastPage) {
+            lastPage.addEventListener('click', () => this.goToPage(999));
+        }
+        
+        // Export modal buttons
+        const closeExportModal = document.getElementById('closeExportModal');
+        if (closeExportModal) {
+            closeExportModal.addEventListener('click', () => this.closeExportModal());
+        }
+        
+        const executeExport = document.getElementById('executeExport');
+        if (executeExport) {
+            executeExport.addEventListener('click', () => this.executeExport());
+        }
+        
+        // Sortable table headers
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.sortable')) {
+                const th = e.target.closest('.sortable');
+                const field = th.dataset.sort;
+                if (field) {
+                    this.sortBy(field);
+                }
+            }
+        });
+        
+        console.log('Event listeners set up successfully');
+    },
+    
+    // Apply filters
+    applyFilters: function() {
+        console.log('Applying filters...');
+        
+        // Collect filter values
+        this.filters = {
+            status: document.getElementById('statusFilter')?.value || 'all',
+            risk: document.getElementById('riskFilter')?.value || 'all',
+            hash: document.getElementById('hashFilter')?.value || 'all',
+            asrm: document.getElementById('asrmFilter')?.value || 'all',
+            dateFrom: document.getElementById('dateFromFilter')?.value || '',
+            dateTo: document.getElementById('dateToFilter')?.value || '',
+            domain: document.getElementById('domainFilter')?.value || '',
+            registrar: document.getElementById('registrarFilter')?.value || 'all',
+            country: document.getElementById('countryFilter')?.value || 'all'
+        };
+        
+        console.log('Filter values:', this.filters);
+        
+        // Filter findings
+        this.filterFindings();
+        this.updateSummaryStats();
+        this.updatePagination();
+    },
+    
+    // Filter findings based on current filters
+    filterFindings: function() {
+        const rows = document.querySelectorAll('tbody tr[data-finding-id]');
+        console.log(`Found ${rows.length} rows to filter`);
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            let show = true;
+            const rowId = row.dataset.findingId;
+            
+            // Debug: Log all data attributes for the first row
+            if (rowId === 'test_storage_1757085623') {
+                console.log('Sample row data attributes:', {
+                    findingId: row.dataset.findingId,
+                    status: row.dataset.status,
+                    risk: row.dataset.risk,
+                    hash: row.dataset.hash,
+                    hashName: row.dataset['hash-name'],
+                    domain: row.dataset.domain,
+                    firstSeen: row.dataset['first-seen'],
+                    registrar: row.dataset.registrar,
+                    country: row.dataset.country,
+                    asrmTriggered: row.dataset['asrm-triggered'],
+                    plSubmission: row.dataset['pl-submission']
+                });
+            }
+            
+            // Status filter
+            if (this.filters.status !== 'all') {
+                const status = row.dataset.status;
+                if (status !== this.filters.status) {
+                    show = false;
+                    console.log(`Row ${rowId} hidden by status filter: ${status} !== ${this.filters.status}`);
+                }
+            }
+            
+            // Risk filter
+            if (this.filters.risk !== 'all') {
+                const riskScore = parseInt(row.dataset.risk) || 0;
+                if (this.filters.risk === 'high' && riskScore < 80) show = false;
+                if (this.filters.risk === 'medium' && (riskScore < 50 || riskScore >= 80)) show = false;
+                if (this.filters.risk === 'low' && riskScore >= 50) show = false;
+            }
+            
+            // Hash filter
+            if (this.filters.hash !== 'all') {
+                const hash = row.dataset.hash;
+                if (hash !== this.filters.hash) {
+                    show = false;
+                    console.log(`Row ${rowId} hidden by hash filter: ${hash} !== ${this.filters.hash}`);
+                }
+            }
+            
+            // ASRM filter
+            if (this.filters.asrm !== 'all') {
+                const asrmTriggered = row.dataset['asrm-triggered'] === 'true';
+                const plSubmission = row.dataset['pl-submission'] === 'true';
+                const status = row.dataset.status;
+                
+                console.log(`Row ${rowId} ASRM data:`, { asrmTriggered, plSubmission, status, filter: this.filters.asrm });
+                
+                if (this.filters.asrm === 'asrm') {
+                    // Show only ASRM triggered findings
+                    if (!asrmTriggered) {
+                        show = false;
+                        console.log(`Row ${rowId} hidden by ASRM filter: not ASRM triggered`);
+                    }
+                }
+                if (this.filters.asrm === 'manual') {
+                    // Show only manually approved findings (approved status but NOT asrm triggered)
+                    if (status !== 'approved' || asrmTriggered) {
+                        show = false;
+                        console.log(`Row ${rowId} hidden by ASRM filter: not manually approved (status: ${status}, asrm: ${asrmTriggered})`);
+                    }
+                }
+                if (this.filters.asrm === 'pending_review') {
+                    // Show only pending findings that haven't been processed
+                    if (status !== 'pending' || asrmTriggered || plSubmission) {
+                        show = false;
+                        console.log(`Row ${rowId} hidden by ASRM filter: not pending review (status: ${status}, asrm: ${asrmTriggered}, pl: ${plSubmission})`);
+                    }
+                }
+            }
+            
+            // Domain filter
+            if (this.filters.domain) {
+                const domain = row.dataset.domain?.toLowerCase() || '';
+                if (!domain.includes(this.filters.domain.toLowerCase())) {
+                    show = false;
+                    console.log(`Row ${rowId} hidden by domain filter: "${domain}" does not contain "${this.filters.domain.toLowerCase()}"`);
+                }
+            }
+            
+            // Registrar filter
+            if (this.filters.registrar !== 'all') {
+                const registrar = row.dataset.registrar?.toLowerCase() || '';
+                if (this.filters.registrar !== 'other' && !registrar.includes(this.filters.registrar.toLowerCase())) {
+                    show = false;
+                    console.log(`Row ${rowId} hidden by registrar filter: "${registrar}" does not contain "${this.filters.registrar.toLowerCase()}"`);
+                }
+            }
+            
+            // Country filter
+            if (this.filters.country !== 'all') {
+                const country = row.dataset.country || '';
+                if (this.filters.country !== 'other' && country !== this.filters.country) {
+                    show = false;
+                    console.log(`Row ${rowId} hidden by country filter: "${country}" !== "${this.filters.country}"`);
+                }
+            }
+            
+            // Date filters
+            if (this.filters.dateFrom || this.filters.dateTo) {
+                const firstSeen = row.dataset['first-seen'] || '';
+                if (firstSeen) {
+                    try {
+                        const findingDate = new Date(firstSeen);
+                        const findingDateOnly = new Date(findingDate.getFullYear(), findingDate.getMonth(), findingDate.getDate());
+                        
+                        if (this.filters.dateFrom) {
+                            const filterFromDate = new Date(this.filters.dateFrom);
+                            if (findingDateOnly < filterFromDate) {
+                                show = false;
+                                console.log(`Row ${rowId} hidden by date FROM filter: ${firstSeen} < ${this.filters.dateFrom}`);
+                            }
+                        }
+                        
+                        if (this.filters.dateTo) {
+                            const filterToDate = new Date(this.filters.dateTo);
+                            if (findingDateOnly > filterToDate) {
+                                show = false;
+                                console.log(`Row ${rowId} hidden by date TO filter: ${firstSeen} > ${this.filters.dateTo}`);
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Row ${rowId} has invalid date format: ${firstSeen}`);
+                        show = false;
+                    }
+            } else {
+                    // If no first-seen date, hide the row when date filters are applied
+                    show = false;
+                    console.log(`Row ${rowId} hidden by date filter: no first-seen date`);
+                }
+            }
+            
+            // Show/hide row
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+        
+        // Update filtered count
+        const filteredElement = document.getElementById('filteredFindings');
+        if (filteredElement) {
+            filteredElement.textContent = visibleCount;
+        }
+        
+        console.log(`Filtered to ${visibleCount} findings`);
+    },
+    
+    
+    
+    
+    
+    // Toggle advanced filters
+    toggleAdvancedFilters: function() {
+        console.log('Toggling advanced filters...');
+        const advancedFilters = document.getElementById('advancedFilters');
+        const buttonText = document.getElementById('advancedFilterText');
+        
+        if (advancedFilters.style.display === 'none' || !advancedFilters.style.display) {
+            advancedFilters.style.display = 'block';
+            buttonText.textContent = 'Hide Advanced Filters';
+            
+            // Ensure event listeners are attached to advanced filter elements
+            this.attachAdvancedFilterListeners();
+        } else {
+            advancedFilters.style.display = 'none';
+            buttonText.textContent = 'Advanced Filters';
+        }
+    },
+    
+    // Attach event listeners to advanced filter elements
+    attachAdvancedFilterListeners: function() {
+        const advancedFilterElements = ['dateFromFilter', 'dateToFilter', 'domainFilter', 'registrarFilter', 'countryFilter'];
+        advancedFilterElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                // Remove existing listeners to avoid duplicates
+                element.removeEventListener('change', this.applyFilters);
+                element.removeEventListener('input', this.applyFilters);
+                
+                // Add new listeners
+                element.addEventListener('change', () => {
+                    console.log(`Advanced filter changed: ${id}`);
+                    this.applyFilters();
+                });
+                
+                if (id === 'domainFilter') {
+                    element.addEventListener('input', () => {
+                        console.log(`Advanced filter input: ${id}`);
+                        this.applyFilters();
+                    });
+                }
+            }
+        });
+    },
+    
+    // Clear all filters
+    clearFilters: function() {
+        console.log('Clearing all filters...');
+        
+        // Reset all filter inputs
+        const filters = ['statusFilter', 'riskFilter', 'hashFilter', 'asrmFilter', 
+                        'dateFromFilter', 'dateToFilter', 'domainFilter', 'registrarFilter', 'countryFilter'];
+        
+        filters.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                if (element.type === 'text' || element.type === 'date') {
+                    element.value = '';
+                } else {
+                    element.value = 'all';
+                }
+            }
+        });
+        
+        
+        // Apply filters
+        this.applyFilters();
+    },
+    
+    // Update bulk actions visibility
+    updateBulkActions: function() {
+        const selectedCount = this.selectedFindings.size;
+        const bulkActions = document.getElementById('bulkActions');
+        const selectedCountElement = document.querySelector('.bulk-selected-count');
+        
+        if (selectedCount > 0) {
+            bulkActions.style.display = 'block';
+            bulkActions.classList.add('show');
+            selectedCountElement.textContent = `${selectedCount} selected`;
+            } else {
+            bulkActions.classList.remove('show');
+            
+            // Hide after animation
+            setTimeout(() => {
+                if (selectedCount === 0) {
+                    bulkActions.style.display = 'none';
+                }
+            }, 300);
+        }
+    },
+    
+    // Toggle select all
+    toggleSelectAll: function() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const checkboxes = document.querySelectorAll('.finding-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+            if (selectAllCheckbox.checked) {
+                this.selectedFindings.add(checkbox.dataset.findingId);
+            } else {
+                this.selectedFindings.delete(checkbox.dataset.findingId);
+            }
+        });
+        
+        this.updateBulkActions();
+    },
+    
+    // Update select all checkbox based on individual selections
+    updateSelectAllCheckbox: function() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const checkboxes = document.querySelectorAll('.finding-checkbox');
+        const checkedCount = document.querySelectorAll('.finding-checkbox:checked').length;
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (checkedCount === checkboxes.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+            } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    },
+    
+    // Select all findings
+    selectAll: function() {
+        const checkboxes = document.querySelectorAll('.finding-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = true;
+            this.selectedFindings.add(checkbox.dataset.findingId);
+        });
+        
+        document.getElementById('selectAllCheckbox').checked = true;
+        this.updateBulkActions();
+    },
+    
+    // Bulk approve findings
+    bulkApprove: function() {
+        if (this.selectedFindings.size === 0) {
+            return;
+        }
+        
+        // Get selected findings data from DOM
+        const selectedIds = Array.from(this.selectedFindings);
+        const selectedFindings = [];
+        const alreadyApproved = [];
+        
+        selectedIds.forEach(id => {
+            const row = document.querySelector(`tr[data-finding-id="${id}"]`);
+            if (row) {
+                const status = row.dataset.status;
+                
+                // Check if already approved
+                if (status === 'approved') {
+                    alreadyApproved.push(row.dataset.domain);
+                } else {
+                    selectedFindings.push({
+                        id: row.dataset.findingId,
+                        domain_name: row.dataset.domain,
+                        risk_score: parseInt(row.dataset.risk) || 0,
+                        status: row.dataset.status,
+                        hash_id: row.dataset.hash,
+                        hash_name: row.dataset['hash-name'],
+                        first_seen: row.dataset['first-seen'],
+                        registrar: row.dataset.registrar,
+                        ip_country: row.dataset.country,
+                        asrm_triggered: row.dataset['asrm-triggered'] === 'true',
+                        pl_submission: row.dataset['pl-submission'] === 'true'
+                    });
+                }
+            }
+        });
+        
+        // Show warning for already approved findings
+        if (alreadyApproved.length > 0) {
+            DTMonitor.notification.show(
+                `Cannot approve already approved findings: ${alreadyApproved.join(', ')}`, 
+                'warning'
+            );
+        }
+        
+        // Only proceed if there are findings to approve
+        if (selectedFindings.length > 0) {
+            // Open PhishLabs submission modal
+            this.openPhishLabsModal(selectedFindings);
+        }
+        
+        // Clear selection
+        this.selectedFindings.clear();
+        this.updateBulkActions();
+    },
+    
+    // Bulk reject findings
+    bulkReject: function() {
+        if (this.selectedFindings.size === 0) {
+            return;
+        }
+        
+        // Get selected findings data from DOM
+        const selectedIds = Array.from(this.selectedFindings);
+        const selectedFindings = [];
+        const alreadyRejected = [];
+        
+        selectedIds.forEach(id => {
+            const row = document.querySelector(`tr[data-finding-id="${id}"]`);
+            if (row) {
+                const status = row.dataset.status;
+                
+                // Check if already rejected
+                if (status === 'rejected') {
+                    alreadyRejected.push(row.dataset.domain);
+            } else {
+                    selectedFindings.push({
+                        id: row.dataset.findingId,
+                        domain_name: row.dataset.domain,
+                        risk_score: parseInt(row.dataset.risk) || 0,
+                        status: row.dataset.status,
+                        hash_id: row.dataset.hash,
+                        hash_name: row.dataset['hash-name'],
+                        first_seen: row.dataset['first-seen'],
+                        registrar: row.dataset.registrar,
+                        ip_country: row.dataset.country,
+                        asrm_triggered: row.dataset['asrm-triggered'] === 'true',
+                        pl_submission: row.dataset['pl-submission'] === 'true'
+                    });
+                }
+            }
+        });
+        
+        // Show warning for already rejected findings
+        if (alreadyRejected.length > 0) {
+            DTMonitor.notification.show(
+                `Cannot reject already rejected findings: ${alreadyRejected.join(', ')}`, 
+                'warning'
+            );
+        }
+        
+        // Only proceed if there are findings to reject
+        if (selectedFindings.length > 0) {
+            // Open PhishLabs submission modal for rejection
+            this.openPhishLabsModal(selectedFindings, 'reject');
+        }
+        
+        // Clear selection
+        this.selectedFindings.clear();
+        this.updateBulkActions();
+    },
+    
+    // Open PhishLabs submission modal
+    openPhishLabsModal: async function(findings, action = 'approve') {
+        console.log('Opening PhishLabs modal for findings:', findings);
+        
+        if (!findings || findings.length === 0) {
+            DTMonitor.notification.show('No findings selected', 'error');
+            return;
+        }
+        
+        // Validate findings status before opening modal
+        const validFindings = [];
+        const invalidFindings = [];
+        
+        findings.forEach(finding => {
+            const status = finding.status;
+            if (status === 'approved') {
+                invalidFindings.push(`${finding.domain_name} (already approved)`);
+            } else if (status === 'rejected') {
+                invalidFindings.push(`${finding.domain_name} (rejected)`);
+                } else {
+                validFindings.push(finding);
+            }
+        });
+        
+        // Show warnings for invalid findings
+        if (invalidFindings.length > 0) {
+            DTMonitor.notification.show(
+                `Cannot submit findings: ${invalidFindings.join(', ')}`, 
+                'warning'
+            );
+        }
+        
+        // Only proceed if there are valid findings
+        if (validFindings.length === 0) {
+            DTMonitor.notification.show('No valid findings to submit', 'error');
+            return;
+        }
+        
+        // Show modal
+        const modal = document.getElementById('phishlabsModal');
+        if (!modal) {
+            DTMonitor.notification.show('PhishLabs modal not found', 'error');
+            console.error('PhishLabs modal element not found');
+            return;
+        }
+        
+        // Load PhishLabs data before showing modal
+        try {
+            await Promise.all([
+                this.loadPhishLabsBrandsForModal(),
+                this.loadPhishLabsThreatTypesForModal()
+            ]);
+            
+            // Set up case type toggle
+            const caseTypeSelect = document.getElementById('phishlabsCaseType');
+            if (caseTypeSelect) {
+                caseTypeSelect.onchange = () => this.togglePhishLabsFields();
+                // Initialize field visibility
+                this.togglePhishLabsFields();
+            }
+            
+            modal.style.display = 'block';
+        } catch (error) {
+            console.error('Failed to load PhishLabs modal data:', error);
+            modal.style.display = 'block'; // Show modal anyway
+        }
+        
+        // Update modal title based on action
+        const title = modal.querySelector('.header-text h2');
+        if (title) {
+            title.textContent = action === 'reject' ? 'Reject Findings' : 'Submit to PhishLabs';
+        }
+        
+        // Handle single vs multiple findings
+        if (validFindings.length === 1) {
+            this.populateSingleFindingModal(validFindings[0]);
+        } else {
+            this.populateMultipleFindingsModal(validFindings);
+        }
+    },
+    
+    // Populate modal for single finding
+    populateSingleFindingModal: function(finding) {
+        console.log('Populating single finding modal for:', finding);
+        
+        // Hide multiple findings section
+        const multipleSection = document.getElementById('multipleFindingsSection');
+        if (multipleSection) {
+            multipleSection.style.display = 'none';
+        }
+        
+        // Show single finding section
+        const singleSection = document.getElementById('singleFindingSection');
+        if (singleSection) {
+            singleSection.style.display = 'block';
+        }
+        
+        // Populate single finding fields
+        const findingIdField = document.getElementById('phishlabsFindingId');
+        const domainField = document.getElementById('phishlabsDomain');
+        const urlPathField = document.getElementById('phishlabsUrlPath');
+        
+        if (findingIdField) findingIdField.value = finding.id || '';
+        if (domainField) domainField.value = finding.domain_name || '';
+        if (urlPathField) urlPathField.value = '';
+    },
+    
+    // Populate modal for multiple findings
+    populateMultipleFindingsModal: function(findings) {
+        console.log('Populating multiple findings modal for:', findings);
+        
+        // Hide single finding section
+        const singleSection = document.getElementById('singleFindingSection');
+        if (singleSection) {
+            singleSection.style.display = 'none';
+        }
+        
+        // Show multiple findings section
+        const multipleSection = document.getElementById('multipleFindingsSection');
+        if (multipleSection) {
+            multipleSection.style.display = 'block';
+        }
+        
+        // Clear existing multiple findings
+        const container = document.getElementById('multipleFindingsContainer');
+        if (!container) {
+            console.error('Multiple findings container not found');
+            return;
+        }
+        
+        container.innerHTML = '';
+        
+        // Add each finding as a row
+        findings.forEach((finding, index) => {
+            const row = document.createElement('div');
+            row.className = 'finding-row';
+            row.innerHTML = `
+                <div class="form-group compact">
+                    <label>Domain/URL ${index + 1}</label>
+                    <div class="domain-url-input">
+                        <input type="text" name="domain_${index}" value="${finding.domain_name || ''}" readonly>
+                        <input type="text" name="urlPath_${index}" placeholder="/path" class="url-path-input">
+                    </div>
+                    <input type="hidden" name="findingId_${index}" value="${finding.id || ''}">
+                </div>
+            `;
+            container.appendChild(row);
+        });
+    },
+    
+    // Close PhishLabs modal
+    closePhishLabsModal: function() {
+        const modal = document.getElementById('phishlabsModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    },
+    
+    // Toggle PhishLabs fields based on case type
+    togglePhishLabsFields: function() {
+        const caseType = document.getElementById('phishlabsCaseType')?.value;
+        const threatCaseFields = document.getElementById('threatCaseFields');
+        const domainCaseFields = document.getElementById('domainCaseFields');
+        
+        if (caseType === 'threat') {
+            if (threatCaseFields) threatCaseFields.style.display = 'block';
+            if (domainCaseFields) domainCaseFields.style.display = 'none';
+        } else if (caseType === 'domain') {
+            if (threatCaseFields) threatCaseFields.style.display = 'none';
+            if (domainCaseFields) domainCaseFields.style.display = 'block';
+        } else {
+            if (threatCaseFields) threatCaseFields.style.display = 'none';
+            if (domainCaseFields) domainCaseFields.style.display = 'none';
+        }
+    },
+    
+    // Load PhishLabs brands for modal
+    loadPhishLabsBrandsForModal: async function() {
+        try {
+            const response = await fetch('/api/phishlabs/brands');
+            const brands = await response.json();
+            const select = document.getElementById('phishlabsBrand');
+            if (select && Array.isArray(brands)) {
+                select.innerHTML = '<option value="">Select Brand</option>';
+                brands.forEach(brand => {
+                    const option = document.createElement('option');
+                    option.value = brand.id || brand.brandId;
+                    option.textContent = brand.name || brand.brandName;
+                    select.appendChild(option);
+                });
+                console.log(`Loaded ${brands.length} brands for PhishLabs modal`);
+            }
+        } catch (error) {
+            console.warn('Failed to load PhishLabs brands for modal:', error);
+            const select = document.getElementById('phishlabsBrand');
+            if (select) {
+                select.innerHTML = '<option value="">PhishLabs brands unavailable</option>';
+            }
+        }
+    },
+    
+    // Load PhishLabs threat types for modal
+    loadPhishLabsThreatTypesForModal: async function() {
+        try {
+            const response = await fetch('/api/phishlabs/threat-types');
+            const threatTypes = await response.json();
+            const select = document.getElementById('phishlabsThreatType');
+            if (select && Array.isArray(threatTypes)) {
+                select.innerHTML = '<option value="">Select Threat Type</option>';
+                threatTypes.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type.id || type.threatTypeId;
+                    option.textContent = type.name || type.threatTypeName;
+                    select.appendChild(option);
+                });
+                console.log(`Loaded ${threatTypes.length} threat types for PhishLabs modal`);
+            }
+        } catch (error) {
+            console.warn('Failed to load PhishLabs threat types for modal:', error);
+            const select = document.getElementById('phishlabsThreatType');
+            if (select) {
+                select.innerHTML = '<option value="">PhishLabs threat types unavailable</option>';
+            }
+        }
+    },
+    
+    // Change items per page
+    changeItemsPerPage: function() {
+        const itemsPerPage = document.getElementById('itemsPerPage')?.value || '25';
+        this.itemsPerPage = itemsPerPage === 'all' ? 999999 : parseInt(itemsPerPage);
+        this.currentPage = 1;
+        this.updatePagination();
+    },
+    
+    // Update pagination
+    updatePagination: function() {
+        const visibleRows = document.querySelectorAll('.finding-row:not([style*="display: none"])');
+        const totalItems = visibleRows.length;
+        const totalPages = Math.ceil(totalItems / this.itemsPerPage);
+        
+        // Show/hide pagination
+        const paginationContainer = document.getElementById('paginationContainer');
+        if (paginationContainer) {
+            if (totalPages > 1) {
+                paginationContainer.style.display = 'flex';
+            } else {
+                paginationContainer.style.display = 'none';
+            }
+        }
+        
+        // Update pagination info
+        const startItem = (this.currentPage - 1) * this.itemsPerPage + 1;
+        const endItem = Math.min(this.currentPage * this.itemsPerPage, totalItems);
+        const paginationInfo = document.getElementById('paginationInfo');
+        if (paginationInfo) {
+            paginationInfo.textContent = `Showing ${startItem}-${endItem} of ${totalItems} findings`;
+        }
+        
+        // Update page numbers
+        this.updatePageNumbers(totalPages);
+        
+        // Update navigation buttons
+        const firstPage = document.getElementById('firstPage');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        const lastPage = document.getElementById('lastPage');
+        
+        if (firstPage) firstPage.disabled = this.currentPage === 1;
+        if (prevPage) prevPage.disabled = this.currentPage === 1;
+        if (nextPage) nextPage.disabled = this.currentPage === totalPages;
+        if (lastPage) lastPage.disabled = this.currentPage === totalPages;
+        
+        // Show current page items
+        this.showCurrentPageItems();
+    },
+    
+    // Update page numbers
+    updatePageNumbers: function(totalPages) {
+        const pageNumbersContainer = document.getElementById('pageNumbers');
+        if (!pageNumbersContainer) return;
+        
+        pageNumbersContainer.innerHTML = '';
+        
+        const maxVisiblePages = 5;
+        let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+        
+        if (endPage - startPage + 1 < maxVisiblePages) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            const pageButton = document.createElement('button');
+            pageButton.className = `page-number ${i === this.currentPage ? 'active' : ''}`;
+            pageButton.textContent = i;
+            pageButton.onclick = () => this.goToPage(i);
+            pageNumbersContainer.appendChild(pageButton);
+        }
+    },
+    
+    // Show current page items
+    showCurrentPageItems: function() {
+        const visibleRows = document.querySelectorAll('.finding-row:not([style*="display: none"])');
+        const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+        const endIndex = startIndex + this.itemsPerPage;
+        
+        visibleRows.forEach((row, index) => {
+            if (index >= startIndex && index < endIndex) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    },
+    
+    // Go to specific page
+    goToPage: function(page) {
+        this.currentPage = page;
+        this.updatePagination();
+    },
+    
+    // Previous page
+    previousPage: function() {
+        if (this.currentPage > 1) {
+            this.goToPage(this.currentPage - 1);
+        }
+    },
+    
+    // Next page
+    nextPage: function() {
+        const visibleRows = document.querySelectorAll('.finding-row:not([style*="display: none"])');
+        const totalPages = Math.ceil(visibleRows.length / this.itemsPerPage);
+        if (this.currentPage < totalPages) {
+            this.goToPage(this.currentPage + 1);
+        }
+    },
+    
+    // Update summary stats (simplified - only for internal tracking)
+    updateSummaryStats: function() {
+        // No longer displaying summary stats in UI
+        // This function is kept for potential future use
+        const totalFindings = document.querySelectorAll('.finding-row').length;
+        const filteredFindings = document.querySelectorAll('.finding-row:not([style*="display: none"])').length;
+        const selectedFindings = this.selectedFindings.size;
+        
+        console.log(`Findings: ${totalFindings} total, ${filteredFindings} filtered, ${selectedFindings} selected`);
+    },
+    
+    // Show export options modal
+    showExportOptions: function() {
+        console.log('Showing export options...');
+        const modal = document.getElementById('exportOptionsModal');
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    },
+    
+    // Close export modal
+    closeExportModal: function() {
+        const modal = document.getElementById('exportOptionsModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    },
+    
+    // Execute export
+    executeExport: function() {
+        const format = document.querySelector('input[name="exportFormat"]:checked')?.value || 'csv';
+        const scope = document.querySelector('input[name="exportScope"]:checked')?.value || 'filtered';
+        const fields = Array.from(document.querySelectorAll('input[name="exportFields"]:checked')).map(cb => cb.value);
+        
+        // Build export URL
+        let exportUrl = `/api/export/findings?format=${format}&scope=${scope}`;
+        if (fields.length > 0) {
+            exportUrl += `&fields=${fields.join(',')}`;
+        }
+        
+        // Add filter parameters
+        Object.keys(this.filters).forEach(key => {
+            if (this.filters[key] && this.filters[key] !== 'all') {
+                exportUrl += `&${key}=${encodeURIComponent(this.filters[key])}`;
+            }
+        });
+        
+        // Add selected findings if scope is 'selected'
+        if (scope === 'selected' && this.selectedFindings.size > 0) {
+            exportUrl += `&selected=${Array.from(this.selectedFindings).join(',')}`;
+        }
+        
+        // Trigger download
+        window.location.href = exportUrl;
+        this.closeExportModal();
+    },
+    
+    updateStatus: async function(findingId, status, additionalData = {}) {
+        console.log('DTMonitor.findings.updateStatus() called:', { findingId, status, additionalData });
+        
+        try {
+            // Find the finding row
+            const findingRow = document.querySelector(`tr[data-finding-id="${findingId}"]`) || 
+                              document.querySelector(`tr:has(button[onclick*="${findingId}"])`);
+            
+            if (!findingRow) {
+                console.warn('Finding row not found for ID:', findingId);
+                return;
+            }
+            
+            // Update the status badge
+            const statusBadge = findingRow.querySelector('.status-badge');
+            if (statusBadge) {
+                statusBadge.className = `status-badge status-${status}`;
+                statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+            }
+            
+            // Update data attributes for tracking
+            if (additionalData.asrm_triggered !== undefined) {
+                findingRow.dataset.asrmTriggered = additionalData.asrm_triggered.toString();
+            }
+            if (additionalData.pl_submission !== undefined) {
+                findingRow.dataset.plSubmission = additionalData.pl_submission.toString();
+            }
+            if (additionalData.rejected !== undefined) {
+                findingRow.dataset.rejected = additionalData.rejected.toString();
+            }
+            if (additionalData.phishlabs_case_number) {
+                findingRow.dataset.phishlabsCaseNumber = additionalData.phishlabs_case_number;
+            }
+            
+            // Update action buttons based on new status
+            this.updateActionButtons(findingRow, status);
+            
+            // Update findings.json via backend
+            await this.updateFindingInBackend(findingId, status, additionalData);
+            
+            // Show success message
+            DTMonitor.notification.show(`Finding status updated to ${status}`, 'success');
+            
+            console.log('Finding status updated successfully');
+            
+        } catch (error) {
+            console.error('Error updating finding status:', error);
+            DTMonitor.notification.show('Error updating finding status', 'error');
+        }
+    },
+
+    // Update finding in backend (findings.json)
+    updateFindingInBackend: async function(findingId, status, additionalData = {}) {
+        console.log('DTMonitor.findings.updateFindingInBackend() called:', { findingId, status, additionalData });
+        
+        try {
+            const updateData = {
+                finding_id: findingId,
+                status: status,
+                ...additionalData,
+                updated_at: new Date().toISOString(),
+                updated_by: 'user' // Could be enhanced to track actual user
+            };
+            
+            // Send update to backend
+            const result = await DTMonitor.api.put(`/findings/update/${findingId}`, updateData);
+            
+            if (result.success) {
+                console.log('Finding updated in backend successfully');
+                } else {
+                throw new Error(result.message || 'Backend update failed');
+            }
+            
+        } catch (error) {
+            console.error('Error updating finding in backend:', error);
+            // Don't show error to user as this is background operation
+            // But log it for debugging
+        }
+    },
+
+    // Update action buttons based on finding status
+    updateActionButtons: function(findingRow, status) {
+        console.log('DTMonitor.findings.updateActionButtons() called:', { status });
+        
+        const actionsCell = findingRow.querySelector('.actions-cell');
+        if (!actionsCell) return;
+        
+        let actionButtons = '';
+        
+        switch (status) {
+            case 'approved':
+                actionButtons = `
+                    <div class="action-buttons">
+                        <button onclick="DTMonitor.findings.showMetadata('${findingRow.dataset.findingId || 'demo'}')"
+                                class="btn btn-info" title="View Metadata">
+                            <i class="fas fa-info"></i>
+                        </button>
+                    </div>
+                `;
+                break;
+                
+            case 'rejected':
+                actionButtons = `
+                    <div class="action-buttons">
+                        <button onclick="DTMonitor.findings.showMetadata('${findingRow.dataset.findingId || 'demo'}')"
+                                class="btn btn-info" title="View Metadata">
+                            <i class="fas fa-info"></i>
+                        </button>
+                    </div>
+                `;
+                break;
+                
+            default: // pending
+                actionButtons = `
+                    <div class="action-buttons">
+                        <button onclick="DTMonitor.findings.approveFinding('${findingRow.dataset.findingId || 'demo'}')"
+                                class="btn btn-success" title="Approve & Submit to PhishLabs">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button onclick="DTMonitor.findings.rejectFinding('${findingRow.dataset.findingId || 'demo'}')"
+                                class="btn btn-danger" title="Reject Finding">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        <button onclick="DTMonitor.findings.showMetadata('${findingRow.dataset.findingId || 'demo'}')"
+                                class="btn btn-info" title="View Metadata">
+                            <i class="fas fa-info"></i>
+                        </button>
+                    </div>
+                `;
+        }
+        
+        actionsCell.innerHTML = actionButtons;
+    },
+    
+    submitToPhishLabs: async function(findingId) {
+        try {
+            // Check if finding is already approved or rejected
+            const row = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+            if (!row) {
+                DTMonitor.notification.show('Finding not found', 'error');
+                return;
+            }
+            
+            const status = row.dataset.status;
+            if (status === 'approved') {
+                DTMonitor.notification.show('Cannot submit already approved finding', 'warning');
+                return;
+            }
+            
+            if (status === 'rejected') {
+                DTMonitor.notification.show('Cannot submit rejected finding', 'warning');
+                return;
+            }
+            
+            DTMonitor.notification.show('Submitting to PhishLabs...', 'info');
+            
+            const result = await DTMonitor.api.post('/phishlabs/submit', {
+                finding_id: findingId
+            });
+            
+            if (result.success) {
+                DTMonitor.notification.show('Successfully submitted to PhishLabs', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                throw new Error(result.message || 'Submission failed');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to submit to PhishLabs. Please try again.');
+        }
+    },
+    
+    exportToCSV: function() {
+        try {
+            DTMonitor.notification.show('Exporting findings to CSV...', 'info');
+            
+            const params = new URLSearchParams();
+            Object.entries(this.filters).forEach(([key, value]) => {
+                if (value && value !== 'all') {
+                    params.append(key, value);
+                }
+            });
+            
+            window.location.href = `/api/findings/export?${params.toString()}`;
+            DTMonitor.notification.show('CSV export started', 'success');
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to export findings.');
+        }
+    },
+    
+    initFilters: function() {
+        const filterElements = ['statusFilter', 'riskFilter', 'hashFilter'];
+        filterElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', DTMonitor.debounce(() => {
+                    this.applyFilters();
+                }, DTMonitor.config.debounceDelay));
+            }
+        });
+    },
+    
+    
+    displayFindings: function(findings) {
+        const container = document.getElementById('findingsContainer');
+        if (!container) return;
+        
+        if (!Array.isArray(findings) || findings.length === 0) {
+            this.displayNoFindings();
+            return;
+        }
+        
+        container.innerHTML = findings.map(finding => this.createFindingCard(finding)).join('');
+        
+        // Add entrance animations
+        const cards = container.querySelectorAll('.finding-card');
+        cards.forEach((card, index) => {
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(20px)';
+        setTimeout(() => {
+                DTMonitor.fadeIn(card);
+            }, index * 50);
+        });
+    },
+    
+    createFindingCard: function(finding) {
+        const riskClass = finding.risk_score >= 80 ? 'high' : finding.risk_score >= 50 ? 'medium' : 'low';
+        
+        return `
+            <div class="finding-card ${finding.status}" data-finding-id="${finding.id}">
+                <div class="finding-header">
+                    <div class="finding-domain">
+                        <h3>${this.escapeHtml(finding.domain)}</h3>
+                        <span class="risk-badge risk-${riskClass}">
+                            Risk: ${finding.risk_score || 'Unknown'}
+                        </span>
+                    </div>
+                    <div class="finding-status status-${finding.status}">
+                        ${finding.status}
+                    </div>
+                </div>
+                
+                <div class="finding-content">
+                    <div class="finding-details">
+                        <div class="detail-item">
+                            <label>Hash:</label>
+                            <span>${this.escapeHtml(finding.hash_name || 'Unknown')}</span>
+                        </div>
+                        <div class="detail-item">
+                            <label>Discovered:</label>
+                            <span>${this.formatDate(finding.discovered_date)}</span>
+                        </div>
+                        ${finding.registrar ? `
+                            <div class="detail-item">
+                                <label>Registrar:</label>
+                                <span>${this.escapeHtml(finding.registrar)}</span>
+                            </div>
+                        ` : ''}
+                        ${finding.country ? `
+                            <div class="detail-item">
+                                <label>Country:</label>
+                                <span>${this.escapeHtml(finding.country)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${finding.notes ? `
+                        <div class="finding-notes">
+                            <label>Notes:</label>
+                            <p>${this.escapeHtml(finding.notes)}</p>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div class="finding-actions">
+                    ${finding.status === 'pending' ? `
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'approved')" class="btn btn-success btn-small">
+                            <i class="fas fa-check"></i>
+                            Approve
+                        </button>
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'rejected')" class="btn btn-danger btn-small">
+                            <i class="fas fa-times"></i>
+                            Reject
+                        </button>
+                        <button onclick="DTMonitor.findings.updateStatus('${finding.id}', 'on_hold')" class="btn btn-warning btn-small">
+                            <i class="fas fa-pause"></i>
+                            Hold
+                        </button>
+                    ` : ''}
+                    
+                    ${finding.status === 'approved' && !finding.phishlabs_case_number ? `
+                        <button onclick="DTMonitor.findings.submitToPhishLabs('${finding.id}')" class="btn btn-primary btn-small">
+                            <i class="fas fa-shield-alt"></i>
+                            Submit to PhishLabs
+                        </button>
+                    ` : ''}
+                    
+                    ${finding.phishlabs_case_number ? `
+                        <span class="case-number">
+                            <i class="fas fa-shield-alt"></i>
+                            Case: ${finding.phishlabs_case_number}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    },
+    
+    
+    displayNoFindings: function() {
+        const container = document.getElementById('findingsContainer');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="no-findings-message">
+                <div class="no-findings-icon">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h3>No Findings Available</h3>
+                <p>No findings match your current filters. Try adjusting the filters or run a new scan to discover threats.</p>
+                <button onclick="window.location.href='/scan'" class="btn btn-primary">
+                    <i class="fas fa-radar"></i>
+                    Run New Scan
+                </button>
+            </div>
+        `;
+    },
+    
+    showDetails: function(findingId) {
+        console.log('Showing finding details for ID:', findingId);
+        
+        try {
+            // Find the finding row
+            const findingRow = document.querySelector(`tr[data-finding-id="${findingId}"]`) || 
+                              document.querySelector(`tr:has(button[onclick*="${findingId}"])`);
+            
+            if (!findingRow) {
+                console.warn('Finding row not found for ID:', findingId);
+                DTMonitor.notification.show('Finding not found', 'error');
+            return;
+        }
+        
+            // Extract finding data
+            const findingData = {
+                domain: findingRow.querySelector('.domain-name')?.textContent?.trim() || 'N/A',
+                hash: findingRow.querySelector('.hash-info')?.textContent?.trim() || 'N/A',
+                ip: findingRow.querySelector('.ip-info')?.textContent?.trim() || 'N/A',
+                provider: findingRow.querySelector('.provider-info')?.textContent?.trim() || 'N/A',
+                registrar: findingRow.querySelector('.registrar-info')?.textContent?.trim() || 'N/A',
+                timestamp: findingRow.querySelector('.timestamp')?.textContent?.trim() || 'N/A',
+                status: findingRow.querySelector('.status-badge')?.textContent?.trim() || 'N/A',
+                riskScore: findingRow.querySelector('.risk-badge')?.textContent?.trim() || 'N/A'
+            };
+            
+            // Populate modal content
+            const modalContent = document.getElementById('findingDetailsContent');
+            if (modalContent) {
+                modalContent.innerHTML = `
+                    <div class="finding-details">
+                        <div class="detail-row">
+                            <label>Domain:</label>
+                            <span>${findingData.domain}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>Hash:</label>
+                            <span>${findingData.hash}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>IP Address:</label>
+                            <span>${findingData.ip}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>Provider:</label>
+                            <span>${findingData.provider}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>Registrar:</label>
+                            <span>${findingData.registrar}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>Status:</label>
+                            <span class="status-badge status-${findingData.status.toLowerCase().replace(' ', '_')}">${findingData.status}</span>
+                        </div>
+                        <div class="detail-row">
+                            <label>Risk Score:</label>
+                            <span class="risk-score">${findingData.riskScore}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Show modal
+            const modal = document.getElementById('findingDetailsModal');
+            if (modal) {
+                modal.style.display = 'block';
+            } else {
+                console.error('Finding details modal not found');
+                DTMonitor.notification.show('Modal not available', 'error');
+            }
+            
+            console.log('Finding details modal displayed');
+            
+        } catch (error) {
+            console.error('Error showing finding details:', error);
+            DTMonitor.notification.show('Error displaying finding details', 'error');
+        }
+    },
+
+    // Close finding details modal
+    closeFindingDetailsModal: function() {
+        console.log('DTMonitor.findings.closeFindingDetailsModal() called');
+        
+        const modal = document.getElementById('findingDetailsModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        console.log('Finding details modal closed');
+    },
+
+    // Approve finding and submit to PhishLabs
+    approveFinding: async function(findingId) {
+        console.log('DTMonitor.findings.approveFinding() called:', findingId);
+        
+        try {
+            // Get finding data from DOM
+            const row = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+            if (!row) {
+                DTMonitor.notification.show('Finding not found', 'error');
+                return;
+            }
+            
+            const status = row.dataset.status;
+            if (status === 'approved') {
+                DTMonitor.notification.show('Cannot approve already approved finding', 'warning');
+                return;
+            }
+            
+            const finding = {
+                id: row.dataset.findingId,
+                domain_name: row.dataset.domain,
+                risk_score: parseInt(row.dataset.risk) || 0,
+                status: row.dataset.status,
+                hash_id: row.dataset.hash,
+                hash_name: row.dataset['hash-name'],
+                first_seen: row.dataset['first-seen'],
+                registrar: row.dataset.registrar,
+                ip_country: row.dataset.country,
+                asrm_triggered: row.dataset['asrm-triggered'] === 'true',
+                pl_submission: row.dataset['pl-submission'] === 'true'
+            };
+            
+            // Show PhishLabs submission modal
+            this.openPhishLabsModal([finding], 'approve');
+            
+        } catch (error) {
+            console.error('Error approving finding:', error);
+            DTMonitor.notification.show('Error approving finding', 'error');
+        }
+    },
+
+    // Reject finding
+    rejectFinding: async function(findingId) {
+        console.log('DTMonitor.findings.rejectFinding() called:', findingId);
+        
+        try {
+            // Check if finding is already rejected
+            const row = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+            if (!row) {
+                DTMonitor.notification.show('Finding not found', 'error');
+                return;
+            }
+            
+            const status = row.dataset.status;
+            if (status === 'rejected') {
+                DTMonitor.notification.show('Cannot reject already rejected finding', 'warning');
+                return;
+            }
+            
+            // Update finding status to rejected
+            await this.updateStatus(findingId, 'rejected', {
+                asrm_triggered: false,
+                pl_submission: false,
+                rejected: true,
+                rejection_reason: 'Manually rejected by user'
+            });
+            
+            // Update UI
+            this.updateActionButtonsAfterAction(findingId, 'rejected');
+            
+            DTMonitor.notification.show('Finding rejected successfully', 'success');
+            
+        } catch (error) {
+            console.error('Error rejecting finding:', error);
+            DTMonitor.notification.show('Error rejecting finding', 'error');
+        }
+    },
+
+    // Show metadata for finding
+    showMetadata: function(findingId) {
+        console.log('DTMonitor.findings.showMetadata() called:', findingId);
+        
+        try {
+            // Show loading state
+            const modalContent = document.getElementById('metadataContent');
+            if (modalContent) {
+                modalContent.innerHTML = `
+                    <div class="metadata-loading">
+                        <div class="loading-spinner"></div>
+                        <p>Loading finding details...</p>
+                    </div>
+                `;
+            }
+            
+            // Show modal first
+            const modal = document.getElementById('metadataModal');
+            if (modal) {
+                modal.style.display = 'block';
+            }
+            
+            // Fetch complete finding data from backend
+            DTMonitor.api.get(`/findings/get/${findingId}`)
+                .then(response => {
+                    if (response.success && response.finding) {
+                        this.displayCompleteMetadata(response.finding);
+                    } else {
+                        throw new Error(response.message || 'Failed to fetch finding data');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching finding data:', error);
+                    if (modalContent) {
+                        modalContent.innerHTML = `
+                            <div class="metadata-error">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <h4>Error Loading Data</h4>
+                                <p>${error.message || 'Failed to load finding details'}</p>
+                                <button class="btn btn-primary" onclick="DTMonitor.findings.showMetadata('${findingId}')">Retry</button>
+                            </div>
+                        `;
+                    }
+                });
+            
+        } catch (error) {
+            console.error('Error showing metadata:', error);
+            DTMonitor.notification.show('Error displaying metadata', 'error');
+        }
+    },
+    
+    // Display complete metadata with all fields
+    displayCompleteMetadata: function(finding) {
+        const modalContent = document.getElementById('metadataContent');
+        if (!modalContent) return;
+        
+        // Format tags for display
+        const tagsHtml = finding.tags && finding.tags.length > 0 
+            ? finding.tags.map(tag => `<span class="tag-badge">${tag}</span>`).join('')
+            : '<span class="no-tags">No tags assigned</span>';
+        
+        // Format dates
+        const formatDate = (dateString) => {
+            if (!dateString) return 'N/A';
+            try {
+                return new Date(dateString).toLocaleString();
+            } catch {
+                return dateString;
+            }
+        };
+        
+        // Format risk score with color
+        const getRiskClass = (score) => {
+            if (score >= 80) return 'risk-high';
+            if (score >= 50) return 'risk-medium';
+            return 'risk-low';
+        };
+        
+        modalContent.innerHTML = `
+            <div class="metadata-container">
+                <!-- Header Section -->
+                <div class="metadata-header">
+                    <div class="domain-title">
+                        <h3>${finding.domain_name}</h3>
+                        <span class="finding-id">ID: ${finding.id}</span>
+                    </div>
+                    <div class="status-overview">
+                        <span class="status-badge status-${finding.status}">${finding.status.toUpperCase()}</span>
+                        <span class="risk-badge ${getRiskClass(finding.risk_score)}">Risk: ${finding.risk_score}</span>
+                    </div>
+                </div>
+                
+                <!-- Tabs Navigation -->
+                <div class="metadata-tabs">
+                    <button class="tab-btn active" onclick="DTMonitor.findings.switchMetadataTab('overview')">Overview</button>
+                    <button class="tab-btn" onclick="DTMonitor.findings.switchMetadataTab('infrastructure')">Infrastructure</button>
+                    <button class="tab-btn" onclick="DTMonitor.findings.switchMetadataTab('security')">Security</button>
+                    <button class="tab-btn" onclick="DTMonitor.findings.switchMetadataTab('phishlabs')">PhishLabs</button>
+                    <button class="tab-btn" onclick="DTMonitor.findings.switchMetadataTab('raw')">Raw Data</button>
+                </div>
+                
+                <!-- Tab Content -->
+                <div class="metadata-tab-content">
+                    <!-- Overview Tab -->
+                    <div id="overview-tab" class="tab-panel active">
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-info-circle"></i> Basic Information</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>Domain Name:</label>
+                                    <span class="value">${finding.domain_name}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Finding ID:</label>
+                                    <span class="value">${finding.id}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Search Hash:</label>
+                                    <span class="value">${finding.search_hash_name || finding.hash_name || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Risk Score:</label>
+                                    <span class="risk-badge ${getRiskClass(finding.risk_score)}">${finding.risk_score}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Status:</label>
+                                    <span class="status-badge status-${finding.status}">${finding.status.toUpperCase()}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Tags:</label>
+                                    <div class="tags-display">${tagsHtml}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-calendar"></i> Timeline</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>First Seen:</label>
+                                    <span class="value">${formatDate(finding.first_seen)}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Discovered At:</label>
+                                    <span class="value">${formatDate(finding.discovered_at)}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Last Updated:</label>
+                                    <span class="value">${formatDate(finding.last_updated || finding.updated_at)}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Create Date:</label>
+                                    <span class="value">${finding.create_date || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Expiration Date:</label>
+                                    <span class="value">${finding.expiration_date || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-globe"></i> Website Information</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>Website Title:</label>
+                                    <span class="value">${finding.website_title || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Server Type:</label>
+                                    <span class="value">${finding.server_type || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Response Code:</label>
+                                    <span class="value">${finding.response_code || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Infrastructure Tab -->
+                    <div id="infrastructure-tab" class="tab-panel">
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-server"></i> IP Infrastructure</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>IP Address:</label>
+                                    <span class="value">${finding.ip_address || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>ISP:</label>
+                                    <span class="value">${finding.ip_isp || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>ASN:</label>
+                                    <span class="value">${finding.ip_asn || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Country:</label>
+                                    <span class="value">${finding.ip_country || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>IP Count:</label>
+                                    <span class="value">${finding.ip_count || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-building"></i> Registration Information</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>Registrar:</label>
+                                    <span class="value">${finding.registrar || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Registrar Count:</label>
+                                    <span class="value">${finding.registrar_count || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Registrant Name:</label>
+                                    <span class="value">${finding.registrant_name || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Registrant Org:</label>
+                                    <span class="value">${finding.registrant_org || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Admin Email:</label>
+                                    <span class="value">${finding.admin_email || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-network-wired"></i> Name Servers</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>Name Server Host:</label>
+                                    <span class="value">${finding.nameserver_host || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Name Server Domain:</label>
+                                    <span class="value">${finding.nameserver_domain || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Name Server IP:</label>
+                                    <span class="value">${finding.nameserver_ip || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Name Server Count:</label>
+                                    <span class="value">${finding.nameserver_count || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Security Tab -->
+                    <div id="security-tab" class="tab-panel">
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-shield-alt"></i> SSL Certificate</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>SSL Hash:</label>
+                                    <span class="value">${finding.ssl_hash || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>SSL Subject:</label>
+                                    <span class="value">${finding.ssl_subject || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>SSL Issuer:</label>
+                                    <span class="value">${finding.ssl_issuer || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>SSL Valid Until:</label>
+                                    <span class="value">${finding.ssl_valid_until || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>SSL Hash Count:</label>
+                                    <span class="value">${finding.ssl_hash_count || finding.ssl_count || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-chart-line"></i> Threat Scores</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>Phishing Score:</label>
+                                    <span class="value">${finding.phishing_score || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Malware Score:</label>
+                                    <span class="value">${finding.malware_score || 'N/A'}</span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Spam Score:</label>
+                                    <span class="value">${finding.spam_score || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- PhishLabs Tab -->
+                    <div id="phishlabs-tab" class="tab-panel">
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-shield-alt"></i> PhishLabs Status</h4>
+                            <div class="metadata-grid">
+                                <div class="metadata-item">
+                                    <label>ASRM Triggered:</label>
+                                    <span class="status-indicator ${finding.asrm_triggered ? 'triggered' : 'not-triggered'}">
+                                        ${finding.asrm_triggered ? 'Yes' : 'No'}
+                                    </span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>PhishLabs Submission:</label>
+                                    <span class="status-indicator ${finding.pl_submission ? 'submitted' : 'not-submitted'}">
+                                        ${finding.pl_submission ? 'Yes' : 'No'}
+                                    </span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>Rejected:</label>
+                                    <span class="status-indicator ${finding.rejected ? 'rejected' : 'not-rejected'}">
+                                        ${finding.rejected ? 'Yes' : 'No'}
+                                    </span>
+                                </div>
+                                <div class="metadata-item">
+                                    <label>PhishLabs Case Number:</label>
+                                    <span class="value">${finding.phishlabs_case_number || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${finding.phishlabs_info && Object.keys(finding.phishlabs_info).length > 0 ? `
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-file-alt"></i> PhishLabs Details</h4>
+                            <div class="metadata-grid">
+                                ${Object.entries(finding.phishlabs_info).map(([key, value]) => `
+                                    <div class="metadata-item">
+                                        <label>${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</label>
+                                        <span class="value">${value || 'N/A'}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <!-- Raw Data Tab -->
+                    <div id="raw-tab" class="tab-panel">
+                        <div class="metadata-section">
+                            <h4><i class="fas fa-code"></i> Raw Finding Data</h4>
+                            <div class="raw-data-container">
+                                <pre class="raw-data">${JSON.stringify(finding, null, 2)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    
+    // Switch between metadata tabs
+    switchMetadataTab: function(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.metadata-tabs .tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Update tab panels
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.remove('active');
+        });
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+    },
+    
+    // Toggle tag selection field
+    toggleTagSelection: function() {
+        const checkbox = document.getElementById('phishlabsAddTag');
+        const tagField = document.getElementById('tagSelectionField');
+        
+        if (checkbox && tagField) {
+            if (checkbox.checked) {
+                tagField.style.display = 'block';
+                this.loadAvailableTags();
+            } else {
+                tagField.style.display = 'none';
+                this.resetTagSelection();
+            }
+        }
+    },
+    
+    // Load available tags from backend
+    loadAvailableTags: async function() {
+        try {
+            const response = await DTMonitor.api.get('/tags/list');
+            if (response.success && response.tags) {
+                this.populateTagSelect(response.tags);
+            } else {
+                console.warn('No tags available or failed to load tags');
+            }
+        } catch (error) {
+            console.error('Error loading tags:', error);
+            DTMonitor.notification.show('Failed to load available tags', 'error');
+        }
+    },
+    
+    // Populate tag select dropdown
+    populateTagSelect: function(tags) {
+        const tagSelect = document.getElementById('phishlabsTagSelect');
+        if (!tagSelect) return;
+        
+        // Clear existing options except the first two
+        while (tagSelect.children.length > 2) {
+            tagSelect.removeChild(tagSelect.lastChild);
+        }
+        
+        // Add tag options
+        tags.forEach(tag => {
+            const option = document.createElement('option');
+            option.value = tag.id;
+            option.textContent = tag.name;
+            tagSelect.appendChild(option);
+        });
+    },
+    
+    // Handle tag selection change
+    handleTagSelection: function() {
+        const tagSelect = document.getElementById('phishlabsTagSelect');
+        const newTagField = document.getElementById('newTagField');
+        
+        if (tagSelect && newTagField) {
+            if (tagSelect.value === '__new__') {
+                newTagField.style.display = 'flex';
+            } else {
+                newTagField.style.display = 'none';
+            }
+        }
+    },
+    
+    // Create new tag
+    createNewTag: async function() {
+        const newTagInput = document.getElementById('phishlabsNewTag');
+        const tagName = newTagInput?.value?.trim();
+        
+        if (!tagName) {
+            DTMonitor.notification.show('Please enter a tag name', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await DTMonitor.api.post('/tags/add', { name: tagName });
+            if (response.success) {
+                DTMonitor.notification.show(`Tag "${tagName}" created successfully`, 'success');
+                
+                // Reload tags and select the new one
+                await this.loadAvailableTags();
+                
+                // Select the newly created tag
+                const tagSelect = document.getElementById('phishlabsTagSelect');
+                if (tagSelect) {
+                    tagSelect.value = response.tag.id;
+                }
+                
+                // Hide new tag field
+                const newTagField = document.getElementById('newTagField');
+                if (newTagField) {
+                    newTagField.style.display = 'none';
+                }
+                
+                // Clear input
+                if (newTagInput) {
+                    newTagInput.value = '';
+                }
+            } else {
+                throw new Error(response.message || 'Failed to create tag');
+            }
+        } catch (error) {
+            console.error('Error creating tag:', error);
+            DTMonitor.notification.show('Failed to create tag: ' + error.message, 'error');
+        }
+    },
+    
+    // Reset tag selection
+    resetTagSelection: function() {
+        const tagSelect = document.getElementById('phishlabsTagSelect');
+        const newTagField = document.getElementById('newTagField');
+        const newTagInput = document.getElementById('phishlabsNewTag');
+        const checkbox = document.getElementById('phishlabsAddTag');
+        
+        if (tagSelect) tagSelect.value = '';
+        if (newTagField) newTagField.style.display = 'none';
+        if (newTagInput) newTagInput.value = '';
+        if (checkbox) checkbox.checked = false;
+    },
+
+    // Close metadata modal
+    closeMetadataModal: function() {
+        console.log('DTMonitor.findings.closeMetadataModal() called');
+        
+        const modal = document.getElementById('metadataModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        console.log('Metadata modal closed');
+    },
+
+    // Update action buttons after an action is taken
+    updateActionButtonsAfterAction: function(findingId, action) {
+        console.log('DTMonitor.findings.updateActionButtonsAfterAction() called:', { findingId, action });
+        
+        const findingRow = document.querySelector(`tr[data-finding-id="${findingId}"]`) || 
+                          document.querySelector(`tr:has(button[onclick*="${findingId}"])`);
+        
+        if (!findingRow) return;
+        
+        // Update status badge
+        const statusBadge = findingRow.querySelector('.status-badge');
+        if (statusBadge) {
+            statusBadge.className = `status-badge status-${action}`;
+            statusBadge.textContent = action.charAt(0).toUpperCase() + action.slice(1);
+        }
+        
+        // Update action buttons based on new status
+        this.updateActionButtons(findingRow, action);
+    },
+
+
+
+    // Submit to PhishLabs
+    submitToPhishLabs: async function() {
+        console.log('DTMonitor.findings.submitToPhishLabs() called');
+        
+        try {
+            const modal = document.getElementById('phishlabsModal');
+            if (!modal || !modal.dataset.findingId) {
+                DTMonitor.notification.show('No finding selected for submission', 'error');
+                return;
+            }
+            
+            const findingId = modal.dataset.findingId;
+            
+            // Check if finding is already approved or rejected
+            const row = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+            if (!row) {
+                DTMonitor.notification.show('Finding not found', 'error');
+                return;
+            }
+            
+            const status = row.dataset.status;
+            if (status === 'approved') {
+                DTMonitor.notification.show('Cannot submit already approved finding', 'warning');
+                this.closePhishLabsModal();
+                return;
+            }
+            
+            if (status === 'rejected') {
+                DTMonitor.notification.show('Cannot submit rejected finding', 'warning');
+                this.closePhishLabsModal();
+                return;
+            }
+            
+            // Get form data
+            const domain = document.getElementById('phishlabsDomain')?.value || '';
+            const urlPath = document.getElementById('phishlabsUrlPath')?.value || '';
+            const fullUrl = urlPath ? `${domain}${urlPath}` : domain;
+            
+            const caseType = document.getElementById('phishlabsCaseType')?.value || '';
+            const threatType = document.getElementById('phishlabsThreatType')?.value || '';
+            const threatCategory = document.getElementById('phishlabsThreatCategory')?.value || '';
+            
+            const formData = {
+                findingId: findingId,
+                caseType: caseType,
+                domain: fullUrl,
+                threatType: threatType,
+                threatCategory: threatCategory,
+                brand: document.getElementById('phishlabsBrand')?.value || '',
+                description: document.getElementById('phishlabsDescription')?.value || '',
+                fullUrl: fullUrl,
+                addTag: document.getElementById('phishlabsAddTag')?.checked || false,
+                tagId: document.getElementById('phishlabsTagSelect')?.value || '',
+                tagName: document.getElementById('phishlabsNewTag')?.value || ''
+            };
+            
+            // Validate required fields
+            if (!formData.domain || !formData.brand || !formData.caseType) {
+                DTMonitor.notification.show('Please fill in all required fields', 'warning');
+                return;
+            }
+            
+            // Validate case-specific fields
+            if (caseType === 'threat' && !threatType) {
+                DTMonitor.notification.show('Please select a threat type for threat cases', 'warning');
+                return;
+            }
+            
+            if (caseType === 'domain' && !threatCategory) {
+                DTMonitor.notification.show('Please select a threat category for domain cases', 'warning');
+                return;
+            }
+            
+            // Validate tag if checkbox is checked
+            if (formData.addTag) {
+                if (!formData.tagId && !formData.tagName) {
+                    DTMonitor.notification.show('Please select or create a tag', 'warning');
+                    return;
+                }
+            }
+            
+            // Submit to backend
+            const result = await DTMonitor.api.post('/phishlabs/submit', formData);
+            
+            if (result.success) {
+                // Update finding status and flags
+                await this.updateFindingStatus(findingId, 'approved', {
+                    asrm_triggered: false,
+                    pl_submission: true,
+                    rejected: false,
+                    phishlabs_case_number: result.case_number || 'N/A',
+                    phishlabs_submission_data: formData
+                });
+                
+                // Update UI
+                this.updateActionButtonsAfterAction(findingId, 'approved');
+                
+                // Close modal
+                this.closePhishLabsModal();
+                
+                DTMonitor.notification.show('Successfully submitted to PhishLabs', 'success');
+                
+                } else {
+                throw new Error(result.message || 'Submission failed');
+            }
+            
+        } catch (error) {
+            console.error('Error submitting to PhishLabs:', error);
+            DTMonitor.notification.show('Failed to submit to PhishLabs: ' + error.message, 'error');
+        }
+    },
+    
+    formatDate: function(dateString) {
+        if (!dateString) return 'Unknown';
+        try {
+            return new Date(dateString).toLocaleDateString();
+        } catch (error) {
+            return dateString;
+        }
+    },
+    
+    escapeHtml: function(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+};
+
+// =============================================================================
+// ENHANCED SETTINGS MANAGEMENT
+// =============================================================================
+
+DTMonitor.settings = {
+    init: function() {
+        console.log('Settings management initialized');
+        console.log('Setting up event delegation...');
+        this.setupEventDelegation();
+        console.log('Showing api-config section...');
+        this.showSection('api-config');
+        console.log('Initializing theme...');
+        this.initializeTheme();
+        console.log('Loading current settings...');
+        this.loadCurrentSettings();
+        console.log('Setting up form change monitoring...');
+        this.setupFormChangeMonitoring();
+        console.log('Loading available tags...');
+        this.loadAvailableTags();
+        console.log('Settings initialization complete');
+    },
+
+    setupEventDelegation: function() {
+        // Navigation event delegation
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            if (target.closest('.settings-nav-item')) {
+                const navItem = target.closest('.settings-nav-item');
+                const sectionId = navItem.dataset.section;
+                if (sectionId) {
+                    e.preventDefault();
+                    this.showSection(sectionId);
+                }
+            }
+        });
+
+        // Add Tag button event delegation
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'addTagBtn') {
+                e.preventDefault();
+                this.addNewTag();
+            }
+        });
+
+        // Tag edit form submission event delegation
+        document.addEventListener('submit', (e) => {
+            if (e.target.id === 'tagEditForm') {
+                e.preventDefault();
+                this.saveTagChanges();
+            }
+        });
+    },
+    
+    showSection: function(sectionId) {
+        // Hide all sections
+        document.querySelectorAll('.settings-section').forEach(section => {
+            section.classList.remove('active');
+        });
+        
+        // Remove active class from all nav items
+        document.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        // Show selected section
+        const selectedSection = document.getElementById(sectionId);
+        if (selectedSection) {
+            selectedSection.classList.add('active');
+        }
+        
+        // Add active class to nav item
+        const activeNavItem = document.querySelector(`[data-section="${sectionId}"]`);
+        if (activeNavItem) {
+            activeNavItem.classList.add('active');
+        }
+    },
+
+    initializeTheme: function() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        this.applyTheme(savedTheme);
+    },
+
+    applyTheme: function(theme) {
+        document.body.className = theme;
+        localStorage.setItem('theme', theme);
+        
+        const themeIcon = document.getElementById('themeIcon');
+        if (themeIcon) {
+            themeIcon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
+    },
+
+    toggleTheme: function() {
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.applyTheme(newTheme);
+    },
+
+    loadCurrentSettings: async function() {
+        try {
+            const response = await DTMonitor.api.get('/settings');
+            if (response.success) {
+                this.populateFormWithSettings(response.settings);
+                this.updateOriginalValues();
+            } else {
+                console.error('Failed to load settings:', response.message);
+            }
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        }
+    },
+
+    populateFormWithSettings: function(settings) {
+        Object.keys(settings).forEach(key => {
+            const element = document.getElementById(key);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = settings[key] === 'true' || settings[key] === true;
+                } else {
+                    element.value = settings[key] || '';
+                }
+            }
+        });
+    },
+
+    updateOriginalValues: function() {
+        this.originalValues = new Map();
+        const formElements = document.querySelectorAll('input, select, textarea');
+        formElements.forEach(element => {
+            if (element.id) {
+                this.originalValues.set(element.id, element.value);
+            }
+        });
+    },
+
+    setupFormChangeMonitoring: function() {
+        const formElements = document.querySelectorAll('input, select, textarea');
+        formElements.forEach(element => {
+            element.addEventListener('change', () => {
+            this.checkForChanges();
+            });
+            element.addEventListener('input', () => {
+                this.checkForChanges();
+            });
+        });
+    },
+    
+    checkForChanges: function() {
+        const saveButton = document.querySelector('.global-actions .btn-large');
+        if (!saveButton) return;
+
+        let hasChanges = false;
+        const formElements = document.querySelectorAll('input, select, textarea');
+        
+        formElements.forEach(element => {
+            if (element.id && this.originalValues.has(element.id)) {
+                const originalValue = this.originalValues.get(element.id);
+                const currentValue = element.type === 'checkbox' ? element.checked.toString() : element.value;
+                
+                if (originalValue !== currentValue) {
+                    hasChanges = true;
+                }
+            }
+        });
+
+        if (hasChanges) {
+            saveButton.style.display = 'inline-block';
+            } else {
+            saveButton.style.display = 'none';
+        }
+    },
+
+    collectFormData: function() {
+        const formData = {};
+        const formElements = document.querySelectorAll('#settingsForm input, #settingsForm select, #settingsForm textarea');
+        
+        formElements.forEach(element => {
+            if (element.name) {
+                if (element.type === 'checkbox') {
+                    formData[element.name] = element.checked.toString();
+                } else {
+                    formData[element.name] = element.value;
+                }
+            }
+        });
+        
+        console.log('DTMonitor collectFormData: collected', Object.keys(formData).length, 'fields');
+        console.log('DTMonitor collectFormData: fields:', Object.keys(formData));
+        return formData;
+    },
+
+    saveAllSettings: async function() {
+        try {
+            const formData = this.collectFormData();
+            console.log('Saving settings:', formData);
+            
+            const response = await this.saveSettingsToBackend(formData);
+            if (response.success) {
+                DTMonitor.api.showToast('Settings saved successfully!', 'success');
+                this.updateOriginalValues();
+                this.checkForChanges();
+                
+                // Refresh scheduler status if we're on the dashboard
+                if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+                    this.refreshSchedulerStatus();
+                }
+            } else {
+                DTMonitor.api.showToast('Failed to save settings: ' + response.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            DTMonitor.api.showToast('Error saving settings: ' + error.message, 'error');
+        }
+    },
+
+    saveSettingsToBackend: async function(formData) {
+        try {
+            console.log('DTMonitor saveSettingsToBackend: sending data:', formData);
+            console.log('DTMonitor saveSettingsToBackend: data keys:', Object.keys(formData));
+            const response = await DTMonitor.api.post('/settings', formData);
+            console.log('DTMonitor saveSettingsToBackend: response received:', response);
+            return response;
+        } catch (error) {
+            console.error('Error saving settings to backend:', error);
+            throw error;
+        }
+    },
+
+    refreshSchedulerStatus: function() {
+        // Refresh the page to show updated scheduler status
+        console.log('Refreshing scheduler status...');
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000); // Small delay to show the success message
+    },
+
+    // Function to load available tags from local storage
+    loadAvailableTags: async function() {
+        try {
+            console.log('Loading available tags from local storage...');
+            console.log('Making API request to /api/tags/available...');
+            // Load tags from the local tag management system
+            const response = await DTMonitor.api.get('/tags/available');
+            console.log('API response received:', response);
+            if (response.success && response.tags) {
+                console.log('Tags found:', response.tags);
+                this.displayAvailableTags(response.tags);
+            } else {
+                console.log('No tags available or response not successful');
+                this.displayAvailableTags([]);
+            }
+        } catch (error) {
+            console.error('Error loading available tags:', error);
+            this.displayAvailableTags([]);
+        }
+    },
+
+    // Function to display available tags in the UI
+    displayAvailableTags: function(tags) {
+        console.log('Displaying available tags:', tags);
+        const displayElement = document.getElementById('availableTagsDisplay');
+        console.log('Display element found:', displayElement);
+        if (!displayElement) {
+            console.error('availableTagsDisplay element not found!');
+            return;
+        }
+        
+        if (tags && tags.length > 0) {
+            // We need to get the full tag objects to display edit/delete buttons
+            this.loadFullTagsForDisplay();
+        } else {
+            console.log('No tags to display, showing no-tags message');
+            displayElement.innerHTML = '<p class="no-tags-message">No tags available. Add some tags above to get started.</p>';
+        }
+    },
+
+    // Function to load full tag objects for display with edit/delete functionality
+    loadFullTagsForDisplay: async function() {
+        try {
+            const response = await DTMonitor.api.get('/tags/list');
+            if (response.success && response.tags) {
+                this.displayTagsWithActions(response.tags);
+            } else {
+                this.displayTagsWithActions([]);
+            }
+        } catch (error) {
+            console.error('Error loading full tags:', error);
+            this.displayTagsWithActions([]);
+        }
+    },
+
+    // Function to display tags with edit and delete actions
+    displayTagsWithActions: function(tags) {
+        const displayElement = document.getElementById('availableTagsDisplay');
+        if (!displayElement) {
+            console.error('availableTagsDisplay element not found!');
+            return;
+        }
+        
+        if (tags && tags.length > 0) {
+            const tagsHtml = tags.map(tag => {
+                const tagName = tag.name || tag.value || 'Unknown Tag';
+                const tagId = tag.id || '';
+                const tagDescription = tag.description || '';
+                
+                return `
+                    <div class="tag-item" data-tag-id="${tagId}">
+                        <span class="available-tag">${tagName}</span>
+                        <div class="tag-actions">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="DTMonitor.settings.editTag('${tagId}', '${tagName.replace(/'/g, "\\'")}', '${tagDescription.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="DTMonitor.settings.deleteTag('${tagId}', '${tagName.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            displayElement.innerHTML = tagsHtml;
+            console.log('Tags with actions HTML rendered');
+                } else {
+            displayElement.innerHTML = '<p class="no-tags-message">No tags available. Add some tags above to get started.</p>';
+        }
+    },
+
+    // Function to add a new tag
+    addNewTag: async function() {
+        const tagInput = document.getElementById('newTagInput');
+        const tagName = tagInput.value.trim();
+        
+        if (!tagName) {
+            DTMonitor.api.showToast('Please enter a tag name', 'error');
+            return;
+        }
+
+        try {
+            const response = await DTMonitor.api.post('/tags/add', {
+                name: tagName,
+                description: `Custom tag: ${tagName}`
+            });
+
+            if (response.success) {
+                DTMonitor.api.showToast(`Tag "${tagName}" added successfully`, 'success');
+                tagInput.value = '';
+                // Reload tags to show the new one
+                this.loadAvailableTags();
+            } else {
+                DTMonitor.api.showToast(`Failed to add tag: ${response.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error adding tag:', error);
+            DTMonitor.api.showToast('Error adding tag', 'error');
+        }
+    },
+
+    // Function to edit a tag
+    editTag: function(tagId, tagName, tagDescription) {
+        console.log('Editing tag:', { tagId, tagName, tagDescription });
+        
+        // Populate the edit modal
+        document.getElementById('editTagId').value = tagId;
+        document.getElementById('editTagName').value = tagName;
+        document.getElementById('editTagDescription').value = tagDescription || '';
+        
+        // Show the modal
+        document.getElementById('tagEditModal').style.display = 'block';
+        
+        // Focus on the name input
+        document.getElementById('editTagName').focus();
+    },
+
+    // Function to close the tag edit modal
+    closeTagEditModal: function() {
+        document.getElementById('tagEditModal').style.display = 'none';
+        
+        // Clear the form
+        document.getElementById('tagEditForm').reset();
+        document.getElementById('editTagId').value = '';
+    },
+
+    // Function to save tag changes
+    saveTagChanges: async function() {
+        const tagId = document.getElementById('editTagId').value;
+        const tagName = document.getElementById('editTagName').value.trim();
+        const tagDescription = document.getElementById('editTagDescription').value.trim();
+        
+        if (!tagName) {
+            DTMonitor.api.showToast('Please enter a tag name', 'error');
+            return;
+        }
+        
+        try {
+            const response = await DTMonitor.api.put('/tags/update', {
+                id: tagId,
+                name: tagName,
+                description: tagDescription
+            });
+
+            if (response.success) {
+                DTMonitor.api.showToast(`Tag "${tagName}" updated successfully`, 'success');
+                this.closeTagEditModal();
+                // Reload tags to show the updated one
+                this.loadAvailableTags();
+            } else {
+                DTMonitor.api.showToast(`Failed to update tag: ${response.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error updating tag:', error);
+            DTMonitor.api.showToast('Error updating tag', 'error');
+        }
+    },
+
+    // Function to delete a tag
+    deleteTag: async function(tagId, tagName) {
+        if (!confirm(`Are you sure you want to delete the tag "${tagName}"?\n\nThis action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            const response = await DTMonitor.api.delete('/tags/delete', {
+                id: tagId
+            });
+
+            if (response.success) {
+                DTMonitor.api.showToast(`Tag "${tagName}" deleted successfully`, 'success');
+                // Reload tags to show the updated list
+                this.loadAvailableTags();
+            } else {
+                DTMonitor.api.showToast(`Failed to delete tag: ${response.message}`, 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting tag:', error);
+            DTMonitor.api.showToast('Error deleting tag', 'error');
+        }
+    },
+
+    testDomainToolsConnection: function() {
+        const statusIndicator = document.getElementById('api-status');
+        if (statusIndicator) {
+            statusIndicator.className = 'status-badge warning';
+            statusIndicator.innerHTML = '<i class="fas fa-circle"></i> Testing...';
+        }
+        
+        DTMonitor.api.get('/test/domaintools')
+            .then(result => {
+                DTMonitor.notification.show('DomainTools connection successful', 'success');
+                if (statusIndicator) {
+                    statusIndicator.className = 'status-badge success';
+                    statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Connected';
+                }
+            })
+            .catch(error => {
+                // Check if it's a 400 error (API reachable but invalid credentials)
+                if (error.status === 400) {
+                    DTMonitor.notification.show('DomainTools API reachable but credentials invalid', 'warning');
+                    if (statusIndicator) {
+                        statusIndicator.className = 'status-badge warning';
+                        statusIndicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i> API Reachable';
+                    }
+                } else {
+                    DTMonitor.notification.show('DomainTools connection failed: ' + error.message, 'error');
+                    if (statusIndicator) {
+                        statusIndicator.className = 'status-badge error';
+                        statusIndicator.innerHTML = '<i class="fas fa-times-circle"></i> Failed';
+                    }
+                }
+            });
+    },
+
+    testPhishLabsConnection: function() {
+        DTMonitor.api.get('/test/phishlabs')
+            .then(result => {
+                DTMonitor.notification.show('PhishLabs connection successful', 'success');
+            })
+            .catch(error => {
+                // Check if it's a 400 error (API reachable but invalid credentials)
+                if (error.status === 400) {
+                    DTMonitor.notification.show('PhishLabs API reachable but credentials invalid', 'warning');
+                } else {
+                    DTMonitor.notification.show('PhishLabs connection failed: ' + error.message, 'error');
+                }
+            });
+    },
+
+    testAllConnections: function() {
+        DTMonitor.notification.show('Testing all connections...', 'info');
+        this.testDomainToolsConnection();
+        this.testPhishLabsConnection();
+    }
+};
+
+// =============================================================================
+// ENHANCED SCANNING MANAGEMENT
+// =============================================================================
+
+DTMonitor.scanning = {
+    init: function() {
+        console.log('Scanning management initialized');
+    },
+    
+    runAll: async function() {
+        const button = document.querySelector('[onclick*="runAllScans"]');
+        DTMonitor.setLoading(button, true);
+        
+        try {
+            DTMonitor.notification.show('Starting scan of all active hashes...', 'info');
+            
+            const result = await DTMonitor.api.post('/scanning/run_all');
+            
+            if (result.success) {
+                DTMonitor.notification.show(result.message || 'All scans completed successfully', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(result.message || 'Scan failed');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to run scans. Please check your configuration and try again.');
+        } finally {
+            DTMonitor.setLoading(button, false);
+        }
+    },
+    
+    runSelected: async function() {
+        const hashSelect = document.getElementById('hashSelect');
+        const button = document.querySelector('[onclick*="runSelectedScan"]');
+        
+        if (!hashSelect || !hashSelect.value) {
+            DTMonitor.notification.show('Please select a hash to scan', 'warning');
+            return;
+        }
+        
+        DTMonitor.setLoading(button, true);
+        
+        try {
+            const hashId = hashSelect.value;
+            const hashName = hashSelect.options[hashSelect.selectedIndex].text;
+            
+            DTMonitor.notification.show(`Starting scan for ${hashName}...`, 'info');
+            
+            const result = await DTMonitor.api.post('/scanning/run_single', { hash_id: hashId });
+            
+            if (result.success) {
+                DTMonitor.notification.show(result.message || `Scan for ${hashName} completed successfully`, 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(result.message || 'Scan failed');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Failed to run scan. Please try again.');
+        } finally {
+            DTMonitor.setLoading(button, false);
+        }
+    },
+    
+    runSingle: async function(hashId) {
+        if (!hashId) {
+            DTMonitor.notification.show('Invalid hash ID', 'warning');
+            return;
+        }
+        
+        // Find the button by data attributes instead of onclick
+        const button = document.querySelector(`[data-action="run-scan"][data-hash-id="${hashId}"]`);
+        if (button) {
+            DTMonitor.setLoading(button, true);
+        }
+        
+        try {
+            DTMonitor.notification.show('Starting scan...', 'info');
+            
+            const result = await DTMonitor.api.post('/scanning/run_single', { hash_id: hashId });
+            
+            if (result.success) {
+                DTMonitor.notification.show(result.message || 'Scan completed successfully', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                throw new Error(result.message || 'Scan failed');
+            }
+        } catch (error) {
+            DTMonitor.handleError(error, 'Scan operation failed. Please try again later.');
+        } finally {
+            if (button) {
+                DTMonitor.setLoading(button, false);
+            }
+        }
+    },
+    
+    viewHistory: function() {
+        console.log('Viewing scan history...');
+        DTMonitor.notification.show('Viewing scan history...', 'info');
+        
+        // Simulate history view
+        setTimeout(() => {
+            DTMonitor.notification.show('Scan history feature coming soon', 'info');
+        }, 1000);
+    },
+    
+    // exportResults: function() {
+    //     if (typeof DTMonitor !== 'undefined' && DTMonitor.scanning) {
+    //         DTMonitor.scanning.exportResults();
+    //     } else {
+    //         console.log('Export results requested.');
+    //         window.location.href = '/api/scanning/export';
+    //     }
+    // },
+    
+    viewHistory: function() {
+        // Navigate to scan history page or show modal
+        window.location.href = '/scan-history';
+    }
+};
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+// Initialize DTMonitor when DOM is ready
+console.log('Setting up DOMContentLoaded listener...');
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('=== DOMContentLoaded Event Fired ===');
+    console.log('=== DTMonitor Framework Initializing ===');
+    
+    try {
+        // Initialize theme
+        if (DTMonitor.theme) {
+            DTMonitor.theme.init();
+            console.log('✓ Theme system initialized');
+        }
+        
+        // Initialize notifications
+        if (DTMonitor.notification) {
+            DTMonitor.notification.init();
+            console.log('✓ Notification system initialized');
+        }
+        
+        // Initialize hash management if on hash page
+        if (document.getElementById('hashGrid') && DTMonitor.hash) {
+            DTMonitor.hash.init();
+            console.log('✓ Hash management initialized');
+        }
+        
+        // Initialize findings management if on findings page
+        if (document.getElementById('findingsTable') && DTMonitor.findings) {
+            DTMonitor.findings.init();
+            console.log('✓ Findings management initialized');
+        }
+        
+        // Initialize settings page if on settings page
+        console.log('Checking for settings layout...');
+        const settingsLayout = document.querySelector('.settings-layout');
+        console.log('Settings layout found:', settingsLayout);
+        console.log('DTMonitor.settings available:', !!DTMonitor.settings);
+        if (settingsLayout && DTMonitor.settings) {
+            console.log('Initializing settings page...');
+            DTMonitor.settings.init();
+            console.log('✓ Settings page initialized');
+        } else {
+            console.log('Settings page not initialized - layout or module not found');
+        }
+        
+        // Initialize scanning management
+        if (DTMonitor.scanning) {
+            DTMonitor.scanning.init();
+            console.log('✓ Scanning management initialized');
+        }
+        
+        console.log('=== DTMonitor Framework Ready ===');
+        
+    } catch (error) {
+        console.error('DTMonitor initialization error:', error);
+        if (DTMonitor.handleError) {
+            DTMonitor.handleError(error, 'Framework initialization failed');
+        }
+    }
+});
+
+
+
+// Settings Management - Missing Functions
+function testDomainToolsTagging() {
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.settings) {
+        DTMonitor.settings.testDomainToolsTagging();
+    } else {
+        console.error('DomainTools tagging test requires DTMonitor to be loaded');
+    }
+}
+
+// Findings Management - Missing Functions
+function showFindingDetails(findingId) {
+    if (typeof DTMonitor !== 'undefined' && DTMonitor.findings) {
+        DTMonitor.findings.showDetails(findingId);
+    } else {
+        console.error('Finding details require DTMonitor to be loaded');
+    }
+}
+
+function closeFindingDetailsModal() {
+    const modal = document.getElementById('findingDetailsModal');
+    if (modal) modal.style.display = 'none';
+}
+
+
+
+// Global functions for backward compatibility
+function enableRuleCardDebugging() {
+    if (window.DTMonitor && DTMonitor.hash) {
+        DTMonitor.hash.enableRuleCardDebugging();
+    } else {
+        console.error('DTMonitor.hash not available');
+    }
+}
+
+function disableRuleCardDebugging() {
+    if (window.DTMonitor && DTMonitor.hash) {
+        DTMonitor.hash.disableRuleCardDebugging();
+    } else {
+        console.error('DTMonitor.hash not available');
+    }
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (window.DTMonitor && DTMonitor.hash) {
+        DTMonitor.hash.cleanupRuleCardStyleObservers();
+        DTMonitor.hash.disableRuleCardDebugging();
+    }
+});// =====================================================================
+// Scan Page - Enhanced Functionality
+// =====================================================================
+
+
+// Refresh system status
+function refreshStatus() {
+    DTMonitor.notification.show('Refreshing system status...', 'info');
+    
+    // Refresh the page to get updated data
+    window.location.reload();
+}
+
+// Run all scans
+function runAllScans() {
+    DTMonitor.notification.show('Starting full scan...', 'info');
+    
+    fetch('/api/scan/full', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            DTMonitor.notification.show(data.message, 'success');
+            // Refresh the page to show updated data
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            DTMonitor.notification.show(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        DTMonitor.notification.show('Failed to start full scan', 'error');
+    });
+}

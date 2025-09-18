@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - DomainTools Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/enhanced.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        {% include 'components/header.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="error-container">
+                <div class="error-card">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </div>
+                    <h2 class="error-title">Something went wrong</h2>
+                    <p class="error-message">{{ error }}</p>
+                    <div class="error-actions">
+                        <a href="{{ url_for('index') }}" class="btn btn-primary">
+                            <i class="fas fa-home"></i>
+                            Go to Dashboard
+                        </a>
+                        <button onclick="window.history.back()" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i>
+                            Go Back
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- DTMonitor Modular JavaScript Framework -->
+    <script src="{{ url_for('static', filename='js/dtmonitor-core.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-scanning.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-settings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-findings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-hash.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-compat.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DomainTools Monitor - Review Findings</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/enhanced.css') }}">
+    <style>
+        /* Dynamic Filter Styles */
+        .dynamic-filter-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .dynamic-filter-section h4 {
+            margin: 0 0 15px 0;
+            color: #495057;
+            font-size: 16px;
+        }
+        
+        .dynamic-filter-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .dynamic-param, .dynamic-operator {
+            min-width: 150px;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: white;
+        }
+        
+        .dynamic-value {
+            min-width: 200px;
+        }
+        
+        .dynamic-value input, .dynamic-value select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        
+        .active-dynamic-filters {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .active-filter {
+            display: inline-flex;
+            align-items: center;
+            background: #007bff;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            gap: 8px;
+        }
+        
+        .active-filter .filter-label {
+            font-weight: 500;
+        }
+        
+        .active-filter .remove-filter {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+        }
+        
+        .active-filter .remove-filter:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Tags filter styling */
+        #tagsFilter {
+            min-height: 40px;
+        }
+        
+        #tagsFilter option {
+            padding: 8px 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Include Header Component -->
+        {% include 'components/header.html' %}
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Sleek Modern Control Panel -->
+            <div class="modern-control-panel">
+                <!-- Panel Header -->
+                <div class="control-panel-header">
+                    <div class="header-content">
+                        <div class="header-icon">
+                            <i class="fas fa-sliders-h"></i>
+                        </div>
+                        <div class="header-text">
+                            <h3>Filter Builder</h3>
+                            <p>Create custom filters to find exactly what you need</p>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button id="toggleFilters" class="toggle-btn" title="Toggle Filters">
+                            <i class="fas fa-chevron-up"></i>
+                </button>
+                    </div>
+            </div>
+            
+                <!-- Collapsible Filter Content -->
+                <div class="control-panel-content" id="filterContent">
+                    <!-- Dynamic Filter Builder -->
+                    <div class="filter-builder-section">
+                        <!-- <div class="section-header">
+                            <h4>Filter Builder</h4>
+                            <span class="section-subtitle">Create custom filters to find exactly what you need</span>
+                        </div> -->
+                        
+                        <div class="filter-builder" id="dynamicFilterBar">
+                            <div class="filter-row">
+                                <div class="filter-field">
+                                    <label for="dynamicParam">Parameter</label>
+                                    <div class="select-wrapper">
+                                        <select id="dynamicParam" class="modern-select">
+                                            <option value="">Choose a parameter...</option>
+                                            <optgroup label="Status & Classification">
+                                                <option value="status">Status</option>
+                                                <option value="asrm_triggered">ASRM Status</option>
+                                                <option value="asrm_rule_applied">ASRM Rule Applied</option>
+                                                <option value="pl_submission">PhishLabs Submission</option>
+                                                <option value="phishlabs_case_number">PhishLabs Case Number</option>
+                                            </optgroup>
+                                            <optgroup label="Domain & Hash">
+                                                <option value="domain_name">Domain Name</option>
+                                                <option value="hash_name">Search Hash</option>
+                                                <option value="website_title">Website Title</option>
+                                                <option value="server_type">Server Type</option>
+                                            </optgroup>
+                                            <optgroup label="Network & Infrastructure">
+                                                <option value="ip_address">IP Address</option>
+                                                <option value="ip_country">Country</option>
+                                                <option value="ip_asn">IP ASN</option>
+                                                <option value="ip_isp">IP ISP</option>
+                                                <option value="registrar">Registrar</option>
+                                                <option value="response_code">Response Code</option>
+                                                <option value="is_active">Is Active</option>
+                                            </optgroup>
+                                            <optgroup label="Contacts & Organizations">
+                                                <option value="admin_contact.country">Admin Country</option>
+                                                <option value="registrant_contact.country">Registrant Country</option>
+                                                <option value="admin_contact.org">Admin Organization</option>
+                                                <option value="registrant_contact.org">Registrant Organization</option>
+                                            </optgroup>
+                                            <optgroup label="Servers & Services">
+                                                <option value="name_servers_data">Name Servers</option>
+                                                <option value="mail_servers_data">Mail Servers</option>
+                                            </optgroup>
+                                            <optgroup label="Threat Intelligence">
+                                                <option value="threat_profile.phishing.score">Phishing Score</option>
+                                                <option value="threat_profile.malware.score">Malware Score</option>
+                                                <option value="threat_profile.spam.score">Spam Score</option>
+                                                <option value="risk_score">Risk Score</option>
+                                            </optgroup>
+                                            <optgroup label="Timeline">
+                                                <option value="discovered_at">Date Discovered</option>
+                                                <option value="first_seen">First Seen</option>
+                                            </optgroup>
+                                            <optgroup label="Tags & Metadata">
+                                                <option value="tags">Tags</option>
+                                            </optgroup>
+                    </select>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                </div>
+                
+                                <div class="filter-field">
+                                    <label for="dynamicOperator">Operator</label>
+                                    <div class="select-wrapper">
+                                        <select id="dynamicOperator" class="modern-select">
+                                            <option value="">Choose operator...</option>
+                    </select>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                </div>
+                
+                                <div class="filter-field">
+                                    <label for="dynamicValueInput">Value</label>
+                                    <div id="dynamicValue" class="value-container">
+                                        <input type="text" id="dynamicValueInput" class="modern-input" placeholder="Enter value..." style="display: none;">
+                                        <div class="select-wrapper" id="dynamicValueSelectWrapper" style="display: none;">
+                                            <select id="dynamicValueSelect" class="modern-select">
+                                                <option value="">Select value...</option>
+                    </select>
+                                            <i class="fas fa-chevron-down select-arrow"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="filter-actions">
+                                    <button type="button" id="addDynamicFilter" class="add-filter-btn">
+                                        <i class="fas fa-filter"></i>
+                                        <span>Apply Filter</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Active Filters Display -->
+                    <div class="active-filters-section">
+                        <div class="section-header">
+                            <h4>Active Filters</h4>
+                            <span class="filter-count" id="filterCount">0 filters applied</span>
+                        </div>
+                        <div class="active-filters-container" id="activeDynamicFilters">
+                            <div class="no-filters">
+                                <i class="fas fa-filter"></i>
+                                <p>No filters applied</p>
+                                <span>Add filters above to refine your results</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel Footer Actions -->
+                <div class="control-panel-footer">
+                    <div class="footer-left">
+                        <button id="clearFilters" class="action-btn clear-btn">
+                            <i class="fas fa-times"></i>
+                            <span>Clear All</span>
+                        </button>
+                </div>
+                
+                    <div class="footer-right">
+                        
+                        <button id="exportBtn" class="action-btn export-btn" onclick="showExportOptions()">
+                            <i class="fas fa-download"></i>
+                            <span>Export</span>
+                    </button>
+                </div>
+            </div>
+            </div>
+            
+            <!-- Sleek Floating Bulk Actions Bar -->
+            <div class="floating-bulk-actions" id="bulkActions" style="display: none;">
+                <div class="bulk-actions-container">
+                    <!-- Selection Counter with Animation -->
+                    <div class="bulk-counter">
+                        <div class="counter-icon">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <div class="counter-content">
+                            <span class="counter-number" id="bulkSelectedCount">0</span>
+                            <span class="counter-label">selected</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Action Buttons with Modern Design -->
+                    <div class="bulk-actions-group">
+                        <button id="bulkApprove" class="bulk-action-btn bulk-approve" title="Approve & Submit to PhishLabs">
+                            <div class="btn-icon">
+                                <i class="fas fa-check"></i>
+                            </div>
+                            <span class="btn-text">Approve</span>
+                            <div class="btn-ripple"></div>
+                        </button>
+                        
+                        <button id="bulkReject" class="bulk-action-btn bulk-reject" title="Reject Selected Findings">
+                            <div class="btn-icon">
+                                <i class="fas fa-times"></i>
+                            </div>
+                            <span class="btn-text">Reject</span>
+                            <div class="btn-ripple"></div>
+                        </button>
+                        
+                        <div class="bulk-divider"></div>
+                        
+                        <button id="bulkSelectAll" class="bulk-action-btn bulk-select-all" title="Select All Findings">
+                            <div class="btn-icon">
+                                <i class="fas fa-check-square"></i>
+                            </div>
+                            <span class="btn-text">Select All</span>
+                            <div class="btn-ripple"></div>
+                        </button>
+                    </div>
+                    
+                    <!-- Close Button -->
+                    <button class="bulk-close-btn" onclick="DTMonitor.findings.clearSelection()" title="Clear Selection">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <!-- Animated Background Glow -->
+                <div class="bulk-glow-effect"></div>
+            </div>
+
+            <!-- Findings Table -->
+            <div class="table-container">
+                <table class="findings-table">
+                    <thead>
+                        <tr>
+                            <th class="bulk-select-header">
+                                <input type="checkbox" id="selectAllCheckbox">
+                            </th>
+                            <th>Domain</th>
+                            <th>Risk Score</th>
+                            <th>Source Hash</th>
+                            <th>Infrastructure</th>
+                            <th>First Seen</th>
+                            <th>Status</th>
+                            <th>Tags</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="findingsTable">
+                        {% if findings and findings|length > 0 %}
+                        {% for finding in findings %}
+                        <tr data-finding-id="{{ finding.id }}" 
+                            data-status="{{ finding.status }}" 
+                            data-risk="{{ finding.risk_score }}"
+                            data-hash="{{ finding.hash_id }}"
+                            data-hash-name="{{ finding.hash_name or 'Unknown' }}"
+                            data-domain="{{ finding.domain_name }}"
+                            data-discovered-at="{{ finding.discovered_at or '' }}"
+                            data-first-seen="{{ finding.first_seen or '' }}"
+                            data-registrar="{{ finding.registrar or '' }}"
+                            data-country="{{ finding.ip_country or '' }}"
+                            data-asrm-triggered="{{ finding.asrm_triggered|default(false)|lower }}"
+                            data-pl-submission="{{ finding.pl_submission|default(false)|lower }}"
+                            data-rejected="{{ finding.rejected|default(false)|lower }}"
+                            data-phishlabs-case-number="{{ finding.phishlabs_case_number or '' }}"
+                            data-tags="{{ finding.tags|tojson }}"
+                            data-ip-address="{{ finding.ip_address or '' }}"
+                            data-ip-asn="{{ finding.ip_asn or '' }}"
+                            data-ip-isp="{{ finding.ip_isp or '' }}"
+                            data-response-code="{{ finding.response_code or '' }}"
+                            data-is-active="{{ finding.is_active|default(false)|lower }}"
+                            data-server-type="{{ finding.server_type or '' }}"
+                            data-website-title="{{ finding.website_title or '' }}"
+                            data-name-servers-data="{{ finding.name_servers_data|tojson }}"
+                            data-mail-servers-data="{{ finding.mail_servers_data|tojson }}"
+                            data-phishing-score="{{ finding.threat_profile.phishing.score if finding.threat_profile and finding.threat_profile.phishing else 0 }}"
+                            data-malware-score="{{ finding.threat_profile.malware.score if finding.threat_profile and finding.threat_profile.malware else 0 }}"
+                            data-spam-score="{{ finding.threat_profile.spam.score if finding.threat_profile and finding.threat_profile.spam else 0 }}"
+                            data-asrm-rule-applied="{{ finding.asrm_rule_applied or '' }}"
+                            data-pl-submission="{{ finding.pl_submission|default(false)|lower }}"
+                            data-admin-country="{{ finding.admin_contact.country if finding.admin_contact else '' }}"
+                            data-registrant-country="{{ finding.registrant_contact.country if finding.registrant_contact else '' }}"
+                            data-admin-org="{{ finding.admin_contact.org if finding.admin_contact else '' }}"
+                            data-registrant-org="{{ finding.registrant_contact.org if finding.registrant_contact else '' }}"
+                            class="finding-row">
+                                <td class="bulk-select-cell">
+                                    <input type="checkbox" class="finding-checkbox" 
+                                           data-finding-id="{{ finding.id }}">
+                                </td>
+                                <td>
+                                    <div class="domain-info">
+                                        <strong class="domain-name">{{ finding.domain_name }}</strong>
+                                        <div class="domain-title">{{ finding.website_title or 'No title available' }}</div>
+                                        <a href="https://iris.domaintools.com/iris-investigate/?q={{ finding.domain_name }}" 
+                                           target="_blank" class="investigate-link">
+                                           <i class="fas fa-external-link-alt"></i>
+                                           Investigate on IRIS
+                                        </a>
+                                    </div>
+                            </td>
+                            <td>
+                                    <span class="risk-badge {% if finding.risk_score >= 80 %}risk-high{% elif finding.risk_score >= 50 %}risk-medium{% else %}risk-low{% endif %}">
+                                        {{ finding.risk_score or 0 }}
+                                </span>
+                            </td>
+                            <td>
+                                    <div class="hash-info">{{ finding.hash_name or 'Unknown' }}</div>
+                                </td>
+                                <td>
+                                    <div class="infrastructure-info">
+                                        <div class="ip-info">
+                                            <i class="fas fa-server"></i>
+                                            {{ finding.ip_address or 'N/A' }}
+                                        </div>
+                                        <div class="provider-info">{{ finding.ip_isp or 'Unknown Provider' }}</div>
+                                        <div class="registrar-info">{{ finding.registrar or 'Unknown Registrar' }}</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="timestamp">{{ finding.first_seen or finding.discovered_at or finding.timestamp or 'Unknown' }}</div>
+                            </td>
+                            <td>
+                                    <span class="status-badge status-{{ finding.status }}">{{ finding.status.title() if finding.status else 'Unknown' }}</span>
+                                    {% if finding.phishlabs_case_number %}
+                                        <div class="phishlabs-status">
+                                            <div class="submission-info">
+                                                <div class="submission-method">
+                                                    <i class="fas fa-shield-alt"></i>
+                                                    {% if finding.asrm_triggered %}Auto-submitted{% else %}Manually submitted{% endif %}
+                                                </div>
+                                                <div class="case-details">Case ID: {{ finding.phishlabs_case_number }}</div>
+                                                <span class="status-badge created">Created</span>
+                                            </div>
+                                        </div>
+                                {% endif %}
+                            </td>
+                                <td>
+                                    <div class="tags-container">
+                                        {% if finding.tags and finding.tags|length > 0 %}
+                                            {% for tag in finding.tags %}
+                                                <span class="tag-badge">{{ tag }}</span>
+                                            {% endfor %}
+                                        {% else %}
+                                            <span class="no-tags">No tags</span>
+                                        {% endif %}
+                                    </div>
+                            </td>
+                                <td class="actions-cell">
+                                    {% if finding.status == 'pending' %}
+                                        <div class="action-buttons">
+                                            <button onclick="approveFinding('{{ finding.id }}')" 
+                                                    class="btn btn-success" title="Approve & Submit to PhishLabs">
+                                                <i class="fas fa-check"></i>
+                                </button>
+                                            <button onclick="rejectFinding('{{ finding.id }}')" 
+                                                    class="btn btn-danger" title="Reject Finding">
+                                                <i class="fas fa-times"></i>
+                                </button>
+                                            <button onclick="showMetadata('{{ finding.id }}')" 
+                                                    class="btn btn-info" title="View Metadata">
+                                                <i class="fas fa-info"></i>
+                                </button>
+                                        </div>
+                                    {% else %}
+                                        <div class="action-buttons">
+                                            <button onclick="showMetadata('{{ finding.id }}')" 
+                                                    class="btn btn-info" title="View Metadata">
+                                                <i class="fas fa-info"></i>
+                                </button>
+                                        </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                            <!-- No findings available -->
+                            <tr class="no-findings-row">
+                                <td colspan="8" class="text-center">
+                                    <div class="no-findings-message">
+                                        <i class="fas fa-search"></i>
+                                        <h3>No Findings Available</h3>
+                                        <p>No findings match your current filters. Try adjusting the filters or run a new scan to discover threats.</p>
+                                        <button onclick="window.location.href='/scan'" class="btn btn-primary">
+                                            <i class="fas fa-radar"></i>
+                                            Run New Scan
+                                        </button>
+                                    </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="pagination-container" id="paginationContainer" style="display: none;">
+                <div class="pagination-info">
+                    <span id="paginationInfo">Showing 1-10 of 100 findings</span>
+                </div>
+                <div class="pagination-controls">
+                    <button id="firstPage" class="btn btn-outline" disabled>
+                        <i class="fas fa-angle-double-left"></i>
+                    </button>
+                    <button id="prevPage" class="btn btn-outline" disabled>
+                        <i class="fas fa-angle-left"></i>
+                    </button>
+                    
+                    <div class="page-numbers" id="pageNumbers">
+                        <!-- Page numbers will be generated dynamically -->
+                    </div>
+                    
+                    <button id="nextPage" class="btn btn-outline">
+                        <i class="fas fa-angle-right"></i>
+                    </button>
+                    <button id="lastPage" class="btn btn-outline">
+                        <i class="fas fa-angle-double-right"></i>
+                    </button>
+                </div>
+                <div class="pagination-settings">
+                    <label for="itemsPerPage">Items per page:</label>
+                    <select id="itemsPerPage">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Finding Details Modal -->
+    <div id="findingDetailsModal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header-new">
+                <div class="header-content">
+                    <div class="header-icon">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <div class="header-text">
+                <h2>Finding Details</h2>
+                        <p class="header-subtitle">Detailed information about the selected finding</p>
+                    </div>
+                </div>
+                <button class="close-btn-new" onclick="DTMonitor.findings.closeFindingDetailsModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="findingDetailsContent">
+                    <!-- Content will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PhishLabs Submission Modal -->
+    <div id="phishlabsModal" class="modal">
+        <div class="modal-content compact">
+            <div class="modal-header-new">
+                <div class="header-content">
+                    <div class="header-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <div class="header-text">
+                        <h2>Submit to PhishLabs</h2>
+                        <p class="header-subtitle">Submit finding for threat analysis and response</p>
+                    </div>
+                </div>
+                <button class="close-btn-new" onclick="DTMonitor.findings.closePhishLabsModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="phishlabsForm">
+                    <!-- Single Finding Section -->
+                    <div id="singleFindingSection">
+                        <input type="hidden" id="phishlabsFindingId" name="findingId">
+                        
+                        <!-- Domain/URL Field -->
+                        <div class="form-group compact">
+                            <label for="phishlabsDomain">Domain/URL</label>
+                            <div class="domain-url-input">
+                                <input type="text" id="phishlabsDomain" name="domain" readonly>
+                                <input type="text" id="phishlabsUrlPath" name="urlPath" placeholder="/path" 
+                                       class="url-path-input">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Multiple Findings Section -->
+                    <div id="multipleFindingsSection" style="display: none;">
+                        <div class="form-group compact">
+                            <label>Selected Findings</label>
+                            <div id="multipleFindingsContainer">
+                                <!-- Multiple findings will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group compact">
+                            <label for="phishlabsCaseType">Case Type</label>
+                            <select id="phishlabsCaseType" name="caseType" onchange="DTMonitor.findings.togglePhishLabsFields()">
+                                <option value="threat">Threat Case</option>
+                                <option value="domain">Domain Case</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group compact">
+                            <label for="phishlabsBrand">Brand</label>
+                            <select id="phishlabsBrand" name="brand" required>
+                                <option value="">Select Brand</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Threat Case Fields -->
+                    <div id="threatCaseFields">
+                        <div class="form-group compact">
+                            <label for="phishlabsThreatType">Threat Type</label>
+                            <select id="phishlabsThreatType" name="threatType">
+                                <option value="">Select Threat Type</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Domain Case Fields -->
+                    <div id="domainCaseFields" style="display: none;">
+                        <div class="form-group compact">
+                            <label for="phishlabsThreatCategory">Threat Category</label>
+                            <select id="phishlabsThreatCategory" name="threatCategory">
+                                <option value="1201" selected>Domain without Content</option>
+                                <option value="1229">Redirects to your Website</option>
+                                <option value="1208">Corporate logo</option>
+                                <option value="1204">Parked Domain</option>
+                                <option value="1213">Content Related to your Organization</option>
+                                <option value="1205">Content Unrelated to your Organization</option>
+                                <option value="1209">Content Related to your Industry</option>
+                                <option value="1210">Monetized links</option>
+                                <option value="1219">Malicious Activity</option>
+                                <option value="1222">Redirects to Third Party</option>
+                                <option value="1228">Redirects to Competitor</option>
+                                <option value="1224">Content Unavailable - Site Login Required</option>
+                                <option value="1211">Adult content</option>
+                                <option value="1221">Phishing</option>
+                                <option value="1233">Cryptocurrency Scam</option>
+                                <option value="0">Unknown</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group compact">
+                        <label for="phishlabsDescription">Description (Optional)</label>
+                        <textarea id="phishlabsDescription" name="description" rows="2" 
+                                  placeholder="Enter additional description..."></textarea>
+                    </div>
+                    
+                    <!-- Enhanced Tag Selection -->
+                    <div class="form-group compact">
+                        <div class="checkbox-container">
+                            <input type="checkbox" id="phishlabsAddTag" name="addTag" onchange="DTMonitor.findings.toggleTagSelection()">
+                            <label for="phishlabsAddTag" class="checkbox-label">Add Internal Tag</label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group compact" id="tagSelectionField" style="display: none;">
+                        <label for="phishlabsTagSelect">Select or Create Tag</label>
+                        <div class="tag-selection-container">
+                            <select id="phishlabsTagSelect" name="tagSelect" onchange="DTMonitor.findings.handleTagSelection()">
+                                <option value="">Select existing tag or create new...</option>
+                                <option value="__new__">+ Create New Tag</option>
+                            </select>
+                            <div id="newTagField" style="display: none;">
+                                <input type="text" id="phishlabsNewTag" name="newTag" placeholder="Enter new tag name" 
+                                       class="new-tag-input">
+                                <button type="button" class="btn btn-sm btn-primary" onclick="DTMonitor.findings.createNewTag()">
+                                    Create
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="DTMonitor.findings.closePhishLabsModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Submit to PhishLabs</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metadata Modal -->
+    <div id="metadataModal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header-new">
+                <div class="header-content">
+                    <div class="header-icon">
+                        <i class="fas fa-info-circle"></i>
+                    </div>
+                    <div class="header-text">
+                        <h2>Domain Metadata</h2>
+                        <p class="header-subtitle">Complete domain information and analysis details</p>
+                    </div>
+                </div>
+                <button class="close-btn-new" onclick="DTMonitor.findings.closeMetadataModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="metadataContent">
+                    <!-- Content will be populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Options Modal -->
+    <div id="exportOptionsModal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header-new">
+                <div class="header-content">
+                    <div class="header-icon">
+                        <i class="fas fa-download"></i>
+                    </div>
+                    <div class="header-text">
+                        <h2>Export Findings</h2>
+                        <p class="header-subtitle">Configure your export settings</p>
+                    </div>
+                </div>
+                <button class="close-btn-new" onclick="closeExportModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Format Selection -->
+                <div class="export-step">
+                    <div class="step-header">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Choose Format</h3>
+                            <p>Select the file format for your export</p>
+                        </div>
+                    </div>
+                    <div class="format-options">
+                        <label class="format-option">
+                            <input type="radio" name="exportFormat" value="csv" checked>
+                            <div class="format-card">
+                                <div class="format-icon">
+                                    <i class="fas fa-file-csv"></i>
+                                </div>
+                                <div class="format-info">
+                                    <h4>CSV</h4>
+                                    <p>Excel compatible</p>
+                                    <span class="format-badge">Recommended</span>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="format-option">
+                            <input type="radio" name="exportFormat" value="json">
+                            <div class="format-card">
+                                <div class="format-icon">
+                                    <i class="fas fa-file-code"></i>
+                                </div>
+                                <div class="format-info">
+                                    <h4>JSON</h4>
+                                    <p>Structured data</p>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Scope Selection -->
+                <div class="export-step">
+                    <div class="step-header">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Select Scope</h3>
+                            <p>Choose which findings to export</p>
+                        </div>
+                    </div>
+                    <div class="scope-options" id="scopeOptions">
+                        <!-- Dynamic scope options will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Fields Selection -->
+                <div class="export-step">
+                    <div class="step-header">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Select Fields</h3>
+                            <p>Choose the data fields to include</p>
+                        </div>
+                    </div>
+                    <div class="fields-section">
+                        <div class="fields-header">
+                            <div class="field-actions">
+                                <button type="button" class="btn btn-sm btn-primary" onclick="selectAllFields()">
+                                    <i class="fas fa-check-square"></i> Select All
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" onclick="deselectAllFields()">
+                                    <i class="fas fa-square"></i> Deselect All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="fields-grid">
+                            <div class="field-category">
+                                <h4><i class="fas fa-info-circle"></i> Basic Information</h4>
+                                <div class="field-list">
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="domain_name" checked>
+                                        <span class="field-name">Domain Name</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="status" checked>
+                                        <span class="field-name">Status</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="risk_score" checked>
+                                        <span class="field-name">Risk Score</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="hash_name" checked>
+                                        <span class="field-name">Source Hash</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="field-category">
+                                <h4><i class="fas fa-clock"></i> Timeline</h4>
+                                <div class="field-list">
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="first_seen" checked>
+                                        <span class="field-name">First Seen</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="last_seen" checked>
+                                        <span class="field-name">Last Seen</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="created_at" checked>
+                                        <span class="field-name">Created At</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="field-category">
+                                <h4><i class="fas fa-network-wired"></i> Network</h4>
+                                <div class="field-list">
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="ip_address" checked>
+                                        <span class="field-name">IP Address</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="ip_country" checked>
+                                        <span class="field-name">Country</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="registrar" checked>
+                                        <span class="field-name">Registrar</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="registrant_org" checked>
+                                        <span class="field-name">Registrant Org</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="field-category">
+                                <h4><i class="fas fa-tags"></i> Additional</h4>
+                                <div class="field-list">
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="tags" checked>
+                                        <span class="field-name">Tags</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="phishlabs_case_number" checked>
+                                        <span class="field-name">PhishLabs Case</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="asrm_triggered" checked>
+                                        <span class="field-name">ASRM Triggered</span>
+                                    </label>
+                                    <label class="field-item">
+                                        <input type="checkbox" name="exportFields" value="threat_score" checked>
+                                        <span class="field-name">Threat Score</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeExportModal()">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button class="btn btn-success" onclick="executeExport()">
+                    <i class="fas fa-download"></i> Export Findings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="notification" class="notification"></div>
+
+    <!-- Findings Data -->
+    <script>
+        window.findingsData = {{ findings|tojson }};
+    </script>
+    
+    <!-- DTMonitor Modular JavaScript Framework -->
+    <script src="{{ url_for('static', filename='js/dtmonitor-core.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-scanning.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-settings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-findings.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-hash.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dtmonitor-compat.js') }}"></script>
+    
+    <!-- System Status Modal -->
+    {% include 'components/system_status_toast.html' %}
+</body>
+</html>
