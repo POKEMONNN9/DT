@@ -67,9 +67,20 @@ function refreshData() {
 
 function handleDateFilterChange() {
     const dateFilter = document.getElementById('dateFilter');
+    const customDateRange = document.getElementById('customDateRange');
+    
     if (dateFilter) {
         const selectedFilter = dateFilter.value;
         console.log('Date filter changed to:', selectedFilter);
+        
+        // Show/hide custom date range section
+        if (customDateRange) {
+            if (selectedFilter === 'custom') {
+                customDateRange.style.display = 'block';
+            } else {
+                customDateRange.style.display = 'none';
+            }
+        }
         
         // Update all dashboards with new date filter
         refreshData();
@@ -102,14 +113,14 @@ function showInfraTab(tabName) {
     // Load data for specific tabs
     if (typeof threatIntelligenceDashboard !== 'undefined') {
         if (tabName === 'actors') {
-            console.log('🎯 Loading Threat Actor Infrastructure data...');
+            console.log('<i class="fas fa-bullseye"></i> Loading Threat Actor Infrastructure data...');
             threatIntelligenceDashboard.loadActorInfrastructurePreferences();
         } else if (tabName === 'families') {
-            console.log('🎯 Loading Threat Family Intelligence data...');
+            console.log('<i class="fas fa-bullseye"></i> Loading Threat Family Intelligence data...');
             threatIntelligenceDashboard.loadFamilyInfrastructurePreferences();
         }
     } else {
-        console.warn('⚠️ threatIntelligenceDashboard not defined');
+        console.warn('<i class="fas fa-exclamation-triangle"></i> threatIntelligenceDashboard not defined');
     }
 }
 
@@ -280,14 +291,6 @@ class ExecutiveDashboard {
                         <p class="timeline-subtitle">Case activity and resolution trends</p>
                     </div>
                     <div class="timeline-controls">
-                        <div class="timeline-filter-wrapper">
-                            <select class="timeline-filter" id="timelineFilter" onchange="updateTimelineTrends()">
-                                <option value="today">Today</option>
-                                <option value="yesterday">Yesterday</option>
-                                <option value="week">Last 7 Days</option>
-                                <option value="month">Last 30 Days</option>
-                            </select>
-                        </div>
                         <button class="timeline-play-btn" id="timelinePlayBtn" onclick="playTimelineAnimation()" title="Auto-refresh">
                             <i class="fas fa-play"></i>
                         </button>
@@ -731,9 +734,22 @@ class ExecutiveDashboard {
                         callbacks: {
                             label: (context) => {
                                 const country = data.find(d => d.country === context.label);
-                                return `Domains: ${country ? country.domain_count : context.parsed.x}`;
+                                return `Cases: ${country ? country.case_count : context.parsed.x}`;
                             }
                         }
+                    },
+                    datalabels: {
+                        display: true,
+                        color: '#1f2937',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        },
+                        formatter: (value, context) => {
+                            return value;
+                        },
+                        anchor: 'center',
+                        align: 'center'
                     }
                 },
                 scales: {
@@ -779,9 +795,7 @@ class ExecutiveDashboard {
 
     async updateTimelineTrendsChart() {
         try {
-            // Get the timeline filter value
-            const timelineFilter = document.getElementById('timelineFilter');
-            const selectedFilter = timelineFilter ? timelineFilter.value : 'today';
+            // Use main date filter instead of separate timeline filter
             
             // Get current date filter from main controls
             const currentDateFilter = getCurrentDateFilter();
@@ -984,8 +998,10 @@ class ExecutiveDashboard {
                             padding: 12,
                             maxRotation: 45,
                             minRotation: 0,
+                            maxTicksLimit: 8,
+                            padding: 12,
                             callback: function(value, index, values) {
-                                // Format labels to be more compact
+                                // Format labels to be more compact and prevent layout issues
                                 const label = this.getLabelForValue(value);
                                 if (typeof label === 'string' && label.length > 15) {
                                     // For long date strings, show abbreviated format
@@ -1153,14 +1169,14 @@ class ExecutiveDashboard {
             clearInterval(this.timelineRefreshInterval);
         }
         
-        console.log('🔄 Starting timeline auto-refresh...');
+        console.log('<i class="fas fa-sync-alt"></i> Starting timeline auto-refresh...');
         
         // Refresh immediately
         this.updateTimelineTrendsChart();
         
         // Set up interval to refresh every 30 seconds
         this.timelineRefreshInterval = setInterval(() => {
-            console.log('🔄 Auto-refreshing timeline data...');
+            console.log('<i class="fas fa-sync-alt"></i> Auto-refreshing timeline data...');
             this.updateTimelineTrendsChart();
         }, 30000); // 30 seconds
     }
@@ -1209,7 +1225,7 @@ class OperationalDashboard {
     }
 
     async updateData() {
-        console.log('🔄 Updating Operational Dashboard...');
+        console.log('<i class="fas fa-sync-alt"></i> Updating Operational Dashboard...');
         try {
             await Promise.all([
                 this.updatePerformanceMetrics(),
@@ -1218,9 +1234,9 @@ class OperationalDashboard {
                 this.updateCaseTypeCharts(),
                 this.updateSLADashboard()
             ]);
-            console.log('✅ Operational Dashboard updated successfully');
+            console.log('<i class="fas fa-check-circle"></i> Operational Dashboard updated successfully');
         } catch (error) {
-            console.error('❌ Error updating operational dashboard:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error updating operational dashboard:', error);
             showNotification('Error updating operational dashboard', 'error');
         }
     }
@@ -1741,6 +1757,14 @@ class OperationalDashboard {
                     mode: 'index',
                     intersect: false
                 },
+                layout: {
+                    padding: {
+                        top: 20,
+                        bottom: 20,
+                        left: 20,
+                        right: 20
+                    }
+                },
                 plugins: {
                     legend: {
                         position: 'top',
@@ -1761,10 +1785,21 @@ class OperationalDashboard {
                 scales: {
                     x: {
                         grid: { display: false },
+                        offset: false,
                         ticks: {
                             font: { size: 11 },
                             maxRotation: 45,
-                            minRotation: 45
+                            minRotation: 0,
+                            maxTicksLimit: 8,
+                            padding: 12,
+                            callback: function(value, index, values) {
+                                const label = this.getLabelForValue(value);
+                                if (typeof label === 'string' && label.length > 20) {
+                                    // Truncate long labels and add ellipsis
+                                    return label.substring(0, 17) + '...';
+                                }
+                                return label;
+                            }
                         }
                     },
                     y: {
@@ -2215,8 +2250,20 @@ class OperationalDashboard {
                 // Update summary metrics
                 updateElement('ipReuseCount', intelData.summary.total_reused_ips || 0);
                 updateElement('topISP', intelData.summary.top_isp || 'N/A');
-                updateElement('topRegistrar', intelData.summary.top_registrar || 'N/A');
-                updateElement('topUrlPath', intelData.summary.top_url_path || 'N/A');
+                
+                // Update top registrar with compact top 3 format
+                const topRegistrars = intelData.summary.top_3_registrars || [];
+                const registrarText = topRegistrars.length > 0 
+                    ? topRegistrars.map((r, i) => `${i + 1}. ${r.registrar_name} (${r.abuse_count})`).join(' | ')
+                    : intelData.summary.top_registrar || 'N/A';
+                updateElement('topRegistrarSummary', registrarText);
+                
+                // Update top URL path with compact top 3 format
+                const topUrlPaths = intelData.summary.top_3_url_paths || [];
+                const urlPathText = topUrlPaths.length > 0 
+                    ? topUrlPaths.map((u, i) => `${i + 1}. ${u.url_path} (${u.case_count})`).join(' | ')
+                    : intelData.summary.top_url_path || 'N/A';
+                updateElement('topUrlPath', urlPathText);
                 
                 // Render charts
                 this.renderRegistrarAbuseChart(intelData.registrar_abuse);
@@ -2413,6 +2460,37 @@ class ThreatIntelligenceDashboard {
         this.refreshInterval = null;
         this.animationFrameId = null;
         this.hasAnimated = false; // Track if initial animation has played
+        
+        // Dynamic risk configuration (loaded from DB)
+        this.riskConfig = {
+            highRiskActors: [],
+            highRiskBrands: [],
+            kitFamilies: [],
+            highRiskCountries: [],
+            mediumRiskCountries: []
+        };
+        
+        // Load risk configuration on initialization
+        this.loadRiskConfiguration();
+    }
+    
+    async loadRiskConfiguration() {
+        try {
+            const config = await fetchAPI('/api/dashboard/risk-configuration');
+            if (config && !config.error) {
+                this.riskConfig = {
+                    highRiskActors: config.high_risk_actors || [],
+                    highRiskBrands: config.high_risk_brands || [],
+                    kitFamilies: config.kit_families || [],
+                    highRiskCountries: config.high_risk_countries || [],
+                    mediumRiskCountries: config.medium_risk_countries || []
+                };
+                console.log('Risk configuration loaded from database:', this.riskConfig);
+            }
+        } catch (error) {
+            console.error('Error loading risk configuration:', error);
+            // Fallback to empty arrays if loading fails
+        }
     }
 
     async updateData() {
@@ -3145,21 +3223,21 @@ class ThreatIntelligenceDashboard {
     }
 
     async updateInfrastructurePatterns() {
-        console.log('🚀 Starting updateInfrastructurePatterns...');
+        console.log('<i class="fas fa-rocket"></i> Starting updateInfrastructurePatterns...');
         try {
             const params = getFilterParams();
-            console.log('📊 Fetching infrastructure patterns with params:', params);
+            console.log('<i class="fas fa-chart-bar"></i> Fetching infrastructure patterns with params:', params);
             const data = await fetchAPI(`/api/dashboard/infrastructure-patterns?${params}`);
-            console.log('📊 Infrastructure patterns response:', data);
+            console.log('<i class="fas fa-chart-bar"></i> Infrastructure patterns response:', data);
             
             if (data && !data.error) {
-                console.log('✅ Data received, rendering infrastructure patterns...');
+                console.log('<i class="fas fa-check-circle"></i> Data received, rendering infrastructure patterns...');
                 await this.renderInfrastructurePatterns(data);
             } else {
-                console.error('❌ Error in infrastructure patterns data:', data);
+                console.error('<i class="fas fa-times-circle"></i> Error in infrastructure patterns data:', data);
             }
         } catch (error) {
-            console.error('❌ Error updating infrastructure patterns:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error updating infrastructure patterns:', error);
         }
     }
 
@@ -3292,17 +3370,17 @@ class ThreatIntelligenceDashboard {
     async loadActorInfrastructurePreferences() {
         try {
             const params = getFilterParams();
-            console.log('🎯 Loading actor infrastructure preferences with params:', params);
+            console.log('<i class="fas fa-bullseye"></i> Loading actor infrastructure preferences with params:', params);
             const data = await fetchAPI(`/api/dashboard/actor-infrastructure-preferences?${params}`);
-            console.log('🎯 Actor infrastructure data received:', data);
+            console.log('<i class="fas fa-bullseye"></i> Actor infrastructure data received:', data);
             
             if (data && !data.error) {
                 this.renderThreatActorInfrastructureTable(data);
             } else {
-                console.error('❌ Error in actor infrastructure data:', data);
+                console.error('<i class="fas fa-times-circle"></i> Error in actor infrastructure data:', data);
             }
         } catch (error) {
-            console.error('❌ Error loading actor infrastructure preferences:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading actor infrastructure preferences:', error);
         }
     }
 
@@ -3331,17 +3409,17 @@ class ThreatIntelligenceDashboard {
     async loadFamilyInfrastructurePreferences() {
         try {
             const params = getFilterParams();
-            console.log('🚀 Loading comprehensive threat family intelligence with params:', params);
+            console.log('<i class="fas fa-rocket"></i> Loading comprehensive threat family intelligence with params:', params);
             const data = await fetchAPI(`/api/dashboard/family-infrastructure-preferences?${params}`);
             
-            console.log('📊 Received data:', data);
+            console.log('<i class="fas fa-chart-bar"></i> Received data:', data);
             if (data && !data.error) {
                 this.renderComprehensiveThreatFamilyIntelligence(data);
             } else {
-                console.error('❌ Error in data:', data);
+                console.error('<i class="fas fa-times-circle"></i> Error in data:', data);
             }
         } catch (error) {
-            console.error('❌ Error loading family infrastructure preferences:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading family infrastructure preferences:', error);
         }
     }
 
@@ -3363,7 +3441,7 @@ class ThreatIntelligenceDashboard {
             return this.renderThreatFamilyIntelligenceProfile(family, familyData);
         }).join('');
         
-        console.log('✅ Rendered comprehensive threat family intelligence for', data.families.length, 'families');
+        console.log('<i class="fas fa-check-circle"></i> Rendered comprehensive threat family intelligence for', data.families.length, 'families');
     }
 
     groupDataByFamily(data) {
@@ -3458,10 +3536,10 @@ class ThreatIntelligenceDashboard {
                             ` : ''}
                         </div>
                         <div class="intelligence-insight">
-                            <strong>🔍 Signature Analysis:</strong> ${infrastructureSignature.analysis}
+                            <strong><i class="fas fa-search"></i> Signature Analysis:</strong> ${infrastructureSignature.analysis}
                         </div>
                         <div class="threat-indicator">
-                            <strong>🎯 If you see:</strong> ${infrastructureSignature.indicator}
+                            <strong><i class="fas fa-bullseye"></i> If you see:</strong> ${infrastructureSignature.indicator}
                         </div>
                     </div>
 
@@ -3481,13 +3559,13 @@ class ThreatIntelligenceDashboard {
                             ${urlPaths.length > 5 ? `<div class="more-paths">+${urlPaths.length - 5} more patterns</div>` : ''}
                         </div>
                         <div class="intelligence-insight">
-                            <strong>📊 Pattern Analysis:</strong> ${operationalPatterns.analysis}
+                            <strong><i class="fas fa-chart-bar"></i> Pattern Analysis:</strong> ${operationalPatterns.analysis}
                         </div>
                     </div>
 
                     <!-- Brand Targeting Strategy -->
                     <div class="intelligence-section">
-                        <h4 class="section-title">🎯 Brand Targeting Strategy</h4>
+                        <h4 class="section-title"><i class="fas fa-bullseye"></i> Brand Targeting Strategy</h4>
                         <div class="brands-grid">
                             ${brands.slice(0, 6).map(brand => `
                                 <div class="brand-item">
@@ -3498,13 +3576,13 @@ class ThreatIntelligenceDashboard {
                             ${brands.length > 6 ? `<div class="more-brands">+${brands.length - 6} more targets</div>` : ''}
                         </div>
                         <div class="intelligence-insight">
-                            <strong>🎯 Targeting Strategy:</strong> ${brandTargetingStrategy.analysis}
+                            <strong><i class="fas fa-bullseye"></i> Targeting Strategy:</strong> ${brandTargetingStrategy.analysis}
                         </div>
                     </div>
 
                     <!-- Infrastructure Reuse Detection -->
                     <div class="intelligence-section">
-                        <h4 class="section-title">🔄 Infrastructure Reuse Analysis</h4>
+                        <h4 class="section-title"><i class="fas fa-sync-alt"></i> Infrastructure Reuse Analysis</h4>
                         <div class="reuse-analysis">
                             <div class="reuse-metric">
                                 <strong>Registrar Consistency:</strong> ${this.calculateConsistency(family.top_registrar)}%
@@ -3517,7 +3595,7 @@ class ThreatIntelligenceDashboard {
                             </div>
                         </div>
                         <div class="intelligence-insight">
-                            <strong>🔄 Reuse Pattern:</strong> ${this.analyzeInfrastructureReuse(family)}
+                            <strong><i class="fas fa-sync-alt"></i> Reuse Pattern:</strong> ${this.analyzeInfrastructureReuse(family)}
                         </div>
                     </div>
                 </div>
@@ -3628,11 +3706,11 @@ class ThreatIntelligenceDashboard {
         const summary = document.getElementById('actorTableSummary');
         
         if (!tbody) {
-            console.log('❌ threatActorInfrastructureBody element not found');
+            console.log('<i class="fas fa-times-circle"></i> threatActorInfrastructureBody element not found');
             return;
         }
         
-        console.log('🎯 Rendering threat actor infrastructure table with data:', data);
+        console.log('<i class="fas fa-bullseye"></i> Rendering threat actor infrastructure table with data:', data);
 
         // Handle the data structure - it comes as {actors: [...], url_paths: [...]}
         const actors = data.actors || data || [];
@@ -3691,7 +3769,7 @@ class ThreatIntelligenceDashboard {
             `;
         }).join('');
         
-        console.log('✅ Rendered threat actor infrastructure table with', actors.length, 'actors');
+        console.log('<i class="fas fa-check-circle"></i> Rendered threat actor infrastructure table with', actors.length, 'actors');
     }
 
     getActorURLPaths(actorName, urlPathsData) {
@@ -3861,31 +3939,31 @@ class ThreatIntelligenceDashboard {
     async updateWHOISAttribution() {
         try {
             const params = getFilterParams();
-            console.log('🎯 Loading WHOIS attribution with params:', params);
+            console.log('<i class="fas fa-bullseye"></i> Loading WHOIS attribution with params:', params);
             const data = await fetchAPI(`/api/dashboard/whois-attribution?${params}`);
-            console.log('🎯 WHOIS attribution data received:', data);
+            console.log('<i class="fas fa-bullseye"></i> WHOIS attribution data received:', data);
             
             if (data && !data.error) {
                 this.renderWHOISTable(data);
             } else {
-                console.error('❌ Error in WHOIS attribution data:', data);
+                console.error('<i class="fas fa-times-circle"></i> Error in WHOIS attribution data:', data);
             }
         } catch (error) {
-            console.error('❌ Error updating WHOIS attribution:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error updating WHOIS attribution:', error);
         }
     }
 
     renderWHOISTable(data) {
         const tbody = document.getElementById('whoisTableBody');
         if (!tbody) {
-            console.log('❌ whoisTableBody element not found');
+            console.log('<i class="fas fa-times-circle"></i> whoisTableBody element not found');
             return;
         }
 
-        console.log('🎯 Rendering WHOIS table with data:', data);
+        console.log('<i class="fas fa-bullseye"></i> Rendering WHOIS table with data:', data);
 
         if (!data || data.length === 0) {
-            console.log('❌ No WHOIS data to render');
+            console.log('<i class="fas fa-times-circle"></i> No WHOIS data to render');
             tbody.innerHTML = '<tr><td colspan="3" class="no-data-cell">No WHOIS attribution data available</td></tr>';
             return;
         }
@@ -3926,7 +4004,7 @@ class ThreatIntelligenceDashboard {
         const tbody = document.getElementById('priorityCasesTableBody');
         if (!tbody) return;
 
-        console.log('🎯 Rendering priority cases with data:', data);
+        console.log('<i class="fas fa-bullseye"></i> Rendering priority cases with data:', data);
 
         if (!data || data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="no-data-cell">No high-priority cases found</td></tr>';
@@ -4005,7 +4083,7 @@ class ThreatIntelligenceDashboard {
             `;
         }).join('');
         
-        console.log('✅ Rendered priority cases table with', data.length, 'cases');
+        console.log('<i class="fas fa-check-circle"></i> Rendered priority cases table with', data.length, 'cases');
     }
 
     // Helper methods for priority cases
@@ -4016,8 +4094,9 @@ class ThreatIntelligenceDashboard {
     }
 
     getRiskIndicator(item) {
-        const highRiskActors = ['FIN7', 'TA505', 'Lazarus Group', 'Carbanak'];
-        const highRiskBrands = ['Netflix', 'Microsoft', 'Google', 'Amazon', 'Apple'];
+        // Use dynamic configuration from database
+        const highRiskActors = this.riskConfig.highRiskActors;
+        const highRiskBrands = this.riskConfig.highRiskBrands;
         
         if (highRiskActors.includes(item.threat_actor) || highRiskBrands.includes(item.brand)) {
             return '<div class="risk-indicator high-risk"><i class="fas fa-exclamation-triangle"></i></div>';
@@ -4026,19 +4105,20 @@ class ThreatIntelligenceDashboard {
     }
 
     getKitFamilyClass(threatFamily) {
-        const kitClasses = {
-            'Qakbot': 'kit-qakbot',
-            'Emotet': 'kit-emotet',
-            'Trickbot': 'kit-trickbot',
-            'IcedID': 'kit-icedid',
-            'Dridex': 'kit-dridex'
-        };
-        return kitClasses[threatFamily] || 'kit-unknown';
+        // Use dynamic configuration from database
+        // Generate CSS class based on kit family name
+        if (this.riskConfig.kitFamilies.includes(threatFamily)) {
+            // Normalize the threat family name to create a valid CSS class
+            const normalizedName = threatFamily.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            return `kit-${normalizedName}`;
+        }
+        return 'kit-unknown';
     }
 
     getCountryRiskLevel(countryCode) {
-        const highRiskCountries = ['CN', 'RU', 'KP', 'IR'];
-        const mediumRiskCountries = ['BR', 'IN', 'VN', 'TH'];
+        // Use dynamic configuration from database
+        const highRiskCountries = this.riskConfig.highRiskCountries;
+        const mediumRiskCountries = this.riskConfig.mediumRiskCountries;
         
         if (highRiskCountries.includes(countryCode)) return 'high-risk';
         if (mediumRiskCountries.includes(countryCode)) return 'medium-risk';
@@ -4229,7 +4309,7 @@ class ThreatIntelligenceDashboard {
     }
 
     renderInfrastructureProviderAnalysis(data) {
-        console.log('🎯 Rendering Infrastructure Provider Analysis with data:', data);
+        console.log('<i class="fas fa-bullseye"></i> Rendering Infrastructure Provider Analysis with data:', data);
         
         // Render provider intelligence chart
         const ctx = document.getElementById('providerIntelligenceChart');
@@ -4246,15 +4326,15 @@ class ThreatIntelligenceDashboard {
         const providerCasesElement = document.getElementById('providerCases');
         const providerDomainsElement = document.getElementById('providerDomains');
         
-        console.log('🎯 Top provider:', topProvider);
+        console.log('<i class="fas fa-bullseye"></i> Top provider:', topProvider);
         if (topProviderElement) topProviderElement.textContent = topProvider?.isp || 'No data available';
         if (providerCasesElement) providerCasesElement.textContent = topProvider?.count || 0;
         if (providerDomainsElement) providerDomainsElement.textContent = topProvider?.count || 0;
 
         // Update registrar info
         const topRegistrar = data.registrars?.[0];
-        console.log('🎯 Top registrar:', topRegistrar);
-        console.log('🎯 All registrars:', data.registrars);
+        console.log('<i class="fas fa-bullseye"></i> Top registrar:', topRegistrar);
+        console.log('<i class="fas fa-bullseye"></i> All registrars:', data.registrars);
         
         const topRegistrarElement = document.getElementById('topRegistrar');
         const abuseLevelElement = document.getElementById('abuseLevel');
@@ -4262,9 +4342,9 @@ class ThreatIntelligenceDashboard {
         
         if (topRegistrarElement) {
             topRegistrarElement.textContent = topRegistrar?.registrar || topRegistrar?.name || 'No data available';
-            console.log('🎯 Updated topRegistrarElement with:', topRegistrar?.registrar || topRegistrar?.name);
+            console.log('<i class="fas fa-bullseye"></i> Updated topRegistrarElement with:', topRegistrar?.registrar || topRegistrar?.name);
         } else {
-            console.log('❌ topRegistrarElement not found');
+            console.log('<i class="fas fa-times-circle"></i> topRegistrarElement not found');
         }
         
         // Calculate abuse level based on registrar usage
@@ -7604,10 +7684,30 @@ function filterSLAForCopy(clone) {
 // ENHANCED EMAIL-READY HTML COPY FUNCTIONALITY
 function copyChartAsHTML(chartElement, chartTitle) {
     try {
+        // Add safety checks to prevent crashes
+        if (!chartElement) {
+            console.error('copyChartAsHTML: chartElement is null or undefined');
+            showNotification('Error: Element not found', 'error');
+            return;
+        }
+        
+        if (!chartTitle) {
+            chartTitle = 'Dashboard Chart';
+        }
+        
+        console.log(`Starting copy process for: ${chartTitle}`);
+        
         const button = chartElement.querySelector('.chart-copy-btn');
         
-        // Clone element
-        const clone = chartElement.cloneNode(true);
+        // Clone element with error handling
+        let clone;
+        try {
+            clone = chartElement.cloneNode(true);
+        } catch (cloneError) {
+            console.error('Error cloning element:', cloneError);
+            showNotification('Error: Failed to copy element', 'error');
+            return;
+        }
         
         // Remove copy button
         const copyBtn = clone.querySelector('.chart-copy-btn');
@@ -7723,6 +7823,8 @@ function copyChartAsHTML(chartElement, chartTitle) {
 </body>
 </html>`;
         
+        // Enhanced clipboard operation with error handling
+        if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(emailHTML).then(() => {
             if (button) {
                 const originalHTML = button.innerHTML;
@@ -7734,7 +7836,29 @@ function copyChartAsHTML(chartElement, chartTitle) {
                 }, 2000);
             }
             showNotification(`${chartTitle} copied as formatted HTML`, 'success');
-        });
+            }).catch(err => {
+                console.error('Clipboard API failed:', err);
+                showNotification('Copy failed - please try again', 'error');
+            });
+        } else {
+            // Fallback for older browsers
+            try {
+                const textArea = document.createElement('textarea');
+                textArea.value = emailHTML;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showNotification(`${chartTitle} copied as formatted HTML`, 'success');
+            } catch (fallbackError) {
+                console.error('Fallback copy failed:', fallbackError);
+                showNotification('Copy failed - browser not supported', 'error');
+            }
+        }
         
     } catch (error) {
         console.error('Error copying chart:', error);
@@ -7744,68 +7868,212 @@ function copyChartAsHTML(chartElement, chartTitle) {
 
 // Apply computed styles inline to preserve appearance
 function applyInlineStyles(cloneElement, originalElement) {
-    // Get computed style from original element
+    // Get computed style from original
     const computedStyle = window.getComputedStyle(originalElement);
     
-    // Get ALL computed style properties for comprehensive coverage
-    const allComputedProperties = Array.from(computedStyle);
+    // Apply comprehensive styles inline to match exact appearance
+    // Priority order: Layout first, then visual styling, then advanced properties
+    const criticalStyles = [
+        // Critical layout properties (highest priority)
+        'display', 'position', 'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+        'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+        'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+        'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+        'box-sizing', 'overflow', 'overflow-x', 'overflow-y'
+    ];
     
-    // Apply ALL computed styles to preserve exact appearance
-    allComputedProperties.forEach(prop => {
+    // Apply critical styles first with highest priority
+    criticalStyles.forEach(prop => {
         const value = computedStyle.getPropertyValue(prop);
-        const priority = computedStyle.getPropertyPriority(prop);
-        
-        // Skip problematic properties that don't work well in emails
-        if (prop === 'background-image' && value.includes('url(')) {
-            return; // Skip external background images
-        }
-        if (prop.includes('animation') || prop.includes('transition')) {
-            return; // Skip animations and transitions
-        }
-        if (prop.includes('backdrop-filter')) {
-            return; // Skip backdrop filters
-        }
-        if (prop.includes('mix-blend-mode') && value !== 'normal') {
-            return; // Skip blend modes
-        }
-        if (prop.includes('clip-path') && value !== 'none') {
-            return; // Skip clip-path
-        }
-        if (prop.includes('mask') && value !== 'none') {
-            return; // Skip masks
-        }
-        
-        // Apply the computed style value with original priority
-        if (value && value !== 'none' && value !== 'normal' && value !== 'initial' && value !== 'inherit') {
+        if (value && value !== 'none' && value !== 'normal' && value !== 'initial' && value !== 'inherit' && value !== 'auto') {
             try {
-                cloneElement.style.setProperty(prop, value, priority || '');
+                cloneElement.style.setProperty(prop, value, 'important');
             } catch (e) {
-                console.warn(`Failed to apply style property ${prop}: ${e.message}`);
+                console.warn(`Failed to apply critical style ${prop}: ${e.message}`);
             }
         }
     });
     
-    // Handle CSS custom properties (CSS variables) separately
-    const cssVars = Array.from(computedStyle).filter(prop => prop.startsWith('--'));
-    cssVars.forEach(cssVar => {
-        const value = computedStyle.getPropertyValue(cssVar);
-        const priority = computedStyle.getPropertyPriority(cssVar);
-        if (value && value.trim()) {
-            try {
-                cloneElement.style.setProperty(cssVar, value, priority || '');
-            } catch (e) {
-                console.warn(`Failed to apply CSS variable ${cssVar}: ${e.message}`);
+    const stylesToCopy = [
+        // Layout & Positioning
+        'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index',
+        'float', 'clear', 'overflow', 'overflow-x', 'overflow-y',
+        'clip', 'clip-path', 'isolation', 'contain', 'contain-intrinsic-size',
+        
+        // Box Model
+        'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height',
+        'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+        'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+        'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+        'border-width', 'border-style', 'border-color',
+        'border-radius', 'border-top-left-radius', 'border-top-right-radius', 
+        'border-bottom-left-radius', 'border-bottom-right-radius',
+        'box-sizing', 'box-shadow', 'box-decoration-break',
+        
+        // Background & Images
+        'background', 'background-color', 'background-image', 'background-size',
+        'background-position', 'background-repeat', 'background-attachment',
+        'background-clip', 'background-origin', 'background-blend-mode',
+        'mask', 'mask-image', 'mask-size', 'mask-position', 'mask-repeat',
+        
+        // Typography & Text
+        'color', 'font', 'font-family', 'font-size', 'font-weight', 'font-style',
+        'font-variant', 'font-stretch', 'font-synthesis', 'font-feature-settings',
+        'font-kerning', 'font-language-override', 'font-optical-sizing',
+        'line-height', 'letter-spacing', 'word-spacing', 'text-spacing',
+        'text-align', 'text-decoration', 'text-transform', 'text-indent',
+        'text-shadow', 'text-overflow', 'text-rendering', 'text-underline-position',
+        'white-space', 'word-wrap', 'word-break', 'hyphens', 'hyphenate-character',
+        'vertical-align', 'writing-mode', 'text-orientation', 'text-combine-upright',
+        'tab-size', 'hanging-punctuation', 'text-justify', 'text-align-last',
+        
+        // Flexbox
+        'flex', 'flex-direction', 'flex-wrap', 'flex-flow', 'justify-content',
+        'align-items', 'align-content', 'align-self', 'order', 'flex-grow',
+        'flex-shrink', 'flex-basis', 'gap', 'row-gap', 'column-gap',
+        
+        // Grid
+        'grid', 'grid-template', 'grid-template-columns', 'grid-template-rows',
+        'grid-template-areas', 'grid-gap', 'grid-column-gap', 'grid-row-gap',
+        'justify-items', 'justify-self', 'grid-area', 'grid-column', 'grid-row',
+        'grid-column-start', 'grid-column-end', 'grid-row-start', 'grid-row-end',
+        'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow',
+        
+        // Visual Effects & Transforms
+        'opacity', 'visibility', 'transform', 'transform-origin', 'transform-style',
+        'perspective', 'perspective-origin', 'backface-visibility',
+        'filter', 'backdrop-filter', 'mix-blend-mode',
+        
+        // Tables
+        'table-layout', 'border-collapse', 'border-spacing', 'caption-side',
+        'empty-cells', 'table-cell', 'table-column', 'table-column-group',
+        
+        // Lists
+        'list-style', 'list-style-type', 'list-style-position', 'list-style-image',
+        
+        // Counters
+        'counter-reset', 'counter-increment', 'content', 'quotes',
+        
+        // Interactive & User Interface
+        'cursor', 'pointer-events', 'user-select', 'user-drag', 'user-modify',
+        'outline', 'outline-width', 'outline-style', 'outline-color', 'outline-offset',
+        'resize', 'appearance', 'accent-color', 'caret-color',
+        
+        // Scroll & Overflow
+        'scroll-behavior', 'scroll-margin', 'scroll-padding', 'scroll-snap-type',
+        'scroll-snap-align', 'scroll-snap-stop',
+        
+        // Animation & Transitions (selective - only safe properties)
+        'transition', 'transition-property', 'transition-duration', 'transition-timing-function',
+        'transition-delay', 'animation', 'animation-name', 'animation-duration',
+        'animation-timing-function', 'animation-delay', 'animation-iteration-count',
+        'animation-direction', 'animation-fill-mode', 'animation-play-state',
+        
+        // Color & Appearance
+        'color-scheme', 'forced-color-adjust', 'print-color-adjust',
+        
+        // CSS Custom Properties (CSS Variables)
+        '--*' // This will be handled specially to preserve CSS custom properties
+    ];
+    
+    stylesToCopy.forEach(prop => {
+        // Handle CSS custom properties (CSS variables)
+        if (prop === '--*') {
+            // Get all CSS custom properties
+            const cssVars = Array.from(computedStyle).filter(prop => prop.startsWith('--'));
+            cssVars.forEach(cssVar => {
+                const value = computedStyle.getPropertyValue(cssVar);
+                if (value && value.trim()) {
+                    cloneElement.style.setProperty(cssVar, value);
+                }
+            });
+            return;
+        }
+        
+        const value = computedStyle.getPropertyValue(prop);
+        if (value && value !== 'none' && value !== 'normal' && value !== 'initial' && value !== 'inherit' && value !== 'auto') {
+            // Skip problematic properties for email compatibility
+            if (prop === 'background-image' && value.includes('url(')) {
+                return; // Skip background images
             }
+            if (prop.includes('animation') || prop.includes('transition')) {
+                return; // Skip animations and transitions for email compatibility
+            }
+            if (prop === 'transform' && value !== 'none') {
+                return; // Skip transforms for email compatibility
+            }
+            if (prop.includes('filter') && value !== 'none') {
+                return; // Skip filters for email compatibility
+            }
+            if (prop.includes('backdrop-filter')) {
+                return; // Skip backdrop filters for email compatibility
+            }
+            if (prop.includes('mix-blend-mode') && value !== 'normal') {
+                return; // Skip blend modes for email compatibility
+            }
+            if (prop.includes('clip-path') && value !== 'none') {
+                return; // Skip clip-path for email compatibility
+            }
+            if (prop.includes('mask') && value !== 'none') {
+                return; // Skip masks for email compatibility
+            }
+            
+            cloneElement.style.setProperty(prop, value);
         }
     });
     
-    // Recursively apply to children using the same comprehensive approach
+    // Recursively apply to children
     const cloneChildren = cloneElement.querySelectorAll('*');
     const originalChildren = originalElement.querySelectorAll('*');
     
     cloneChildren.forEach((cloneChild, index) => {
         if (originalChildren[index]) {
-            applyInlineStyles(cloneChild, originalChildren[index]);
+            const childComputedStyle = window.getComputedStyle(originalChildren[index]);
+            stylesToCopy.forEach(prop => {
+                // Handle CSS custom properties (CSS variables)
+                if (prop === '--*') {
+                    // Get all CSS custom properties
+                    const cssVars = Array.from(childComputedStyle).filter(prop => prop.startsWith('--'));
+                    cssVars.forEach(cssVar => {
+                        const value = childComputedStyle.getPropertyValue(cssVar);
+                        if (value && value.trim()) {
+                            cloneChild.style.setProperty(cssVar, value);
+                        }
+                    });
+                    return;
+                }
+                
+                const value = childComputedStyle.getPropertyValue(prop);
+                if (value && value !== 'none' && value !== 'normal' && value !== 'initial' && value !== 'inherit' && value !== 'auto') {
+                    // Skip problematic properties for email compatibility
+                    if (prop === 'background-image' && value.includes('url(')) {
+                        return; // Skip background images
+                    }
+                    if (prop.includes('animation') || prop.includes('transition')) {
+                        return; // Skip animations and transitions for email compatibility
+                    }
+                    if (prop === 'transform' && value !== 'none') {
+                        return; // Skip transforms for email compatibility
+                    }
+                    if (prop.includes('filter') && value !== 'none') {
+                        return; // Skip filters for email compatibility
+                    }
+                    if (prop.includes('backdrop-filter')) {
+                        return; // Skip backdrop filters for email compatibility
+                    }
+                    if (prop.includes('mix-blend-mode') && value !== 'normal') {
+                        return; // Skip blend modes for email compatibility
+                    }
+                    if (prop.includes('clip-path') && value !== 'none') {
+                        return; // Skip clip-path for email compatibility
+                    }
+                    if (prop.includes('mask') && value !== 'none') {
+                        return; // Skip masks for email compatibility
+                    }
+                    
+                    cloneChild.style.setProperty(prop, value);
+                }
+            });
         }
     });
 }
@@ -7898,7 +8166,7 @@ class CampaignManagement {
     }
 
     async init() {
-        console.log('🎯 Initializing Campaign Management...');
+        console.log('<i class="fas fa-bullseye"></i> Initializing Campaign Management...');
         await this.loadCampaigns();
         this.setupEventListeners();
 
@@ -7915,10 +8183,10 @@ class CampaignManagement {
             }
             
             this.campaigns = await response.json();
-            console.log('✅ Loaded campaigns:', this.campaigns.length);
+            console.log('<i class="fas fa-check-circle"></i> Loaded campaigns:', this.campaigns.length);
             this.renderCampaignList();
         } catch (error) {
-            console.error('❌ Error loading campaigns:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading campaigns:', error);
             this.showNotification('Error loading campaigns', 'error');
         }
     }
@@ -7980,9 +8248,9 @@ class CampaignManagement {
             await this.loadCampaignCases();
             await this.loadCampaignDomains();
 
-            console.log('✅ Selected campaign:', campaignName);
+            console.log('<i class="fas fa-check-circle"></i> Selected campaign:', campaignName);
         } catch (error) {
-            console.error('❌ Error selecting campaign:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error selecting campaign:', error);
             this.showNotification('Error selecting campaign', 'error');
         }
     }
@@ -8627,7 +8895,7 @@ class CampaignManagement {
             const cases = await response.json();
             this.renderCampaignCases(cases);
         } catch (error) {
-            console.error('❌ Error loading campaign cases:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading campaign cases:', error);
             this.showNotification('Error loading campaign cases', 'error');
         }
     }
@@ -8640,7 +8908,7 @@ class CampaignManagement {
             const domains = await response.json();
             this.renderCampaignDomains(domains);
         } catch (error) {
-            console.error('❌ Error loading campaign domains:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading campaign domains:', error);
             this.showNotification('Error loading campaign domains', 'error');
         }
     }
@@ -8711,7 +8979,7 @@ class CampaignManagement {
             await this.loadCampaignCases();
             await this.loadCampaigns(); // Refresh campaign list to update counts
         } catch (error) {
-            console.error('❌ Error removing case:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error removing case:', error);
             this.showNotification('Error removing case', 'error');
         }
     }
@@ -8734,7 +9002,7 @@ class CampaignManagement {
             await this.loadCampaignDomains();
             await this.loadCampaigns(); // Refresh campaign list to update counts
         } catch (error) {
-            console.error('❌ Error removing domain:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error removing domain:', error);
             this.showNotification('Error removing domain', 'error');
         }
     }
@@ -8820,7 +9088,7 @@ class CampaignManagement {
 
     updateData() {
         // Refresh campaign data when section is shown
-        console.log('🔄 Updating Campaign Management data...');
+        console.log('<i class="fas fa-sync-alt"></i> Updating Campaign Management data...');
         this.loadCampaigns();
         this.loadCampaignCheckboxes();
     }
@@ -8834,7 +9102,7 @@ class CampaignManagement {
             const campaigns = await response.json();
             this.renderCampaignDropdown(campaigns);
         } catch (error) {
-            console.error('❌ Error loading campaign dropdown:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading campaign dropdown:', error);
         }
     }
 
@@ -8856,7 +9124,7 @@ class CampaignManagement {
             dropdown.appendChild(option);
         });
 
-        console.log(`✅ Loaded ${campaigns.length} campaigns into dropdown`);
+        console.log(`<i class="fas fa-check-circle"></i> Loaded ${campaigns.length} campaigns into dropdown`);
     }
 
     // Data Viewer Methods
@@ -8976,12 +9244,12 @@ class CampaignManagement {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             
             const campaignsData = await response.json();
-            console.log('📊 Campaign data received:', campaignsData);
-            console.log('📊 Campaign data keys:', Object.keys(campaignsData));
+            console.log('<i class="fas fa-chart-bar"></i> Campaign data received:', campaignsData);
+            console.log('<i class="fas fa-chart-bar"></i> Campaign data keys:', Object.keys(campaignsData));
             this.renderEnhancedCampaignsData(campaignsData);
             
         } catch (error) {
-            console.error('❌ Error loading campaigns data:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error loading campaigns data:', error);
             
             // Check if it's a connection error
             if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -9080,13 +9348,13 @@ class CampaignManagement {
     // Status filter removed as per user request
 
     switchToDataView(campaignName, dataType) {
-        console.log(`🔄 Switching to ${dataType} view for ${campaignName}`);
+        console.log(`<i class="fas fa-sync-alt"></i> Switching to ${dataType} view for ${campaignName}`);
         
         // Find the campaign section
         const campaignSection = document.querySelector(`#${campaignName}-cred-theft`)?.closest('.enhanced-campaign-section');
         
         if (!campaignSection) {
-            console.log(`❌ Campaign section not found for: ${campaignName}`);
+            console.log(`<i class="fas fa-times-circle"></i> Campaign section not found for: ${campaignName}`);
             return;
         }
         
@@ -9119,7 +9387,7 @@ class CampaignManagement {
                 targetTabId = `${campaignName}-social-media`;
                 break;
             default:
-                console.log(`❌ Unknown data type: ${dataType}`);
+                console.log(`<i class="fas fa-times-circle"></i> Unknown data type: ${dataType}`);
                 return;
         }
         
@@ -9127,9 +9395,9 @@ class CampaignManagement {
         if (targetTab) {
             targetTab.classList.add('active');
             targetTab.style.display = 'block'; // Force show with inline style
-            console.log(`✅ Showing tab: ${targetTabId}`);
+            console.log(`<i class="fas fa-check-circle"></i> Showing tab: ${targetTabId}`);
         } else {
-            console.log(`❌ Target tab not found: ${targetTabId}`);
+            console.log(`<i class="fas fa-times-circle"></i> Target tab not found: ${targetTabId}`);
         }
         
         // Add active class to clicked stat item
@@ -9138,12 +9406,12 @@ class CampaignManagement {
             clickedStatItem.classList.add('active');
         }
         
-        console.log(`✅ Switched to ${dataType} view for ${campaignName}`);
+        console.log(`<i class="fas fa-check-circle"></i> Switched to ${dataType} view for ${campaignName}`);
     }
 
     // Test function to verify the CampaignManagement class is working
     testCampaignManagement() {
-        console.log('🧪 CampaignManagement class test - function accessible');
+        console.log('<i class="fas fa-flask"></i> CampaignManagement class test - function accessible');
         return true;
     }
 
@@ -9252,7 +9520,7 @@ class CampaignManagement {
 
 
     exportCampaignCSV(campaignName) {
-        console.log(`🔄 Exporting CSV for campaign: ${campaignName}`);
+        console.log(`<i class="fas fa-sync-alt"></i> Exporting CSV for campaign: ${campaignName}`);
         
         // Get the campaign data from the stored data
         const campaignsData = window.currentCampaignsData || {};
@@ -9336,7 +9604,7 @@ class CampaignManagement {
         a.click();
         window.URL.revokeObjectURL(url);
         
-        console.log(`✅ Exported ${allData.length} records for ${campaignName}`);
+        console.log(`<i class="fas fa-check-circle"></i> Exported ${allData.length} records for ${campaignName}`);
     }
 
     // Modal Functions
@@ -9424,7 +9692,7 @@ class CampaignManagement {
             this.closeCampaignModal();
             await this.loadCampaigns();
         } catch (error) {
-            console.error('❌ Error saving campaign:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error saving campaign:', error);
             this.showNotification(error.message || 'Error saving campaign', 'error');
         }
     }
@@ -9460,7 +9728,7 @@ class CampaignManagement {
             await this.loadCampaignCases();
             await this.loadCampaigns(); // Refresh campaign list to update counts
         } catch (error) {
-            console.error('❌ Error adding case:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error adding case:', error);
             this.showNotification(error.message || 'Error adding case', 'error');
         }
     }
@@ -9496,7 +9764,7 @@ class CampaignManagement {
             await this.loadCampaignDomains();
             await this.loadCampaigns(); // Refresh campaign list to update counts
         } catch (error) {
-            console.error('❌ Error adding domain:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error adding domain:', error);
             this.showNotification(error.message || 'Error adding domain', 'error');
         }
     }
@@ -9536,7 +9804,7 @@ class CampaignManagement {
             
             await this.loadCampaigns();
         } catch (error) {
-            console.error('❌ Error deleting campaign:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error deleting campaign:', error);
             this.showNotification(error.message || 'Error deleting campaign', 'error');
         }
     }
@@ -9854,7 +10122,7 @@ class CampaignManagement {
             this.closeCampaignModal();
             await this.loadCampaigns();
         } catch (error) {
-            console.error('❌ Error saving campaign:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error saving campaign:', error);
             this.showNotification('Error saving campaign', 'error');
         }
     }
@@ -9889,7 +10157,7 @@ class CampaignManagement {
             this.closeAddCaseModal();
             await this.loadCampaignCases();
         } catch (error) {
-            console.error('❌ Error saving case:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error saving case:', error);
             this.showNotification('Error saving case', 'error');
         }
     }
@@ -9924,7 +10192,7 @@ class CampaignManagement {
             this.closeAddDomainModal();
             await this.loadCampaignDomains();
         } catch (error) {
-            console.error('❌ Error saving domain:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error saving domain:', error);
             this.showNotification('Error saving domain', 'error');
         }
     }
@@ -9955,7 +10223,7 @@ class CampaignManagement {
             document.getElementById('campaignActions').style.display = 'none';
             document.getElementById('campaignDetailsContent').innerHTML = '';
         } catch (error) {
-            console.error('❌ Error deleting campaign:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error deleting campaign:', error);
             this.showNotification('Error deleting campaign', 'error');
         }
     }
@@ -9993,7 +10261,7 @@ class CampaignManagement {
                 this.renderCampaignIdentifiers();
             }
         } catch (error) {
-            console.error('❌ Error removing identifier:', error);
+            console.error('<i class="fas fa-times-circle"></i> Error removing identifier:', error);
             this.showNotification('Error removing identifier', 'error');
         }
     }
