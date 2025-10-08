@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threat Intelligence Dashboard - Enterprise Security Command Center</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard-new.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+</head>
+<body>
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-shield-alt brand-icon"></i>
+                <span class="brand-text">Threat Intelligence Dashboard</span>
+            </div>
+            <div class="nav-controls">
+                <div class="connection-status" id="connectionStatus">
+                    <i class="fas fa-circle status-indicator"></i>
+                    <span class="status-text">Checking connection...</span>
+                </div>
+                <div class="timestamp" id="timestamp">--:--:--</div>
+                <button class="nav-btn" onclick="copyCompleteDashboard()" title="Copy Complete Dashboard">
+                    <i class="fas fa-copy"></i>
+                </button>
+                <button id="refreshData" class="nav-btn refresh-btn" onclick="refreshData()" title="Refresh Data">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Filter Toolbar -->
+    <div class="filter-toolbar">
+        <div class="filter-container">
+            <div class="filter-group">
+                <label for="dateFilter">Date Range:</label>
+                <select id="dateFilter" class="filter-select" onchange="handleDateFilterChange()">
+                    <option value="all">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month">Last 30 Days</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            
+            <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" class="filter-input" onchange="refreshData()">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" class="filter-input" onchange="refreshData()">
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="#" class="nav-link active" onclick="showSection('executive')">
+                            <i class="fas fa-chart-line nav-icon"></i>
+                            <span class="nav-text">Executive Summary</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" onclick="showSection('case-management')">
+                            <i class="fas fa-cogs nav-icon"></i>
+                            <span class="nav-text">Operational Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" onclick="showSection('threat-intelligence')">
+                            <i class="fas fa-brain nav-icon"></i>
+                            <span class="nav-text">Threat Intelligence</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" onclick="showSection('campaign-management')">
+                            <i class="fas fa-project-diagram nav-icon"></i>
+                            <span class="nav-text">Campaign Management</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" class="nav-link" onclick="showSection('social-executive')">
+                            <i class="fas fa-users nav-icon"></i>
+                            <span class="nav-text">Social & Executive Targeting</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Content Area -->
+        <main class="content-area">
+            <!-- Executive Summary Dashboard -->
+            <section class="content-section active" id="executive-section">
+                <div class="section-header">
+                    <div>
+                        <h1 class="section-title">Executive Summary</h1>
+                        <p class="section-subtitle">Real-time threat landscape overview and key performance indicators</p>
+                    </div>
+                    <button class="copy-btn" onclick="copyExecutiveDashboard()" title="Copy Executive Summary Data">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                
+                <!-- Key Metrics Grid -->
+                <div class="executive-metrics-grid">
+                    <div class="metric-card threat-metric">
+                        <div class="metric-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="metric-content">
+                            <div class="metric-value" id="activeCases">--</div>
+                            <div class="metric-label">Active Threats</div>
+                            <div class="metric-change positive">
+                                <i class="fas fa-arrow-up"></i>
+                                <span>24h change</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card resolution-metric">
+                        <div class="metric-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="metric-content">
+                            <div class="metric-value" id="closedToday">--</div>
+                            <div class="metric-label">Resolved Today</div>
+                            <div class="metric-change positive">
+                                <i class="fas fa-arrow-up"></i>
+                                <span>vs yesterday</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card time-metric">
+                        <div class="metric-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="metric-content">
+                            <div class="metric-value" id="avgResolutionTime">--</div>
+                            <div class="metric-label">Avg Resolution</div>
+                            <div class="metric-change negative">
+                                <i class="fas fa-arrow-down"></i>
+                                <span>improvement</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card brand-metric">
+                        <div class="metric-icon">
+                            <i class="fas fa-bullseye"></i>
+                        </div>
+                        <div class="metric-content">
+                            <div class="metric-value" id="mostTargetedBrand">--</div>
+                            <div class="metric-label">Most Targeted Brand</div>
+                            <div class="metric-description" id="brandCaseCount">-- cases</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Executive Visualizations -->
+                <div class="executive-charts-grid">
+                    <!-- Threat Landscape Overview -->
+                    <div class="chart-container threat-landscape">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Threat Landscape Chart')" title="Click to copy chart for email">Threat Landscape</h3>
+                                <p class="chart-subtitle">Current threat type distribution</p>
+                            </div>
+                            <div class="chart-controls">
+                                <button class="chart-btn active" data-view="types">Types</button>
+                                <button class="chart-btn" data-view="severity">Resolution</button>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <div class="chart-wrapper">
+                                <canvas id="threatLandscapeChart"></canvas>
+                                <div class="chart-center-info">
+                                    <div class="center-value" id="threatTotalValue">--</div>
+                                    <div class="center-label">Total Threats</div>
+                                </div>
+                            </div>
+                            <div class="chart-legend" id="threatLegend">
+                                <!-- Dynamic legend will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Geographic Heat Map -->
+                    <div class="chart-container geographic-heatmap">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Geographic Distribution Chart')" title="Click to copy chart for email">Geographic Distribution</h3>
+                                <p class="chart-subtitle">Threat origins by country</p>
+                            </div>
+                            <div class="chart-controls">
+                                <!-- Controls can be added here if needed -->
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="geographicHeatmapChart"></canvas>
+                            <div class="geo-stats" id="geoStats">
+                                <div class="geo-stat">
+                                    <span class="stat-value" id="topCountry">--</span>
+                                    <span class="stat-label">Top Source</span>
+                                </div>
+                                <div class="geo-stat">
+                                    <span class="stat-value" id="countriesCount">--</span>
+                                    <span class="stat-label">Countries</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Timeline Trends - Generated by JavaScript -->
+                </div>
+            </section>
+
+            <!-- Operational Dashboard -->
+            <section class="content-section" id="case-management-section">
+                <div class="section-header">
+                    <div>
+                        <h1 class="section-title">Operational Dashboard</h1>
+                        <p class="section-subtitle">Real-time operational metrics and performance analysis</p>
+                    </div>
+                    <button class="copy-btn" onclick="copyOperationalDashboard()" title="Copy Operational Dashboard Data">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                
+                <!-- Threat Intelligence Metrics -->
+                <div class="operational-overview-enhanced">
+                    <!-- Performance Metrics Card -->
+                    <div class="overview-card-large performance-card">
+                        <div class="card-header-enhanced">
+                            <div class="header-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div class="header-content">
+                                <h3 class="card-title-enhanced clickable-title" onclick="copyChartAsHTML(this.closest('.overview-card-large'), 'Performance Metrics Chart')" title="Click to copy chart for email">Performance Metrics</h3>
+                                <p class="card-subtitle-enhanced">Real-time operational insights</p>
+                            </div>
+                        </div>
+                        <div class="metrics-grid-enhanced">
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="avgResolutionHoursEnhanced">--h</div>
+                                    <div class="metric-label-enhanced">Avg Resolution</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-folder-open"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="totalCasesCountEnhanced">--</div>
+                                    <div class="metric-label-enhanced">Total Cases</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="closedCasesCountEnhanced">--</div>
+                                    <div class="metric-label-enhanced">Closed Cases</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="activeCasesCountEnhanced">--</div>
+                                    <div class="metric-label-enhanced">Active Cases</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Threat Intelligence Analytics -->
+                    <div class="overview-card-large intel-card">
+                        <div class="card-header-enhanced">
+                            <div class="header-icon">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                            <div class="header-content">
+                                <h3 class="card-title-enhanced clickable-title" onclick="copyChartAsHTML(this.closest('.overview-card-large'), 'Threat Intelligence Metrics Chart')" title="Click to copy chart for email">Threat Intelligence</h3>
+                                <p class="card-subtitle-enhanced">Infrastructure & attack pattern analysis</p>
+                            </div>
+                        </div>
+                        <div class="metrics-grid-enhanced">
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-network-wired"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="ipReuseCount">--</div>
+                                    <div class="metric-label-enhanced">IP Reuse</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-server"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="topISP">--</div>
+                                    <div class="metric-label-enhanced">Top ISP</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-id-card"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="topRegistrarSummary">--</div>
+                                    <div class="metric-label-enhanced">Top Registrar</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small">
+                                    <i class="fas fa-link"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-value-enhanced" id="topUrlPath">--</div>
+                                    <div class="metric-label-enhanced">Top URL Path</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add detailed analysis charts -->
+                <div class="threat-intel-details">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Registrar Abuse Analysis Chart')" title="Click to copy chart for email">Registrar Abuse Analysis</h3>
+                                <p class="chart-subtitle">Most abused domain registrars</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="registrarAbuseChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'ISP Distribution Chart')" title="Click to copy chart for email">ISP Distribution</h3>
+                                <p class="chart-subtitle">Hosting providers by threat volume</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <canvas id="ispDistributionChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'URL Path Analysis Chart')" title="Click to copy chart for email">URL Path Analysis</h3>
+                                <p class="chart-subtitle">Common attack URL patterns</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <div class="url-path-table-container">
+                                <table class="url-path-table">
+                                    <thead>
+                                        <tr>
+                                            <th>URL Path</th>
+                                            <th>Cases</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="urlPathTableBody">
+                                        <tr>
+                                            <td colspan="2" class="loading-cell">Loading URL path data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Infrastructure Reuse Chart')" title="Click to copy chart for email">Infrastructure Reuse</h3>
+                                <p class="chart-subtitle">IP addresses used across multiple campaigns</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <div class="infrastructure-reuse-table-container">
+                                <table class="infrastructure-reuse-table">
+                                    <thead>
+                                        <tr>
+                                            <th>IP Address</th>
+                                            <th>Host ISP</th>
+                                            <th>Host Country</th>
+                                            <th>Cases</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="infrastructureReuseTableBody">
+                                        <tr>
+                                            <td colspan="4" class="loading-cell">Loading infrastructure reuse data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Case Status Matrix -->
+                <div class="case-status-matrix">
+                    <div class="matrix-header">
+                        <h3 class="clickable-title" onclick="copyChartAsHTML(this.closest('.case-status-matrix'), 'Case Status Overview')" title="Click to copy entire section for email">Case Status Overview</h3>
+                        <p>Real-time status across all case types</p>
+                    </div>
+                    
+                    <div class="status-grid">
+                        <!-- Credential Theft -->
+                        <div class="status-category">
+                            <div class="category-header">
+                                <h4 class="clickable-title" onclick="copyChartAsHTML(this.closest('.status-category'), 'Credential Theft Status Chart')" title="Click to copy chart for email">Credential Theft</h4>
+                                <div class="category-total" id="credTheftTotal">--</div>
+                            </div>
+                            <div class="status-chart-container">
+                                <canvas id="credTheftStatusChart"></canvas>
+                                <div class="status-breakdown" id="credTheftBreakdown">
+                                    <!-- Dynamic status breakdown -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Domain Monitoring -->
+                        <div class="status-category">
+                            <div class="category-header">
+                                <h4 class="clickable-title" onclick="copyChartAsHTML(this.closest('.status-category'), 'Domain Monitoring Status Chart')" title="Click to copy chart for email">Domain Monitoring</h4>
+                                <div class="category-total" id="domainMonitoringTotal">--</div>
+                            </div>
+                            <div class="status-chart-container">
+                                <canvas id="domainMonitoringStatusChart"></canvas>
+                                <div class="status-breakdown" id="domainMonitoringBreakdown">
+                                    <!-- Dynamic status breakdown -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Social Media -->
+                        <div class="status-category">
+                            <div class="category-header">
+                                <h4 class="clickable-title" onclick="copyChartAsHTML(this.closest('.status-category'), 'Social Media Status Chart')" title="Click to copy chart for email">Social Media</h4>
+                                <div class="category-total" id="socialMediaTotal">--</div>
+                            </div>
+                            <div class="status-chart-container">
+                                <canvas id="socialMediaStatusChart"></canvas>
+                                <div class="status-breakdown" id="socialMediaBreakdown">
+                                    <!-- Dynamic status breakdown -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Case Type Analysis -->
+                <div class="case-type-analysis">
+                    <div class="analysis-header">
+                        <h3 class="clickable-title" onclick="copyChartAsHTML(this.closest('.case-type-analysis'), 'Case Type Distribution & Performance')" title="Click to copy entire section for email">Case Type Distribution & Performance</h3>
+                        <div class="analysis-controls">
+                            <button class="analysis-btn active" data-view="distribution">Distribution</button>
+                            <button class="analysis-btn" data-view="performance">Performance</button>
+                        </div>
+                    </div>
+                    
+                    <div class="type-analysis-grid">
+                        <!-- Distribution View -->
+                        <div class="type-chart distribution-view active">
+                            <div class="distribution-card threat-card">
+                                <div class="distribution-card-header">
+                                    <div>
+                                        <h4 class="distribution-card-title clickable-title" onclick="copyChartAsHTML(this.closest('.distribution-card'), 'Credential Theft Types Chart')" title="Click to copy chart for email">Credential Theft</h4>
+                                        <p class="distribution-card-subtitle">Top threat types by volume</p>
+                                    </div>
+                                    <div class="distribution-card-count" id="credTheftTypeCount">--</div>
+                                </div>
+                                
+                                <div class="distribution-card-body">
+                                    <canvas id="credTheftTypeChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <div class="distribution-card warning-card">
+                                <div class="distribution-card-header">
+                                    <div>
+                                        <h4 class="distribution-card-title clickable-title" onclick="copyChartAsHTML(this.closest('.distribution-card'), 'Domain Monitoring Types Chart')" title="Click to copy chart for email">Domain Monitoring</h4>
+                                        <p class="distribution-card-subtitle">Top threat types by volume</p>
+                                    </div>
+                                    <div class="distribution-card-count" id="domainMonitoringTypeCount">--</div>
+                                </div>
+                                <div class="distribution-card-body">
+                                    <canvas id="domainMonitoringTypeChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <div class="distribution-card purple-card">
+                                <div class="distribution-card-header">
+                                    <div>
+                                        <h4 class="distribution-card-title clickable-title" onclick="copyChartAsHTML(this.closest('.distribution-card'), 'Social Media Types Chart')" title="Click to copy chart for email">Social Media</h4>
+                                        <p class="distribution-card-subtitle">Top threat types by volume</p>
+                                    </div>
+                                    <div class="distribution-card-count" id="socialMediaTypeCount">--</div>
+                                </div>
+                                <div class="distribution-card-body">
+                                    <canvas id="socialMediaTypeChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Performance View -->
+                        <div class="type-chart performance-view">
+                            <div class="performance-header">
+                                <h4 class="clickable-title" onclick="copyChartAsHTML(this.closest('.type-chart'), 'Resolution Performance Comparison')" title="Click to copy performance chart for email">Resolution Performance Comparison</h4>
+                                <p>Average resolution time and case volume by threat type</p>
+                            </div>
+                            <div class="performance-chart-wrapper">
+                                <canvas id="resolutionPerformanceChart"></canvas>
+                            </div>
+                            <!-- THIS SECTION MUST BE INCLUDED -->
+                            <div class="performance-insights">
+                                <div class="insight-card">
+                                    <div class="insight-value" id="avgResolutionOverall">--h</div>
+                                    <div class="insight-label">Avg Resolution Time</div>
+                                </div>
+                                <div class="insight-card">
+                                    <div class="insight-value" id="fastestResolution">--</div>
+                                    <div class="insight-label">Fastest Category</div>
+                                </div>
+                                <div class="insight-card">
+                                    <div class="insight-value" id="totalResolved">--</div>
+                                    <div class="insight-label">Cases Resolved</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- SLA Performance Dashboard -->
+                <div class="sla-dashboard">
+                    <div class="sla-header">
+                        <div class="sla-title-group">
+                            <h3 class="clickable-title" onclick="copyChartAsHTML(this.closest('.sla-dashboard'), 'SLA Performance Dashboard')" title="Click to copy chart for email">SLA Performance Dashboard</h3>
+                            <p class="sla-subtitle">Real-time SLA compliance monitoring for active cases</p>
+                        </div>
+                        <div class="sla-summary">
+                            <div class="sla-metric red">
+                                <div class="sla-count" id="slaRedCount">--</div>
+                                <div class="sla-label">Breached (>28 days)</div>
+                            </div>
+                            <div class="sla-metric amber">
+                                <div class="sla-count" id="slaAmberCount">--</div>
+                                <div class="sla-label">At Risk (14-28 days)</div>
+                            </div>
+                            <div class="sla-metric green">
+                                <div class="sla-count" id="slaGreenCount">--</div>
+                                <div class="sla-label">Within SLA (1-14 days)</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sla-content">
+                        <div class="sla-chart-section">
+                            <canvas id="slaComplianceChart"></canvas>
+                        </div>
+                        
+                        <div class="sla-table-section">
+                            <div class="sla-table-container">
+                                <table class="sla-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Case Number</th>
+                                            <th>URL</th>
+                                            <th>Type</th>
+                                            <th>Age (Days)</th>
+                                            <th>SLA Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="slaTableBody">
+                                        <tr>
+                                            <td colspan="5" class="loading-cell">Loading SLA tracking data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Threat Intelligence Dashboard -->
+            <section class="content-section" id="threat-intelligence-section">
+                <div class="section-header">
+                    <h1 class="section-title">Threat Intelligence Dashboard</h1>
+                    <p class="section-subtitle">Attribution intelligence, threat actor profiling, and campaign tracking</p>
+                    <button class="copy-btn" onclick="copyThreatIntelligenceDashboard()" title="Copy Entire Dashboard Section">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                
+                <!-- Attribution Coverage Overview -->
+                <div class="attribution-overview">
+                    <div class="overview-card-large attribution-card">
+                        <div class="card-header-enhanced">
+                            <div class="header-icon">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <div class="header-content">
+                                <h3 class="card-title-enhanced clickable-title" onclick="copyChartAsHTML(this.closest('.overview-card-large'), 'Attribution Coverage Overview')" title="Click to copy chart for email">Attribution Coverage</h3>
+                                <p class="card-subtitle-enhanced">Intelligence completeness across case portfolio</p>
+                            </div>
+                        </div>
+                        <div class="metrics-grid-enhanced">
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small threat-actor-icon">
+                                    <i class="fas fa-user-secret"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-label-enhanced">Threat Actor Attribution</div>
+                                    <div class="metric-value-enhanced" id="threatActorCoverage">--%</div>
+                                    <div class="metric-description">% of cases with identified threat actor</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small kit-family-icon">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-label-enhanced">Threat Family Coverage</div>
+                                    <div class="metric-value-enhanced" id="kitFamilyCoverage">--%</div>
+                                    <div class="metric-description">% of cases with identified malware kit</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small whois-icon">
+                                    <i class="fas fa-id-card"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-label-enhanced">WHOIS Attribution</div>
+                                    <div class="metric-value-enhanced" id="whoisCoverage">--%</div>
+                                    <div class="metric-description">% of cases with suspicious WHOIS data</div>
+                                </div>
+                            </div>
+                            <div class="metric-item-enhanced">
+                                <div class="metric-icon-small full-attribution-icon">
+                                    <i class="fas fa-puzzle-piece"></i>
+                                </div>
+                                <div class="metric-content-small">
+                                    <div class="metric-label-enhanced">Avg Attribution Score</div>
+                                    <div class="metric-value-enhanced" id="fullAttributionScore">--/4</div>
+                                    <div class="metric-description">Average attribution completeness per case</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Intelligence Grid -->
+                <div class="threat-intelligence-grid">
+                    <!-- Top Threat Actors -->
+                    <div class="threat-actor-families">
+                        <div class="intel-card threat-actors-card">
+                            <div class="intel-header">
+                                <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Top Threat Actors')" title="Click to copy chart for email">Top Threat Actors</h3>
+                                <p class="intel-subtitle">Most active adversaries by attack volume</p>
+                            </div>
+                            <div class="intel-body">
+                                <div class="threat-actor-list" id="threatActorList">
+                                    <div class="loading-cell">Loading threat actor data...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Threat Families -->
+                    <div class="intel-card kit-families-card">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Threat Families')" title="Click to copy chart for email">Threat Families</h3>
+                            <p class="intel-subtitle">Active threats & threat families</p>
+                        </div>
+                        <div class="intel-body">
+                            <canvas id="threatFamilyChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Attribution Timeline -->
+                    <div class="intel-card attribution-timeline-card full-width">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Attribution Timeline')" title="Click to copy chart for email">Attribution Timeline</h3>
+                            <p class="intel-subtitle">Threat actor activity patterns over time</p>
+                        </div>
+                        <div class="intel-body">
+                            <canvas id="attributionTimelineChart"></canvas>
+                            <div class="timeline-insights">
+                                <div class="insight-card">
+                                    <div class="insight-value" id="activeActorsCount">--</div>
+                                    <div class="insight-label">Active Actors (30d)</div>
+                                </div>
+                                <div class="insight-card">
+                                    <div class="insight-value" id="newActorsCount">--</div>
+                                    <div class="insight-label">New Actors (30d)</div>
+                                </div>
+                                <div class="insight-card">
+                                    <div class="insight-value" id="avgCampaignDuration">--d</div>
+                                    <div class="insight-label">Avg Campaign Duration</div>
+                                </div>
+                            </div>
+                            <div id="timelineStory"></div>
+                        </div>
+                    </div>
+
+                    <!-- Comprehensive Infrastructure Analysis - Full Width -->
+                    <div class="intel-card infrastructure-analysis-card full-width">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Infrastructure Analysis')" title="Click to copy chart for email">Infrastructure Analysis</h3>
+                            <p class="intel-subtitle">Threat actor and family infrastructure preferences</p>
+                        </div>
+                        <div class="intel-body">
+                            <!-- Analysis Tabs -->
+                            <div class="infrastructure-tabs">
+                                <button class="tab-btn active" onclick="showInfraTab('overview')">Overview</button>
+                                <button class="tab-btn" onclick="showInfraTab('actors')">Threat Actor Infrastructure</button>
+                                <button class="tab-btn" onclick="showInfraTab('families')">Threat Family Intelligence</button>
+                            </div>
+
+                            <!-- Overview Tab -->
+                            <div id="infra-overview" class="infra-tab-content active">
+                                <!-- Threat Infrastructure Intelligence Overview -->
+                                <div class="infrastructure-intelligence-overview">
+                                    
+                                    <!-- Intelligence Summary Panel -->
+                                    <div class="intel-summary-panel">
+                                        <div class="summary-header">
+                                            <h3 class="summary-title">Threat Infrastructure Intelligence</h3>
+                                            <p class="summary-subtitle">Real-time analysis of attacker infrastructure patterns and preferences</p>
+                                        </div>
+                                        <div class="summary-metrics">
+                                            <div class="metric-card critical">
+                                                <div class="metric-icon">🌐</div>
+                                                <div class="metric-content">
+                                                    <div class="metric-value" id="totalInfrastructure">0</div>
+                                                    <div class="metric-label">Infrastructure Points</div>
+                                                    <div class="metric-trend" id="infraTrend">Loading...</div>
+                                                </div>
+                                            </div>
+                                            <div class="metric-card warning">
+                                                <div class="metric-icon">🎯</div>
+                                                <div class="metric-content">
+                                                    <div class="metric-value" id="topThreatCountries">0</div>
+                                                    <div class="metric-label">Primary Threat Countries</div>
+                                                    <div class="metric-trend" id="countryTrend">Loading...</div>
+                                                </div>
+                                            </div>
+                                            <div class="metric-card info">
+                                                <div class="metric-icon">☁️</div>
+                                                <div class="metric-content">
+                                                    <div class="metric-value" id="majorProviders">0</div>
+                                                    <div class="metric-label">Major Hosting Providers</div>
+                                                    <div class="metric-trend" id="providerTrend">Loading...</div>
+                                                </div>
+                                            </div>
+                                            <div class="metric-card success">
+                                                <div class="metric-icon">🏢</div>
+                                                <div class="metric-content">
+                                                    <div class="metric-value" id="activeRegistrars">0</div>
+                                                    <div class="metric-label">Registrars</div>
+                                                    <div class="metric-trend" id="registrarTrend">Loading...</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Geographic Threat Heatmap -->
+                                    <div class="threat-heatmap-section">
+                                        <div class="section-header">
+                                            <h4 class="section-title">Geographic Threat Landscape</h4>
+                                            <p class="section-description">Countries hosting the most malicious infrastructure</p>
+                                        </div>
+                                        <div class="heatmap-container">
+                                            <div class="heatmap-visual" id="geographicHeatmap">
+                                                <!-- Dynamic heatmap will be generated here -->
+                                            </div>
+                                            <div class="heatmap-insights">
+                                                <div class="insight-item">
+                                                    <span class="insight-label">Most Active:</span>
+                                                    <span class="insight-value" id="mostActiveCountry">Loading...</span>
+                                                </div>
+                                                <div class="insight-item">
+                                                    <span class="insight-label">Threat Density:</span>
+                                                    <span class="insight-value" id="threatDensity">Loading...</span>
+                                                </div>
+                                                <div class="insight-item">
+                                                    <span class="insight-label">Geographic Spread:</span>
+                                                    <span class="insight-value" id="geographicSpread">Loading...</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Infrastructure Provider Analysis -->
+                                    <div class="provider-analysis-section">
+                                        <div class="section-header">
+                                            <h4 class="section-title">Infrastructure Provider Intelligence</h4>
+                                            <p class="section-description">Analysis of hosting providers and registrars used by threat actors</p>
+                                        </div>
+                                        <div class="provider-analysis-grid">
+                                            <div class="provider-chart-container">
+                                                <canvas id="providerIntelligenceChart"></canvas>
+                                            </div>
+                                            <div class="provider-insights">
+                                                <div class="insight-card">
+                                                    <h5>Top Threat Hosting Provider</h5>
+                                                    <div class="provider-name" id="topProvider">Loading...</div>
+                                                    <div class="provider-stats">
+                                                        <span class="stat-item">
+                                                            <span class="stat-value" id="providerCases">0</span>
+                                                            <span class="stat-label">Cases</span>
+                                                        </span>
+                                                        <span class="stat-item">
+                                                            <span class="stat-value" id="providerDomains">0</span>
+                                                            <span class="stat-label">Domains</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div class="insight-card">
+                                                    <h5>Registrar Abuse Pattern</h5>
+                                                    <div class="registrar-name" id="topRegistrar">Loading...</div>
+                                                    <div class="abuse-indicator">
+                                                        <div class="abuse-level" id="abuseLevel">Low</div>
+                                                        <div class="abuse-description" id="abuseDescription">Normal activity levels</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- TLD Abuse Analysis -->
+                                    <div class="tld-analysis-section">
+                                        <div class="section-header">
+                                            <h4 class="section-title">Top-Level Domain Abuse Analysis</h4>
+                                            <p class="section-description">Most abused domain extensions and their threat patterns</p>
+                                        </div>
+                                        <div class="tld-analysis-container">
+                                            <div class="tld-chart-container">
+                                                <canvas id="tldIntelligenceChart"></canvas>
+                                            </div>
+                                            <div class="tld-threat-indicators">
+                                                <div class="threat-indicator high-risk">
+                                                    <div class="indicator-icon">⚠️</div>
+                                                    <div class="indicator-content">
+                                                        <div class="indicator-title">High-Risk TLDs</div>
+                                                        <div class="indicator-list" id="highRiskTLDs">Loading...</div>
+                                                    </div>
+                                                </div>
+                                                <div class="threat-indicator emerging">
+                                                    <div class="indicator-icon">📈</div>
+                                                    <div class="indicator-content">
+                                                        <div class="indicator-title">Emerging Threats</div>
+                                                        <div class="indicator-list" id="emergingTLDs">Loading...</div>
+                                                    </div>
+                                                </div>
+                                                <div class="threat-indicator stable">
+                                                    <div class="indicator-icon">📊</div>
+                                                    <div class="indicator-content">
+                                                        <div class="indicator-title">Stable Patterns</div>
+                                                        <div class="indicator-list" id="stableTLDs">Loading...</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Infrastructure Timeline -->
+                                    <div class="infrastructure-timeline-section">
+                                        <div class="section-header">
+                                            <h4 class="section-title">Infrastructure Evolution Timeline</h4>
+                                            <p class="section-description">How threat infrastructure has evolved over the selected time period</p>
+                                        </div>
+                                        <div class="timeline-container">
+                                            <canvas id="infrastructureTimelineChart"></canvas>
+                                        </div>
+                                        <div class="timeline-insights">
+                                            <div class="timeline-insight">
+                                                <span class="insight-label">Peak Infrastructure Activity:</span>
+                                                <span class="insight-value" id="peakInfrastructureDate">Loading...</span>
+                                            </div>
+                                            <div class="timeline-insight">
+                                                <span class="insight-label">Infrastructure Growth Rate:</span>
+                                                <span class="insight-value" id="infrastructureGrowthRate">Loading...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+
+                            <!-- Threat Actors Tab -->
+                            <div id="infra-actors" class="infra-tab-content">
+                                <div class="actor-infrastructure-grid">
+                                    <div class="actor-analysis-section">
+                                        <h4 class="section-title">Actor Infrastructure Preferences</h4>
+                                        <div class="actor-preference-table">
+                                            <table id="actorPreferencesTable">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Threat Actor</th>
+                                                        <th>TLD</th>
+                                                        <th>Registrar</th>
+                                                        <th>ISP</th>
+                                                        <th>Country</th>
+                                                        <th>URL Paths</th>
+                                                        <th>Cases</th>
+                                                        <th>Active Since</th>
+                                                        <th>Last Case</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="threatActorInfrastructureBody">
+                                                    <tr><td colspan="9" class="loading-cell">Loading actor preferences...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Threat Actors Tab -->
+                            <div id="infra-actors" class="infra-tab-content">
+                                <div class="threat-actor-infrastructure-container">
+                                    <div class="intelligence-header">
+                                        <h3 class="intelligence-title">Threat Actor Infrastructure Analysis</h3>
+                                        <p class="intelligence-subtitle">Comprehensive analysis of individual threat actor infrastructure preferences and patterns</p>
+                                    </div>
+                                    
+                                    <!-- Threat Actor Infrastructure Table -->
+                                    <div class="threat-actor-table-container">
+                                        <div class="table-header">
+                                            <h4 class="table-title">Threat Actor Infrastructure Preferences</h4>
+                                            <div class="table-summary" id="actorTableSummary">
+                                                Loading threat actor data...
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="table-responsive">
+                                            <table id="threatActorInfrastructureTable" class="threat-actor-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Threat Actor</th>
+                                                        <th>TLD</th>
+                                                        <th>Registrar</th>
+                                                        <th>ISP</th>
+                                                        <th>Country</th>
+                                                        <th>URL Paths</th>
+                                                        <th>Cases</th>
+                                                        <th>Active Since</th>
+                                                        <th>Last Case</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="threatActorInfrastructureBody">
+                                                    <tr><td colspan="10" class="loading-cell">Loading threat actor infrastructure data...</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Threat Families Tab -->
+                            <div id="infra-families" class="infra-tab-content">
+                                <div class="threat-family-intelligence-container">
+                                    <div class="intelligence-header">
+                                        <h3 class="intelligence-title">Threat Family Intelligence & Infrastructure Fingerprinting</h3>
+                                        <p class="intelligence-subtitle">Comprehensive analysis of threat actor behavior, infrastructure patterns, and targeting strategies</p>
+                                    </div>
+                                    
+                                    <!-- Intelligence Cards Container -->
+                                    <div id="familyPreferencesBody" class="intelligence-cards-container">
+                                        <div class="loading-cell">Loading comprehensive threat family intelligence...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Pattern Analysis Tab - REMOVED -->
+                            <!-- This tab has been removed as requested -->
+                        </div>
+                    </div>
+
+                    <!-- WHOIS Attribution - Below Infrastructure Analysis -->
+                    <div class="intel-card whois-card">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'WHOIS Attribution')" title="Click to copy chart for email">WHOIS Attribution</h3>
+                            <p class="intel-subtitle">Repeat offender registrants</p>
+                        </div>
+                        <div class="intel-body">
+                            <div class="whois-table-container">
+                                <table class="whois-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Email/Name</th>
+                                            <th>Cases</th>
+                                            <th>Threat Families</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="whoisTableBody">
+                                        <tr>
+                                            <td colspan="3" class="loading-cell">Loading WHOIS attribution data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- High-Priority Cases -->
+                    <div class="intel-card priority-cases-card full-width">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'High-Priority Cases')" title="Click to copy chart for email">High-Priority Attribution Cases</h3>
+                            <p class="intel-subtitle">Active cases with strong attribution signals (score ≥ 2)</p>
+                        </div>
+                        <div class="intel-body">
+                            <div class="priority-table-container">
+                                <table class="priority-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Case #</th>
+                                            <th>Brand</th>
+                                            <th>Threat Actor</th>
+                                            <th>Kit Family</th>
+                                            <th>Domain</th>
+                                            <th>Host Country</th>
+                                            <th>Attribution Score</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="priorityCasesTableBody">
+                                        <tr>
+                                            <td colspan="8" class="loading-cell">Loading high-priority cases...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Campaign Management Dashboard -->
+        <section class="content-section" id="campaign-management-section">
+            <div class="section-header">
+                <h1 class="section-title">Campaign Management</h1>
+                <p class="section-subtitle">Create, manage, and track threat campaigns and their associated cases and domains</p>
+                <button class="copy-btn" onclick="copyDashboardSection('campaign-management-section', 'Campaign Management Dashboard')" title="Copy Entire Dashboard Section">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+            
+            <!-- Campaign Management Tabs -->
+            <div class="campaign-tabs">
+                <button class="campaign-tab active" onclick="showCampaignTab('manage')" id="manage-tab">
+                    <i class="fas fa-cogs"></i> Manage
+                </button>
+                <button class="campaign-tab" onclick="showCampaignTab('data-viewer')" id="data-viewer-tab">
+                    <i class="fas fa-database"></i> Data Viewer
+                </button>
+                <button class="campaign-tab" onclick="showCampaignTab('analysis')" id="analysis-tab">
+                    <i class="fas fa-chart-line"></i> Analysis
+                </button>
+            </div>
+            
+            <!-- Tab Content -->
+            <div class="campaign-tab-content">
+                <!-- Manage Tab -->
+                <div class="tab-pane active" id="manage-tab-content">
+                    <div class="campaign-management-container">
+                    <!-- Campaign List -->
+                    <div class="campaign-list-container">
+                        <div class="campaign-list-header">
+                            <h3>Campaigns</h3>
+                            <button class="btn btn-primary" onclick="campaignManagement.showCreateCampaignModal()">
+                                <i class="fas fa-plus"></i> Create Campaign
+                            </button>
+                        </div>
+                        <div class="campaign-list" id="campaignList">
+                            <div class="loading-placeholder">Loading campaigns...</div>
+                        </div>
+                    </div>
+
+                    <!-- Campaign Details -->
+                    <div class="campaign-details-container">
+                        <div class="campaign-details-header">
+                            <h3 id="selectedCampaignName">Select a Campaign</h3>
+                            <div class="campaign-actions" id="campaignActions" style="display: none;">
+                                <button class="btn btn-secondary" onclick="campaignManagement.showEditCampaignModal()">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-danger" onclick="campaignManagement.deleteCampaign()">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="campaign-details-content" id="campaignDetailsContent">
+                            <div class="no-selection-placeholder">
+                                <i class="fas fa-mouse-pointer"></i>
+                                <p>Select a campaign from the list to view and manage its details</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Campaign Cases Management -->
+                <div class="campaign-cases-container" id="campaignCasesContainer" style="display: none;">
+                    <div class="cases-header">
+                        <h4>Cases</h4>
+                        <button class="btn btn-primary" onclick="campaignManagement.showAddCaseModal()">
+                            <i class="fas fa-plus"></i> Add Case
+                        </button>
+                    </div>
+                    <div class="cases-list" id="campaignCasesList">
+                        <!-- Cases will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Campaign Domains Management -->
+                <div class="campaign-domains-container" id="campaignDomainsContainer" style="display: none;">
+                    <div class="domains-header">
+                        <h4>Domains</h4>
+                        <button class="btn btn-primary" onclick="campaignManagement.showAddDomainModal()">
+                            <i class="fas fa-plus"></i> Add Domain
+                        </button>
+                    </div>
+                    <div class="domains-list" id="campaignDomainsList">
+                        <!-- Domains will be populated here -->
+                    </div>
+                </div>
+
+                </div>
+                
+                <!-- Data Viewer Tab -->
+                <div class="tab-pane" id="data-viewer-tab-content">
+                    <div class="data-viewer-container">
+                        <!-- Campaign Selection and Date Filters -->
+                        <div class="data-viewer-controls">
+                            <!-- Compact Single Row Layout -->
+                            <div class="controls-row">
+                                <!-- Campaign Selection -->
+                                <div class="control-item campaign-selector-item">
+                                    <label class="control-label">Campaigns</label>
+                                    <div class="campaign-controls">
+                                        <select id="campaignDropdown" onchange="campaignManagement.toggleCampaignSelection()" class="control-select">
+                                            <option value="">Select Campaigns...</option>
+                                        </select>
+                                        <div class="quick-actions">
+                                            <button class="btn-icon" onclick="campaignManagement.selectAllCampaignsForViewer()" title="Select All">
+                                                <i class="fas fa-check-square"></i>
+                                            </button>
+                                            <button class="btn-icon" onclick="campaignManagement.deselectAllCampaignsForViewer()" title="Deselect All">
+                                                <i class="fas fa-square"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Date Filter -->
+                                <div class="control-item">
+                                    <label class="control-label">Date Range</label>
+                                    <select id="campaignDateFilter" onchange="campaignManagement.handleCampaignDateFilterChange()" class="control-select">
+                                        <option value="today">Today</option>
+                                        <option value="yesterday">Yesterday</option>
+                                            <option value="week">Last 7 Days</option>
+                                            <option value="month">Last 30 Days</option>
+                                            <option value="this_month">This Month</option>
+                                            <option value="last_month">Last Month</option>
+                                        <option value="custom">Custom Range</option>
+                                        <option value="all">All Time</option>
+                                    </select>
+                                </div>
+                                
+                                
+                                <!-- Age Filter -->
+                                <div class="control-item">
+                                    <label class="control-label">Age</label>
+                                    <select id="age-filter" class="control-select">
+                                        <option value="">All Ages</option>
+                                        <option value="0-7">0-7 days</option>
+                                        <option value="8-30">8-30 days</option>
+                                        <option value="31-90">31-90 days</option>
+                                        <option value="90+">90+ days</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- Case Number Filter -->
+                                <div class="control-item">
+                                    <label class="control-label">Case Number</label>
+                                    <input type="text" id="case-number-filter" class="control-input" placeholder="Case number">
+                                </div>
+                                
+                                <!-- Load Data Button -->
+                                <div class="control-item control-actions">
+                                    <button class="btn-load-data" onclick="campaignManagement.loadCampaignData()">
+                                        <i class="fas fa-search"></i>
+                                        Load Data
+                                    </button>
+                                    <button class="btn-clear-filters" onclick="clearFilters()">
+                                        <i class="fas fa-times"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Selected Campaigns Display Below Controls -->
+                            <div class="selected-campaigns-display" id="selectedCampaignsTags">
+                                <!-- Selected campaigns will be shown as tags here -->
+                            </div>
+                            
+                            <!-- Custom Date Ranges (Hidden by default) -->
+                            <div class="custom-date-panels">
+                                <!-- Custom Range -->
+                                <div class="custom-range" id="customRangeSection" style="display: none;">
+                                    <div class="date-range-inputs">
+                                        <label>Start Date:</label>
+                                            <input type="date" id="campaignStartDate" placeholder="Start Date">
+                                        <label>End Date:</label>
+                                            <input type="date" id="campaignEndDate" placeholder="End Date">
+                                        <button class="btn btn-primary" onclick="applyCustomRange()">Apply</button>
+                                    </div>
+                                </div>
+                                
+                            </div>
+                        </div>
+                        
+                        <!-- Campaign Updates Section -->
+                        <div class="campaign-updates-section" id="campaignUpdatesSection" style="display: none;">
+                            <!-- Campaign Data Header -->
+                            <div class="campaign-data-header">
+                                <div class="header-content">
+                                    <div>
+                                        <h3 class="header-title clickable-title" onclick="copyChartAsHTML(this.closest('.campaign-updates-section'), 'Campaign Updates')" title="Click to copy entire section for email">
+                                            <i class="fas fa-database"></i>
+                                            Campaign Updates
+                                        </h3>
+                                        <p class="header-subtitle">Campaign progress  and case information</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Data Results -->
+                            <div class="campaign-data-results" id="campaignDataResults">
+                                <!-- Campaign data will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Analysis Tab -->
+                <div class="tab-pane" id="analysis-tab-content">
+                    <div class="analysis-container">
+                            <!-- Analysis Results -->
+                            <div class="analysis-results">
+                                <div class="loading-analysis">
+                                    <i class="fas fa-chart-line"></i>
+                                    <p>Loading analysis overview...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Analysis Controls - Reusing Data Viewer Structure -->
+                        <div class="data-viewer-controls">
+                            <div class="data-viewer-controls-header">
+                                <div class="controls-row">
+                                    <!-- Campaign Selection -->
+                                    <div class="control-item campaign-selector-item">
+                                        <label class="control-label">Campaigns</label>
+                                        <div class="campaign-controls">
+                                            <select id="analysisCampaignDropdown" onchange="campaignManagement.toggleAnalysisCampaignSelection()" class="control-select">
+                                                <option value="">Select Campaigns...</option>
+                                            </select>
+                                            <div class="quick-actions">
+                                                <button class="btn-icon" onclick="campaignManagement.selectAllCampaignsForAnalysis()" title="Select All">
+                                                    <i class="fas fa-check-square"></i>
+                                                </button>
+                                                <button class="btn-icon" onclick="campaignManagement.deselectAllCampaignsForAnalysis()" title="Deselect All">
+                                                    <i class="fas fa-square"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Date Filter -->
+                                    <div class="control-item">
+                                        <label class="control-label">Date Range</label>
+                                        <select id="analysisDateFilter" class="control-select">
+                                            <option value="today">Today</option>
+                                            <option value="yesterday">Yesterday</option>
+                                            <option value="week">Last 7 Days</option>
+                                            <option value="month">Last 30 Days</option>
+                                            <option value="this_month">This Month</option>
+                                            <option value="custom">Custom Range</option>
+                                            <option value="all">All Time</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Generate Filtered Analysis Button -->
+                                    <div class="control-item control-actions">
+                                        <button class="btn-load-data" onclick="campaignManagement.generateFilteredAnalysis()">
+                                            <i class="fas fa-chart-bar"></i>
+                                            Generate Filtered Analysis
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Selected Campaigns Display -->
+                                <div class="selected-campaigns-display" id="selectedAnalysisCampaignsTags">
+                                    <!-- Selected campaigns will be shown as tags here -->
+                                </div>
+                                
+                                <!-- Custom Date Ranges (Hidden by default) -->
+                                <div class="custom-date-panels">
+                                    <!-- Custom Range -->
+                                    <div class="custom-range" id="analysisCustomRangeSection" style="display: none;">
+                                        <div class="date-range-inputs">
+                                            <label>From:</label>
+                                            <input type="date" id="analysisStartDate" class="control-input">
+                                            <label>To:</label>
+                                            <input type="date" id="analysisEndDate" class="control-input">
+                                            <button class="btn btn-primary" onclick="campaignManagement.applyAnalysisCustomRange()">Apply</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Filtered Analysis Results Container -->
+                        <div id="filtered-analysis-container" class="filtered-analysis-container" style="display: none;">
+                            <!-- Filtered analysis results will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+            </section>
+
+            <!-- Social Media & Executive Targeting Dashboard -->
+            <section class="content-section" id="social-executive-section">
+                <div class="section-header">
+                    <div>
+                    <h1 class="section-title">Social Media & Executive Targeting</h1>
+                        <p class="section-subtitle">Real-time threat intelligence, executive protection, and social platform monitoring</p>
+                    </div>
+                    <button class="copy-btn" onclick="copySocialExecutiveDashboard()" title="Export Dashboard Data">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>
+                
+                <!-- Metrics Overview -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-icon">
+                            <i class="fas fa-user-shield"></i>
+                        </div>
+                        <div class="metric-content">
+                            <h3 class="metric-value" id="executiveTargets">-</h3>
+                            <p class="metric-label">Executive Targets</p>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon">
+                            <i class="fas fa-shield-check"></i>
+                        </div>
+                        <div class="metric-content">
+                            <h3 class="metric-value" id="brandProtection">-</h3>
+                            <p class="metric-label">Brands Protected</p>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="metric-content">
+                            <h3 class="metric-value" id="socialIncidents">-</h3>
+                            <p class="metric-label">Active Incidents</p>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="metric-content">
+                            <h3 class="metric-value" id="threatTrends">-</h3>
+                            <p class="metric-label">Trend Score</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                <!-- Executive Visualizations -->
+                <div class="executive-charts-grid">
+                    <!-- Timeline Cases Overview -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title">Social Media Cases Timeline</h3>
+                                <p class="chart-subtitle">Total cases across different time periods</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <div class="loading-spinner" id="timelineCasesLoading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>Loading timeline data...</span>
+                            </div>
+                            <div id="timelineCasesContainer" style="display: none;">
+                                <div class="timeline-cases-grid">
+                                    <!-- Timeline cases will be populated here -->
+                                </div>
+                            </div>
+                            <div class="no-data-message" id="timelineCasesNoData" style="display: none;">
+                                <i class="fas fa-calendar-times"></i>
+                                <p>No timeline data available</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Threat Type Breakdown -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <div class="chart-title-group">
+                                <h3 class="chart-title">Threat Type Breakdown</h3>
+                                <p class="chart-subtitle">Cases by threat type for selected timeline</p>
+                            </div>
+                        </div>
+                        <div class="chart-body">
+                            <div class="loading-spinner" id="threatTypeLoading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>Loading threat data...</span>
+                            </div>
+                            <canvas id="threatTypeChart" style="display: none;"></canvas>
+                            <div class="chart-center-info" id="threatTypeCenterInfo" style="display: none;">
+                                <div class="center-value" id="threatTypeTotal">0</div>
+                                <div class="center-label">Total Cases</div>
+                            </div>
+                            <div class="no-data-message" id="threatTypeNoData" style="display: none;">
+                                <i class="fas fa-shield-alt"></i>
+                                <p>No threat type data available</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                <!-- Full-Width Impersonation Analysis -->
+                <div class="chart-container full-width">
+                        <div class="chart-header">
+                        <div class="chart-title-group">
+                            <h3 class="chart-title">Impersonation Analysis</h3>
+                            <p class="chart-subtitle">Executive vs Employee impersonation cases</p>
+                        </div>
+                        <div class="chart-controls">
+                            <button class="chart-btn active" data-view="executive">Executive</button>
+                            <button class="chart-btn" data-view="employee">Employee</button>
+                        </div>
+                    </div>
+                    <div class="chart-body" id="impersonationChartBody">
+                        <!-- Everything will be generated dynamically by JavaScript -->
+                    </div>
+                </div>
+                </div>
+
+                <!-- SLA Performance Dashboard -->
+                <div class="sla-dashboard">
+                    <div class="sla-header">
+                        <div class="sla-title-group">
+                            <h3 class="clickable-title" onclick="copyChartAsHTML(this.closest('.sla-dashboard'), 'SLA Performance Dashboard')" title="Click to copy chart for email">SLA Performance Dashboard</h3>
+                            <p class="sla-subtitle">Real-time SLA compliance monitoring for social media cases</p>
+                        </div>
+                        <div class="sla-summary">
+                            <div class="sla-metric red">
+                                <div class="sla-count" id="socialSlaRedCount">--</div>
+                                <div class="sla-label">Breached (>48hr)</div>
+                            </div>
+                            <div class="sla-metric amber">
+                                <div class="sla-count" id="socialSlaAmberCount">--</div>
+                                <div class="sla-label">At Risk (24-48hr)</div>
+                            </div>
+                            <div class="sla-metric green">
+                                <div class="sla-count" id="socialSlaGreenCount">--</div>
+                                <div class="sla-label">Within SLA (≤24hr)</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sla-content">
+                        <div class="sla-chart-section">
+                            <canvas id="socialSlaComplianceChart"></canvas>
+                        </div>
+                        
+                        <div class="sla-table-section">
+                            <div class="sla-table-container">
+                                <table class="sla-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Incident ID</th>
+                                            <th>Threat Type</th>
+                                            <th>Created Date</th>
+                                            <th>Age (Days)</th>
+                                            <th>SLA Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="socialSlaTableBody">
+                                        <tr>
+                                            <td colspan="5" class="loading-cell">Loading SLA tracking data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Refreshing dashboard data...</div>
+    </div>
+
+    <!-- Campaign Management Modals -->
+    
+    <!-- Create/Edit Campaign Modal -->
+    <div class="modal" id="campaignModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="campaignModalTitle">Create Campaign</h3>
+                <button class="modal-close" onclick="campaignManagement.closeCampaignModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="campaignForm">
+                    <div class="form-group">
+                        <label for="campaignName">Campaign Name *</label>
+                        <input type="text" id="campaignName" name="name" required placeholder="Enter campaign name">
+                    </div>
+                    <div class="form-group">
+                        <label for="campaignDescription">Description</label>
+                        <textarea id="campaignDescription" name="description" placeholder="Enter campaign description"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="campaignManagement.closeCampaignModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="campaignManagement.saveCampaign()">
+                    <i class="fas fa-save"></i> Save Campaign
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Case Modal -->
+    <div class="modal" id="addCaseModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Case to Campaign</h3>
+                <button class="modal-close" onclick="campaignManagement.closeAddCaseModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addCaseForm">
+                    <div class="form-group">
+                        <label for="caseNumber">Case Number *</label>
+                        <input type="text" id="caseNumber" name="case_number" required placeholder="e.g., CASE-2025-001">
+                    </div>
+                    <div class="form-group">
+                        <label for="caseDescription">Description</label>
+                        <textarea id="caseDescription" name="description" placeholder="Enter case description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="caseTable">Table</label>
+                        <select id="caseTable" name="table">
+                            <option value="phishlabs_case_data_incidents">phishlabs_case_data_incidents</option>
+                            <option value="phishlabs_threat_intelligence_incident">phishlabs_threat_intelligence_incident</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="campaignManagement.closeAddCaseModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="campaignManagement.saveCase()">
+                    <i class="fas fa-plus"></i> Add Case
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Domain Modal -->
+    <div class="modal" id="addDomainModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Domain to Campaign</h3>
+                <button class="modal-close" onclick="campaignManagement.closeAddDomainModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addDomainForm">
+                    <div class="form-group">
+                        <label for="domainName">Domain *</label>
+                        <input type="text" id="domainName" name="domain" required placeholder="e.g., example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="domainDescription">Description</label>
+                        <textarea id="domainDescription" name="description" placeholder="Enter domain description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="domainTable">Table</label>
+                        <select id="domainTable" name="table">
+                            <option value="phishlabs_case_data_associated_urls">phishlabs_case_data_associated_urls</option>
+                            <option value="phishlabs_threat_intelligence_incident">phishlabs_threat_intelligence_incident</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="campaignManagement.closeAddDomainModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="campaignManagement.saveDomain()">
+                    <i class="fas fa-plus"></i> Add Domain
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div class="notification-container" id="notificationContainer"></div>
+    
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='dashboard-new.js') }}?v=17"></script>
+    <script>
+        // Test CampaignManagement class accessibility
+        function testCampaignManagement() {
+            console.log('🧪 Testing CampaignManagement class accessibility...');
+            if (window.campaignManagement) {
+                console.log('✅ CampaignManagement class is accessible');
+                if (typeof window.campaignManagement.testCampaignManagement === 'function') {
+                window.campaignManagement.testCampaignManagement();
+                }
+            } else {
+                console.log('❌ CampaignManagement class is NOT accessible');
+                // Retry after a short delay
+                setTimeout(testCampaignManagement, 100);
+            }
+        }
+        
+        // Test immediately and also on load
+        testCampaignManagement();
+        window.addEventListener('load', testCampaignManagement);
+    </script>
+</body>
+</html>

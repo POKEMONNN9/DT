@@ -1,0 +1,90 @@
+{
+  "test-campaign": {
+    "name": "test-campaign",
+    "description": "Test campaign description",
+    "status": "ACTIVE",
+    "identifiers": [
+      {
+        "added_date": "2025-10-05T00:47:56.504Z",
+        "description": "Case: Phishing - Microsoft Login Phishing Campaign",
+        "field": "case_number",
+        "table": "phishlabs_case_data_incidents",
+        "value": "001"
+      },
+      {
+        "added_date": "2025-10-05T00:47:56.504Z",
+        "description": "Case: Phishing - Apple ID Credential Theft",
+        "field": "case_number",
+        "table": "phishlabs_case_data_incidents",
+        "value": "002"
+      },
+      {
+        "added_date": "2025-10-05T00:48:48.685Z",
+        "description": "Domain Monitoring: Phishing Domain - https://service-center.org",
+        "field": "infrid",
+        "table": "phishlabs_threat_intelligence_incident",
+        "value": "TI005"
+      },
+      {
+        "added_date": "2025-10-05T00:48:52.572Z",
+        "description": "Social Media: Scam Advertisement - No title",
+        "field": "incident_id",
+        "table": "phishlabs_incident",
+        "value": "SM-2005"
+      },
+      {
+        "added_date": "2025-10-05T00:48:53.411Z",
+        "description": "Social Media: TikTok Scam - Nike Counterfeit Product Promotion",
+        "field": "incident_id",
+        "table": "phishlabs_incident",
+        "value": "SM-2025-005"
+      },
+      {
+        "added_date": "2025-10-05T00:48:54.654Z",
+        "description": "Social Media: Social Engineering - Social Engineering incident targeting Adobe",
+        "field": "incident_id",
+        "table": "phishlabs_incident",
+        "value": "INC-2024-5005"
+      },
+      {
+        "added_date": "2025-10-05T00:48:55.696Z",
+        "description": "Domain Monitoring: Cloud Service Abuse - No URL",
+        "field": "infrid",
+        "table": "phishlabs_threat_intelligence_incident",
+        "value": "TITI-1005"
+      }
+    ],
+    "created_date": "2025-01-04",
+    "last_updated": "2025-10-06"
+  },
+  "overlapping-campaign": {
+    "name": "overlapping-campaign",
+    "description": "Campaign with overlapping infrastructure",
+    "status": "Active",
+    "identifiers": [
+      {
+        "added_date": "2025-10-05T05:10:00.000Z",
+        "description": "Overlapping case: Apple ID Credential Theft",
+        "field": "case_number",
+        "table": "phishlabs_case_data_incidents",
+        "value": "002"
+      },
+      {
+        "added_date": "2025-10-05T05:10:00.000Z",
+        "description": "Overlapping domain monitoring: Phishing Domain - https://service-center.org",
+        "field": "infrid",
+        "table": "phishlabs_threat_intelligence_incident",
+        "value": "TI005"
+      },
+      {
+        "added_date": "2025-10-05T05:10:00.000Z",
+        "description": "New case: Banking Phishing Campaign",
+        "field": "case_number",
+        "table": "phishlabs_case_data_incidents",
+        "value": "003"
+      }
+    ],
+    "created_date": "2025-10-05",
+    "last_updated": "2025-10-05"
+  }
+}
