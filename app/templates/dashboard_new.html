@@ -1653,14 +1653,14 @@
     <script>
         // Test CampaignManagement class accessibility
         function testCampaignManagement() {
-            console.log('🧪 Testing CampaignManagement class accessibility...');
+            console.log('Testing CampaignManagement class accessibility...');
             if (window.campaignManagement) {
-                console.log('✅ CampaignManagement class is accessible');
+                console.log('CampaignManagement class is accessible');
                 if (typeof window.campaignManagement.testCampaignManagement === 'function') {
                 window.campaignManagement.testCampaignManagement();
                 }
             } else {
-                console.log('❌ CampaignManagement class is NOT accessible');
+                console.log('CampaignManagement class is NOT accessible');
                 // Retry after a short delay
                 setTimeout(testCampaignManagement, 100);
             }
