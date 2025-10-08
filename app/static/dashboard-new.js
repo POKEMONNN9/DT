@@ -801,7 +801,6 @@ class ExecutiveDashboard {
             const currentDateFilter = getCurrentDateFilter();
             
             console.log('Fetching timeline trends data...', {
-                timelineFilter: selectedFilter,
                 dateFilter: currentDateFilter
             });
             
@@ -8176,7 +8175,7 @@ class CampaignManagement {
 
     async loadCampaigns() {
         try {
-            console.log('📋 Loading campaigns...');
+            console.log('<i class="fas fa-clipboard"></i> Loading campaigns...');
             const response = await fetch('/api/campaigns/list');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -9083,7 +9082,7 @@ class CampaignManagement {
     // Required methods for dashboard compatibility
     destroy() {
         // Cleanup any resources if needed
-        console.log('🧹 Campaign Management destroyed');
+        console.log('<i class="fas fa-broom"></i> Campaign Management destroyed');
     }
 
     updateData() {
@@ -9362,7 +9361,7 @@ class CampaignManagement {
         
         // Hide all tab contents
         const allTabs = campaignSection.querySelectorAll('.data-tab-content');
-        console.log(`📋 Found ${allTabs.length} tab contents:`, allTabs);
+        console.log(`<i class="fas fa-clipboard"></i> Found ${allTabs.length} tab contents:`, allTabs);
         
         allTabs.forEach(tab => {
             tab.classList.remove('active');
