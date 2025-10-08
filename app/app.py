@@ -296,8 +296,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT u.url_type) as url_types
         FROM phishlabs_case_data_incidents i
         JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-        WHERE {case_data_condition} AND {campaign_condition}
-          AND u.host_country IS NOT NULL
+        WHERE {case_data_condition}          AND u.host_country IS NOT NULL
             AND u.host_country != ''
         GROUP BY u.host_country
         ORDER BY COUNT(DISTINCT i.case_number) DESC
@@ -315,8 +314,7 @@ class ThreatDashboard:
         FROM phishlabs_case_data_incidents i
             JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-        WHERE {case_data_condition} AND {campaign_condition}
-          AND r.name IS NOT NULL
+        WHERE {case_data_condition}          AND r.name IS NOT NULL
             AND r.name != ''
         GROUP BY r.name
         ORDER BY COUNT(DISTINCT i.case_number) DESC
@@ -333,8 +331,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT u.url_type) as url_types
         FROM phishlabs_case_data_incidents i
         JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-        WHERE {case_data_condition} AND {campaign_condition}
-          AND u.host_isp IS NOT NULL
+        WHERE {case_data_condition}          AND u.host_isp IS NOT NULL
             AND u.host_isp != ''
         GROUP BY u.host_isp
         ORDER BY COUNT(DISTINCT i.case_number) DESC
@@ -351,8 +348,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT u.url_type) as url_types
             FROM phishlabs_case_data_incidents i
             JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {case_data_condition} AND {campaign_condition}
-            AND u.tld IS NOT NULL
+            WHERE {case_data_condition}            AND u.tld IS NOT NULL
             AND u.tld != ''
             GROUP BY u.tld
             ORDER BY COUNT(DISTINCT i.case_number) DESC
@@ -461,7 +457,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition} AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family
             ORDER BY total_cases DESC
             """
@@ -482,8 +478,7 @@ class ThreatDashboard:
             LEFT JOIN phishlabs_case_data_incidents i ON h.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY h.name, n.threat_family
+            WHERE {date_condition}            GROUP BY h.name, n.threat_family
             ORDER BY total_cases DESC
             """
             
@@ -502,8 +497,7 @@ class ThreatDashboard:
                 FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles h ON i.case_number = h.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            """
+            WHERE {date_condition}            """
             
             coverage = self.execute_query(coverage_query)
             if isinstance(coverage, dict) and 'error' in coverage:
@@ -533,13 +527,11 @@ class ThreatDashboard:
         WITH total_cases AS (
             SELECT COUNT(DISTINCT i.case_number) as total_cases
                 FROM phishlabs_case_data_incidents i
-            WHERE {case_data_condition} AND {campaign_condition}
-        ),
+            WHERE {case_data_condition}        ),
         campaign_cases AS (
             SELECT COUNT(DISTINCT i.case_number) as campaign_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {case_data_condition} AND {campaign_condition}
-        ),
+            WHERE {case_data_condition}        ),
         non_campaign_cases AS (
             SELECT COUNT(DISTINCT i.case_number) as non_campaign_cases
                 FROM phishlabs_case_data_incidents i
@@ -556,8 +548,7 @@ class ThreatDashboard:
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON n.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_note_bots b ON n.case_number = b.case_number
-            WHERE {case_data_condition} AND {campaign_condition}
-        )
+            WHERE {case_data_condition}        )
         SELECT 
             tc.total_cases,
             cc.campaign_cases,
@@ -605,8 +596,7 @@ class ThreatDashboard:
                 FROM phishlabs_case_data_incidents i
                 JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
                 JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-                WHERE {date_condition} AND {campaign_condition}
-                AND n.threat_family IS NOT NULL AND n.threat_family != ''
+                WHERE {date_condition}                AND n.threat_family IS NOT NULL AND n.threat_family != ''
                 GROUP BY n.threat_family, CAST(i.date_created_local AS DATE)
             ),
             threat_family_summary AS (
@@ -687,38 +677,33 @@ class ThreatDashboard:
                  FROM phishlabs_case_data_associated_urls u2 
                  JOIN phishlabs_case_data_incidents i2 ON u2.case_number = i2.case_number
                  JOIN phishlabs_case_data_note_threatactor_handles th2 ON i2.case_number = th2.case_number
-                 WHERE th2.name = th.name AND {date_condition.replace('i.', 'i2.')} AND {campaign_condition.replace('i.', 'i2.')}
-                 GROUP BY u2.tld
+                 WHERE th2.name = th.name AND {date_condition.replace('i.', 'i2.')}                 GROUP BY u2.tld
                  ORDER BY COUNT(*) DESC) as preferred_tld,
                 -- Get most common country for this actor
                 (SELECT TOP 1 u3.host_country 
                  FROM phishlabs_case_data_associated_urls u3 
                  JOIN phishlabs_case_data_incidents i3 ON u3.case_number = i3.case_number
                  JOIN phishlabs_case_data_note_threatactor_handles th3 ON i3.case_number = th3.case_number
-                 WHERE th3.name = th.name AND {date_condition.replace('i.', 'i3.')} AND {campaign_condition.replace('i.', 'i3.')}
-                 GROUP BY u3.host_country
+                 WHERE th3.name = th.name AND {date_condition.replace('i.', 'i3.')}                 GROUP BY u3.host_country
                  ORDER BY COUNT(*) DESC) as preferred_country,
                 -- Get most common ISP for this actor
                 (SELECT TOP 1 u4.host_isp 
                  FROM phishlabs_case_data_associated_urls u4 
                  JOIN phishlabs_case_data_incidents i4 ON u4.case_number = i4.case_number
                  JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
-                 WHERE th4.name = th.name AND {date_condition.replace('i.', 'i4.')} AND {campaign_condition.replace('i.', 'i4.')}
-                 GROUP BY u4.host_isp
+                 WHERE th4.name = th.name AND {date_condition.replace('i.', 'i4.')}                 GROUP BY u4.host_isp
                  ORDER BY COUNT(*) DESC) as preferred_isp,
                 -- Get most common registrar for this actor
                 (SELECT TOP 1 r5.name 
                  FROM phishlabs_iana_registry r5
                  JOIN phishlabs_case_data_incidents i5 ON r5.iana_id = i5.iana_id
                  JOIN phishlabs_case_data_note_threatactor_handles th5 ON i5.case_number = th5.case_number
-                 WHERE th5.name = th.name AND {date_condition.replace('i.', 'i5.')} AND {campaign_condition.replace('i.', 'i5.')}
-                 GROUP BY r5.name
+                 WHERE th5.name = th.name AND {date_condition.replace('i.', 'i5.')}                 GROUP BY r5.name
                  ORDER BY COUNT(*) DESC) as preferred_registrar
             FROM phishlabs_case_data_note_threatactor_handles th
             JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND th.name IS NOT NULL AND th.name != ''
+            WHERE {date_condition}            AND th.name IS NOT NULL AND th.name != ''
             AND u.domain IS NOT NULL AND u.domain != ''
             GROUP BY th.name
             HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -747,38 +732,33 @@ class ThreatDashboard:
                  FROM phishlabs_case_data_associated_urls u2 
                  JOIN phishlabs_case_data_incidents i2 ON u2.case_number = i2.case_number
                  JOIN phishlabs_case_data_notes n2 ON i2.case_number = n2.case_number
-                 WHERE n2.threat_family = n.threat_family AND {date_condition.replace('i.', 'i2.')} AND {campaign_condition.replace('i.', 'i2.')}
-                 GROUP BY u2.tld
+                 WHERE n2.threat_family = n.threat_family AND {date_condition.replace('i.', 'i2.')}                 GROUP BY u2.tld
                  ORDER BY COUNT(*) DESC) as top_tld,
                 -- Get most common country for this family
                 (SELECT TOP 1 u3.host_country 
                  FROM phishlabs_case_data_associated_urls u3 
                  JOIN phishlabs_case_data_incidents i3 ON u3.case_number = i3.case_number
                  JOIN phishlabs_case_data_notes n3 ON i3.case_number = n3.case_number
-                 WHERE n3.threat_family = n.threat_family AND {date_condition.replace('i.', 'i3.')} AND {campaign_condition.replace('i.', 'i3.')}
-                 GROUP BY u3.host_country
+                 WHERE n3.threat_family = n.threat_family AND {date_condition.replace('i.', 'i3.')}                 GROUP BY u3.host_country
                  ORDER BY COUNT(*) DESC) as top_country,
                 -- Get most common ISP for this family
                 (SELECT TOP 1 u4.host_isp 
                  FROM phishlabs_case_data_associated_urls u4 
                  JOIN phishlabs_case_data_incidents i4 ON u4.case_number = i4.case_number
                  JOIN phishlabs_case_data_notes n4 ON i4.case_number = n4.case_number
-                 WHERE n4.threat_family = n.threat_family AND {date_condition.replace('i.', 'i4.')} AND {campaign_condition.replace('i.', 'i4.')}
-                 GROUP BY u4.host_isp
+                 WHERE n4.threat_family = n.threat_family AND {date_condition.replace('i.', 'i4.')}                 GROUP BY u4.host_isp
                  ORDER BY COUNT(*) DESC) as top_isp,
                 -- Get most common registrar for this family
                 (SELECT TOP 1 r5.name 
                  FROM phishlabs_iana_registry r5
                  JOIN phishlabs_case_data_incidents i5 ON r5.iana_id = i5.iana_id
                  JOIN phishlabs_case_data_notes n5 ON i5.case_number = n5.case_number
-                 WHERE n5.threat_family = n.threat_family AND {date_condition.replace('i.', 'i5.')} AND {campaign_condition.replace('i.', 'i5.')}
-                 GROUP BY r5.name
+                 WHERE n5.threat_family = n.threat_family AND {date_condition.replace('i.', 'i5.')}                 GROUP BY r5.name
                  ORDER BY COUNT(*) DESC) as top_registrar
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
             AND u.domain IS NOT NULL AND u.domain != ''
             GROUP BY n.threat_family
             HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -795,7 +775,6 @@ class ThreatDashboard:
         """Get comprehensive threat family intelligence including WHOIS, URL paths, and brand targeting"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             # Main threat family intelligence query
             family_query = f"""
@@ -810,39 +789,32 @@ class ThreatDashboard:
                 (SELECT TOP 1 u2.tld FROM phishlabs_case_data_associated_urls u2 
                  JOIN phishlabs_case_data_incidents i2 ON u2.case_number = i2.case_number
                  JOIN phishlabs_case_data_notes n2 ON i2.case_number = n2.case_number
-                 WHERE n2.threat_family = n.threat_family AND {date_condition.replace('i.', 'i2.')} AND {campaign_condition.replace('i.', 'i2.')}
-                 GROUP BY u2.tld ORDER BY COUNT(*) DESC) as top_tld,
+                 WHERE n2.threat_family = n.threat_family AND {date_condition.replace('i.', 'i2.')}                 GROUP BY u2.tld ORDER BY COUNT(*) DESC) as top_tld,
                 (SELECT TOP 1 u3.host_country FROM phishlabs_case_data_associated_urls u3 
                  JOIN phishlabs_case_data_incidents i3 ON u3.case_number = i3.case_number
                  JOIN phishlabs_case_data_notes n3 ON i3.case_number = n3.case_number
-                 WHERE n3.threat_family = n.threat_family AND {date_condition.replace('i.', 'i3.')} AND {campaign_condition.replace('i.', 'i3.')}
-                 GROUP BY u3.host_country ORDER BY COUNT(*) DESC) as top_country,
+                 WHERE n3.threat_family = n.threat_family AND {date_condition.replace('i.', 'i3.')}                 GROUP BY u3.host_country ORDER BY COUNT(*) DESC) as top_country,
                 (SELECT TOP 1 u4.host_isp FROM phishlabs_case_data_associated_urls u4 
                  JOIN phishlabs_case_data_incidents i4 ON u4.case_number = i4.case_number
                  JOIN phishlabs_case_data_notes n4 ON i4.case_number = n4.case_number
-                 WHERE n4.threat_family = n.threat_family AND {date_condition.replace('i.', 'i4.')} AND {campaign_condition.replace('i.', 'i4.')}
-                 GROUP BY u4.host_isp ORDER BY COUNT(*) DESC) as top_isp,
+                 WHERE n4.threat_family = n.threat_family AND {date_condition.replace('i.', 'i4.')}                 GROUP BY u4.host_isp ORDER BY COUNT(*) DESC) as top_isp,
                 (SELECT TOP 1 r.name FROM phishlabs_iana_registry r
                  JOIN phishlabs_case_data_incidents i5 ON r.iana_id = i5.iana_id
                  JOIN phishlabs_case_data_notes n5 ON i5.case_number = n5.case_number
-                 WHERE n5.threat_family = n.threat_family AND {date_condition.replace('i.', 'i5.')} AND {campaign_condition.replace('i.', 'i5.')}
-                 GROUP BY r.name ORDER BY COUNT(*) DESC) as top_registrar,
+                 WHERE n5.threat_family = n.threat_family AND {date_condition.replace('i.', 'i5.')}                 GROUP BY r.name ORDER BY COUNT(*) DESC) as top_registrar,
                 -- WHOIS intelligence
                 (SELECT TOP 1 n6.flagged_whois_email FROM phishlabs_case_data_notes n6 
                  JOIN phishlabs_case_data_incidents i6 ON n6.case_number = i6.case_number
-                 WHERE n6.threat_family = n.threat_family AND {date_condition.replace('i.', 'i6.')} AND {campaign_condition.replace('i.', 'i6.')}
-                 AND n6.flagged_whois_email IS NOT NULL AND n6.flagged_whois_email != ''
+                 WHERE n6.threat_family = n.threat_family AND {date_condition.replace('i.', 'i6.')}                 AND n6.flagged_whois_email IS NOT NULL AND n6.flagged_whois_email != ''
                  GROUP BY n6.flagged_whois_email ORDER BY COUNT(*) DESC) as top_whois_email,
                 (SELECT TOP 1 n7.flagged_whois_name FROM phishlabs_case_data_notes n7 
                  JOIN phishlabs_case_data_incidents i7 ON n7.case_number = i7.case_number
-                 WHERE n7.threat_family = n.threat_family AND {date_condition.replace('i.', 'i7.')} AND {campaign_condition.replace('i.', 'i7.')}
-                 AND n7.flagged_whois_name IS NOT NULL AND n7.flagged_whois_name != ''
+                 WHERE n7.threat_family = n.threat_family AND {date_condition.replace('i.', 'i7.')}                 AND n7.flagged_whois_name IS NOT NULL AND n7.flagged_whois_name != ''
                  GROUP BY n7.flagged_whois_name ORDER BY COUNT(*) DESC) as top_whois_name
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family
             HAVING COUNT(DISTINCT i.case_number) >= 2
             ORDER BY COUNT(DISTINCT i.case_number) DESC
@@ -860,8 +832,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family, u.url_path
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
             """
@@ -879,8 +850,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
             AND i.brand IS NOT NULL AND i.brand != ''
             GROUP BY n.threat_family, i.brand
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
@@ -914,8 +884,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_incidents i
             JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND i.brand IS NOT NULL AND i.brand != ''
+            WHERE {date_condition}            AND i.brand IS NOT NULL AND i.brand != ''
             AND n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY i.brand, n.threat_family
             HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -942,8 +911,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_incidents i
             JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND u.url_path IS NOT NULL AND u.url_path != ''
+            WHERE {date_condition}            AND u.url_path IS NOT NULL AND u.url_path != ''
             AND th.name IS NOT NULL AND th.name != ''
             GROUP BY u.url_path, th.name
             HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -974,8 +942,7 @@ class ThreatDashboard:
                     MAX(i.date_created_local) as last_seen
                         FROM phishlabs_case_data_incidents i
                         JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition} AND {campaign_condition}
-                AND u.ip_address IS NOT NULL AND u.ip_address != ''
+                WHERE {date_condition}                AND u.ip_address IS NOT NULL AND u.ip_address != ''
                 AND u.host_isp IS NOT NULL AND u.host_isp != ''
                 GROUP BY u.ip_address, u.host_isp, u.host_country
                 HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -991,8 +958,7 @@ class ThreatDashboard:
                 FROM phishlabs_case_data_incidents i
                 JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
                 LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-                WHERE {date_condition} AND {campaign_condition}
-                AND u.host_country IS NOT NULL AND u.host_country != ''
+                WHERE {date_condition}                AND u.host_country IS NOT NULL AND u.host_country != ''
                 GROUP BY u.host_country
                 HAVING COUNT(DISTINCT i.case_number) >= 3
             ),
@@ -1004,8 +970,7 @@ class ThreatDashboard:
                     COUNT(DISTINCT u.domain) as domain_count
                 FROM phishlabs_case_data_incidents i
                 JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition} AND {campaign_condition}
-                GROUP BY DATEPART(hour, i.date_created_local), DATEPART(weekday, i.date_created_local)
+                WHERE {date_condition}                GROUP BY DATEPART(hour, i.date_created_local), DATEPART(weekday, i.date_created_local)
                 HAVING COUNT(DISTINCT i.case_number) >= 2
             )
             SELECT 
@@ -1078,8 +1043,7 @@ class ThreatDashboard:
                 JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
                 LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
                 LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-                WHERE {date_condition} AND {campaign_condition}
-                AND n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''
+                WHERE {date_condition}                AND n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''
                 AND n.flagged_whois_email IS NOT NULL AND n.flagged_whois_email != ''
                 GROUP BY n.flagged_whois_name, n.flagged_whois_email, r.name
                 HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -1128,8 +1092,7 @@ class ThreatDashboard:
                     COUNT(DISTINCT u.host_country) as countries
                         FROM phishlabs_case_data_incidents i
                         JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition} AND {campaign_condition} 
-                AND u.domain IS NOT NULL AND u.domain != ''
+                WHERE {date_condition}                AND u.domain IS NOT NULL AND u.domain != ''
                 AND CHARINDEX('.', u.domain) > 0
                 GROUP BY LOWER(RIGHT(u.domain, CHARINDEX('.', REVERSE(u.domain)) - 1))
                 
@@ -1210,8 +1173,7 @@ class ThreatDashboard:
                 END as has_multiple_hyphens
             FROM phishlabs_case_data_incidents i
             JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND u.domain IS NOT NULL AND u.domain != ''
+            WHERE {date_condition}            AND u.domain IS NOT NULL AND u.domain != ''
             """
             
             result = self.execute_query(query)
@@ -1291,8 +1253,7 @@ class ThreatDashboard:
                 END as has_parameters
                 FROM phishlabs_case_data_incidents i
                 JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND u.url IS NOT NULL AND u.url != ''
+            WHERE {date_condition}            AND u.url IS NOT NULL AND u.url != ''
             """
             
             result = self.execute_query(query)
@@ -1357,8 +1318,7 @@ class ThreatDashboard:
                 FROM phishlabs_case_data_incidents i
                 LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
                 LEFT JOIN phishlabs_case_data_note_threatactor_handles h ON i.case_number = h.case_number
-                WHERE {date_condition} AND {campaign_condition}
-            )
+                WHERE {date_condition}            )
             SELECT 
                 COUNT(*) as total_cases,
                 SUM(has_notes) as cases_with_notes,
@@ -1423,8 +1383,7 @@ class ThreatDashboard:
                 ) as case_details
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY 
+            WHERE {date_condition}            GROUP BY 
                 CASE 
                     WHEN i.date_closed_local IS NULL THEN 'Active'
                     ELSE 'Closed'
@@ -1512,11 +1471,12 @@ class ThreatDashboard:
             campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             # Get active cases (case_status = 'Active' or resolution_status != 'Closed')
+            # Note: Active cases should be ALL cases that are currently active, not filtered by date
             active_cases_query = f"""
             SELECT COUNT(DISTINCT i.case_number) as active_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition} 
-            AND (i.case_status = 'Active' OR i.resolution_status != 'Closed')
+            WHERE {campaign_condition} 
+            AND (i.case_status = 'Active' OR i.resolution_status != 'Closed' OR i.date_closed_local IS NULL)
             """
             
             active_cases = self.execute_query(active_cases_query)
@@ -1527,8 +1487,7 @@ class ThreatDashboard:
             closed_query = f"""
             SELECT COUNT(DISTINCT i.case_number) as closed_in_period
             FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition} AND {campaign_condition} 
-            AND i.date_closed_local IS NOT NULL
+            WHERE {closed_condition}            AND i.date_closed_local IS NOT NULL
             """
             
             closed_data = self.execute_query(closed_query)
@@ -1538,8 +1497,7 @@ class ThreatDashboard:
             resolution_time_query = f"""
             SELECT AVG(DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as avg_resolution_hours
             FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition} AND {campaign_condition} 
-            AND i.date_closed_local IS NOT NULL
+            WHERE {closed_condition}            AND i.date_closed_local IS NOT NULL
             """
             
             resolution_time = self.execute_query(resolution_time_query)
@@ -1551,8 +1509,7 @@ class ThreatDashboard:
                 COALESCE(i.resolution_status, 'Open') as resolution_status,
                 COUNT(DISTINCT i.case_number) as case_count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY COALESCE(i.resolution_status, 'Open')
+            WHERE {date_condition}            GROUP BY COALESCE(i.resolution_status, 'Open')
             ORDER BY case_count DESC
             """
             
@@ -1566,7 +1523,7 @@ class ThreatDashboard:
                 i.brand,
                 COUNT(DISTINCT i.case_number) as case_count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition} AND i.brand IS NOT NULL AND i.brand != ''
+            WHERE {date_condition} AND i.brand IS NOT NULL AND i.brand != ''
             GROUP BY i.brand
             ORDER BY case_count DESC
             """
@@ -1613,8 +1570,7 @@ class ThreatDashboard:
                 END as threat_type,
                 COUNT(DISTINCT i.case_number) as case_count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY 
+            WHERE {date_condition}            GROUP BY 
                 CASE 
                     WHEN i.case_type IS NOT NULL THEN i.case_type
                     WHEN i.threat_vector IS NOT NULL THEN i.threat_vector
@@ -1649,7 +1605,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT u.domain) as domain_count
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.host_country IS NOT NULL
+            WHERE {date_condition} AND u.host_country IS NOT NULL
             GROUP BY u.host_country
             ORDER BY case_count DESC
             """
@@ -1681,10 +1637,9 @@ class ThreatDashboard:
                 SELECT 
                     DATEPART(hour, i.date_created_local) as time_period,
                     COUNT(DISTINCT i.case_number) as cases_created,
-                    COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' THEN i.case_number END) as cases_closed
+                    COUNT(DISTINCT CASE WHEN i.date_closed_local IS NOT NULL THEN i.case_number END) as cases_closed
                 FROM phishlabs_case_data_incidents i
-                WHERE {date_condition} AND {campaign_condition}
-                GROUP BY DATEPART(hour, i.date_created_local)
+                WHERE {date_condition}                GROUP BY DATEPART(hour, i.date_created_local)
                 ORDER BY time_period
                 """
             else:
@@ -1693,10 +1648,9 @@ class ThreatDashboard:
                 SELECT 
                     CAST(i.date_created_local AS DATE) as time_period,
                     COUNT(DISTINCT i.case_number) as cases_created,
-                    COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' THEN i.case_number END) as cases_closed
+                    COUNT(DISTINCT CASE WHEN i.date_closed_local IS NOT NULL THEN i.case_number END) as cases_closed
                 FROM phishlabs_case_data_incidents i
-                WHERE {date_condition} AND {campaign_condition}
-                GROUP BY CAST(i.date_created_local AS DATE)
+                WHERE {date_condition}                GROUP BY CAST(i.date_created_local AS DATE)
                 ORDER BY time_period
                 """
             
@@ -1718,22 +1672,20 @@ class ThreatDashboard:
     def get_performance_metrics(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get performance metrics for case management dashboard"""
         try:
-            # Get date and campaign conditions
-            case_data_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
+            # Performance metrics should show current overall stats, not filtered by date
+            # This gives a true picture of operational performance
             
-            # Performance metrics query
-            performance_query = f"""
+            # Performance metrics query - show all cases for current state
+            performance_query = """
             SELECT 
                 AVG(CASE WHEN i.resolution_status = 'Closed' AND i.date_closed_local IS NOT NULL 
                     THEN DATEDIFF(hour, i.date_created_local, i.date_closed_local) END) as avg_resolution_hours,
                 COUNT(DISTINCT i.case_number) as total_cases,
                 COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' THEN i.case_number END) as closed_cases,
-                COUNT(DISTINCT CASE WHEN i.resolution_status != 'Closed' OR i.resolution_status IS NULL THEN i.case_number END) as active_cases,
+                COUNT(DISTINCT CASE WHEN i.resolution_status != 'Closed' OR i.resolution_status IS NULL OR i.date_closed_local IS NULL THEN i.case_number END) as active_cases,
                 MIN(i.date_created_local) as earliest_case,
                 MAX(i.date_created_local) as latest_case
             FROM phishlabs_case_data_incidents i
-            WHERE {case_data_condition} AND {campaign_condition}
             """
             
             performance_data = self.execute_query(performance_query)
@@ -1762,8 +1714,7 @@ class ThreatDashboard:
                 END as status,
                 COUNT(*) as count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY CASE 
+            WHERE {date_condition}            GROUP BY CASE 
                 WHEN i.date_closed_local IS NULL THEN 'Active'
                 WHEN i.date_closed_local IS NOT NULL THEN 'Closed'
                 ELSE 'Other'
@@ -1848,8 +1799,7 @@ class ThreatDashboard:
                 i.case_type,
                 COUNT(*) as count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY i.case_type
+            WHERE {date_condition}            GROUP BY i.case_type
             ORDER BY count DESC
             """
             
@@ -1920,7 +1870,7 @@ class ThreatDashboard:
                 COUNT(*) as total_cases,
                 COUNT(CASE WHEN i.date_closed_local IS NOT NULL THEN 1 END) as closed_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition} AND i.date_closed_local IS NOT NULL
+            WHERE {date_condition} AND i.date_closed_local IS NOT NULL
             GROUP BY i.case_type
             ORDER BY avg_resolution_hours DESC
             """
@@ -1974,8 +1924,7 @@ class ThreatDashboard:
                 END as status,
                 COUNT(*) as case_count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY 
+            WHERE {date_condition}            GROUP BY 
                 CASE 
                     WHEN i.case_status = 'Active' OR i.resolution_status != 'Closed' THEN 'Active'
                     WHEN i.resolution_status = 'Closed' THEN 'Closed'
@@ -2138,7 +2087,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition} AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family, i.threat_vector
             ORDER BY case_count DESC
             """
@@ -2170,8 +2119,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY u.host_country, u.isp, u.asn
+            WHERE {date_condition}            GROUP BY u.host_country, u.isp, u.asn
             ORDER BY case_count DESC
             """
             
@@ -2219,8 +2167,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY u.domain, u.ip_address, u.url, n.threat_family, i.threat_vector
+            WHERE {date_condition}            GROUP BY u.domain, u.ip_address, u.url, n.threat_family, i.threat_vector
             ORDER BY threat_score DESC, case_frequency DESC
             """
             
@@ -2391,7 +2338,7 @@ class ThreatDashboard:
                 MIN(s.created_local) as first_targeted,
                 MAX(s.last_modified_local) as last_targeted
             FROM phishlabs_incident s
-            WHERE {date_condition} AND {campaign_condition} AND s.executive_name IS NOT NULL AND s.executive_name != ''
+            WHERE {date_condition} AND s.executive_name IS NOT NULL AND s.executive_name != ''
             GROUP BY s.executive_name, s.title, s.brand_name, s.incident_type, s.threat_type, s.severity, s.status, s.derived_status
             ORDER BY incident_count DESC
             """
@@ -2421,8 +2368,7 @@ class ThreatDashboard:
                 COUNT(CASE WHEN s.status = 'Active' OR s.derived_status != 'Closed' THEN 1 END) as active_incidents,
                 COUNT(CASE WHEN s.status = 'Closed' OR s.derived_status = 'Closed' THEN 1 END) as closed_incidents
             FROM phishlabs_incident s
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY s.incident_type, s.threat_type, s.severity
+            WHERE {date_condition}            GROUP BY s.incident_type, s.threat_type, s.severity
             ORDER BY incident_count DESC
             """
             
@@ -2454,7 +2400,7 @@ class ThreatDashboard:
                 MIN(s.created_local) as first_incident,
                 MAX(s.last_modified_local) as last_incident
             FROM phishlabs_incident s
-            WHERE {date_condition} AND {campaign_condition} AND s.brand_name IS NOT NULL AND s.brand_name != ''
+            WHERE {date_condition} AND s.brand_name IS NOT NULL AND s.brand_name != ''
             GROUP BY s.brand_name, s.incident_type, s.threat_type
             ORDER BY total_incidents DESC
             """
@@ -2487,8 +2433,7 @@ class ThreatDashboard:
                 COUNT(CASE WHEN s.status = 'Active' OR s.derived_status != 'Closed' THEN 1 END) as active_incidents,
                 COUNT(CASE WHEN s.status = 'Closed' OR s.derived_status = 'Closed' THEN 1 END) as closed_incidents
             FROM phishlabs_incident s
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY CAST(s.created_local AS DATE), s.incident_type, s.threat_type, s.severity
+            WHERE {date_condition}            GROUP BY CAST(s.created_local AS DATE), s.incident_type, s.threat_type, s.severity
             ORDER BY date DESC, incident_count DESC
             """
             
@@ -2510,7 +2455,6 @@ class ThreatDashboard:
         """Get attribution coverage metrics - percentage of cases with different types of attribution"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             coverage_query = f"""
             WITH attribution_analysis AS (
@@ -2528,7 +2472,7 @@ class ThreatDashboard:
                 LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
                 LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
                 LEFT JOIN phishlabs_case_data_note_bots b ON i.case_number = b.case_number
-                WHERE {date_condition} AND {campaign_condition}
+                WHERE {date_condition}
             )
             SELECT 
                 COUNT(*) as total_cases,
@@ -2598,8 +2542,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY th.name
+            WHERE {date_condition}            GROUP BY th.name
             ORDER BY total_cases DESC, unique_domains DESC
             """
             
@@ -2646,7 +2589,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family
             ORDER BY total_cases DESC
             """
@@ -2665,7 +2608,6 @@ class ThreatDashboard:
         """Get attribution timeline showing threat actor activity patterns"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             timeline_query = f"""
             SELECT 
@@ -2679,7 +2621,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
+            WHERE {date_condition}
             GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
             ORDER BY activity_date DESC, daily_cases DESC
             """
@@ -2727,7 +2669,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.tld IS NOT NULL
+            WHERE {date_condition} AND u.tld IS NOT NULL
             GROUP BY u.tld
             ORDER BY case_count DESC
             """
@@ -2741,7 +2683,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.host_country IS NOT NULL
+            WHERE {date_condition} AND u.host_country IS NOT NULL
             GROUP BY u.host_country
             ORDER BY case_count DESC
             """
@@ -2755,7 +2697,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.host_isp IS NOT NULL
+            WHERE {date_condition} AND u.host_isp IS NOT NULL
             GROUP BY u.host_isp
             ORDER BY case_count DESC
             """
@@ -2797,8 +2739,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             INNER JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition} 
-            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
+            WHERE {date_condition}            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
             GROUP BY COALESCE(n.flagged_whois_email, n.flagged_whois_name)
             HAVING COUNT(DISTINCT i.case_number) >= 2
             ORDER BY total_cases DESC
@@ -2836,8 +2777,7 @@ class ThreatDashboard:
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND (th.name IS NOT NULL OR n.threat_family IS NOT NULL)
+            WHERE {date_condition}            AND (th.name IS NOT NULL OR n.threat_family IS NOT NULL)
             ORDER BY i.date_created_local DESC
             """
             
@@ -2873,8 +2813,7 @@ class ThreatDashboard:
                 LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
                 LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
                 LEFT JOIN phishlabs_case_data_note_bots b ON i.case_number = b.case_number
-                WHERE {date_condition} AND {campaign_condition}
-            )
+                WHERE {date_condition}            )
             SELECT 
                 COUNT(*) as total_cases,
                 SUM(has_threat_actor) as cases_with_actor,
@@ -2944,8 +2883,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY th.name, th.record_type
+            WHERE {date_condition}            GROUP BY th.name, th.record_type
             ORDER BY total_attacks DESC, unique_domains DESC
             """
             
@@ -2992,7 +2930,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family
             ORDER BY case_count DESC
             """
@@ -3025,8 +2963,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
+            WHERE {date_condition}            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
             ORDER BY week DESC, cases DESC
             """
             
@@ -3073,7 +3010,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.tld IS NOT NULL
+            WHERE {date_condition} AND u.tld IS NOT NULL
             GROUP BY u.tld
             ORDER BY count DESC
             """
@@ -3087,7 +3024,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.host_country IS NOT NULL
+            WHERE {date_condition} AND u.host_country IS NOT NULL
             GROUP BY u.host_country
             ORDER BY count DESC
             """
@@ -3101,7 +3038,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_associated_urls u
             INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND u.host_isp IS NOT NULL
+            WHERE {date_condition} AND u.host_isp IS NOT NULL
             GROUP BY u.host_isp
             ORDER BY count DESC
             """
@@ -3116,7 +3053,7 @@ class ThreatDashboard:
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND {campaign_condition} AND r.name IS NOT NULL
+            WHERE {date_condition} AND r.name IS NOT NULL
             GROUP BY r.name
             ORDER BY count DESC
             """
@@ -3150,8 +3087,7 @@ class ThreatDashboard:
                 'TA505, FIN7, Carbanak' as threat_families
             FROM phishlabs_case_data_notes n
             INNER JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
-            WHERE {date_condition} AND {campaign_condition} 
-            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
+            WHERE {date_condition}            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
             GROUP BY n.flagged_whois_email, n.flagged_whois_name
             HAVING COUNT(DISTINCT i.case_number) >= 2
             ORDER BY total_cases DESC
@@ -3658,8 +3594,7 @@ def api_actor_behavioral_analysis():
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family, n.flagged_whois_name, n.flagged_whois_email
             HAVING COUNT(DISTINCT i.case_number) >= 2
         )
@@ -3858,8 +3793,7 @@ def api_temporal_storytelling():
                 COUNT(DISTINCT i.brand) as brands_targeted
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY CAST(i.date_created_local AS DATE)
+            WHERE {date_condition}            GROUP BY CAST(i.date_created_local AS DATE)
         ),
         campaign_activity AS (
             SELECT 
@@ -3872,8 +3806,7 @@ def api_temporal_storytelling():
                 DATEDIFF(day, MIN(i.date_created_local), MAX(i.date_created_local)) as duration_days
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-        ),
+            WHERE {date_condition}        ),
         threat_actors AS (
             SELECT 
                 n.threat_family,
@@ -3882,8 +3815,7 @@ def api_temporal_storytelling():
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND n.threat_family IS NOT NULL
+            WHERE {date_condition}            AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family
         )
         SELECT 
@@ -3964,8 +3896,7 @@ def api_predictive_insights():
                     AVG(CAST(DATEDIFF(hour, i.date_created_local, GETDATE()) AS FLOAT)) as avg_age_hours
                 FROM phishlabs_case_data_incidents i
                 LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition} AND {campaign_condition}
-            ),
+                WHERE {date_condition}            ),
             campaign_trends AS (
             SELECT 
                     'Overall Activity' as campaign_name,
@@ -3979,8 +3910,7 @@ def api_predictive_insights():
                     END as activity_level
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition} AND {campaign_condition}
-        ),
+                WHERE {date_condition}        ),
                 threat_actor_patterns AS (
             SELECT 
                         n.threat_family,
@@ -3990,8 +3920,7 @@ def api_predictive_insights():
                     FROM phishlabs_case_data_notes n
                     JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
                     LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                    WHERE {date_condition} AND {campaign_condition}
-                    AND n.threat_family IS NOT NULL
+                    WHERE {date_condition}                    AND n.threat_family IS NOT NULL
                     GROUP BY n.threat_family
                 )
                 SELECT 
@@ -4094,8 +4023,7 @@ def api_infrastructure_relationships():
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND r.name IS NOT NULL
+            WHERE {date_condition}            AND r.name IS NOT NULL
             GROUP BY r.name
             HAVING COUNT(DISTINCT i.case_number) >= 2
         ),
@@ -4107,8 +4035,7 @@ def api_infrastructure_relationships():
                 COUNT(DISTINCT u.host_country) as countries_affected
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND u.host_isp IS NOT NULL
+            WHERE {date_condition}            AND u.host_isp IS NOT NULL
             GROUP BY u.host_isp
             HAVING COUNT(DISTINCT i.case_number) >= 2
         ),
@@ -4127,8 +4054,7 @@ def api_infrastructure_relationships():
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            AND r.name IS NOT NULL
+            WHERE {date_condition}            AND r.name IS NOT NULL
             GROUP BY r.name
             HAVING COUNT(DISTINCT i.case_number) >= 2
         )
@@ -4153,8 +4079,7 @@ def api_infrastructure_relationships():
         FROM phishlabs_case_data_incidents i
         LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
         LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-        WHERE {date_condition} AND {campaign_condition}
-        AND r.name IS NOT NULL
+        WHERE {date_condition}        AND r.name IS NOT NULL
         GROUP BY r.name
         HAVING COUNT(DISTINCT i.case_number) >= 2
         ORDER BY abuse_cases DESC
@@ -4200,8 +4125,7 @@ def api_trend():
                 COUNT(DISTINCT u.host_country) as case_data_countries
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            GROUP BY CAST(i.date_created_local AS DATE)
+            WHERE {date_condition}            GROUP BY CAST(i.date_created_local AS DATE)
         )
         SELECT 
             trend_date as date_label,
@@ -4236,8 +4160,7 @@ def api_trend():
                 COUNT(DISTINCT u.host_country) as case_data_countries
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND {campaign_condition}
-            """
+            WHERE {date_condition}            """
             
             current_result = dashboard.execute_query(current_query)
             if not isinstance(current_result, dict) and current_result:
@@ -5868,12 +5791,11 @@ def api_infrastructure_analysis():
 def api_performance_metrics():
     """API endpoint for performance metrics"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        performance_data = dashboard.get_performance_metrics(date_filter, campaign_filter, start_date, end_date)
+        performance_data = dashboard.get_performance_metrics(date_filter, 'all', start_date, end_date)
         return jsonify(performance_data)
     except Exception as e:
         logger.error(f"Error in performance metrics API: {e}")
@@ -5899,11 +5821,10 @@ def api_attribution_coverage():
     """Get attribution coverage metrics - percentage of cases with different types of attribution"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        coverage_data = dashboard.get_attribution_coverage(date_filter, campaign_filter, start_date, end_date)
+        coverage_data = dashboard.get_attribution_coverage(date_filter, 'all', start_date, end_date)
         return jsonify(coverage_data)
     except Exception as e:
         logger.error(f"Error in attribution coverage API: {e}")
@@ -5944,11 +5865,10 @@ def api_attribution_timeline():
     """Get attribution timeline data"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        timeline_data = dashboard.get_attribution_timeline(date_filter, campaign_filter, start_date, end_date)
+        timeline_data = dashboard.get_attribution_timeline(date_filter, 'all', start_date, end_date)
         return jsonify(timeline_data)
     except Exception as e:
         logger.error(f"Error in attribution timeline API: {e}")
@@ -5992,13 +5912,12 @@ def api_actor_infrastructure_preferences():
 def api_family_infrastructure_preferences():
     """API endpoint for family infrastructure preferences"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        preferences_data = dashboard.get_family_infrastructure_preferences(date_filter, campaign_filter, start_date, end_date)
-        brand_data = dashboard.get_brand_targeting_patterns(date_filter, campaign_filter, start_date, end_date)
+        preferences_data = dashboard.get_family_infrastructure_preferences(date_filter, 'all', start_date, end_date)
+        brand_data = dashboard.get_brand_targeting_patterns(date_filter, 'all', start_date, end_date)
         return jsonify({
             "families": preferences_data,
             "brands": brand_data
@@ -6011,12 +5930,11 @@ def api_family_infrastructure_preferences():
 def api_comprehensive_threat_family_intelligence():
     """API endpoint for comprehensive threat family intelligence"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        intelligence_data = dashboard.get_comprehensive_threat_family_intelligence(date_filter, campaign_filter, start_date, end_date)
+        intelligence_data = dashboard.get_comprehensive_threat_family_intelligence(date_filter, 'all', start_date, end_date)
         return jsonify(intelligence_data)
     except Exception as e:
         logger.error(f"Error in comprehensive threat family intelligence API: {e}")
@@ -6090,6 +6008,66 @@ def api_priority_cases():
         return jsonify(priority_data)
     except Exception as e:
         logger.error(f"Error in priority cases API: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/dashboard/risk-configuration')
+def api_risk_configuration():
+    """Get dynamic risk configuration from database"""
+    try:
+        # Get high-risk threat actors (top actors by case volume)
+        high_risk_actors_query = """
+        SELECT TOP 10 th.name as actor_name, COUNT(DISTINCT i.case_number) as case_count
+        FROM phishlabs_case_data_note_threatactor_handles th
+        JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
+        WHERE th.name IS NOT NULL AND th.name != ''
+        GROUP BY th.name
+        HAVING COUNT(DISTINCT i.case_number) >= 5
+        ORDER BY case_count DESC
+        """
+        
+        # Get high-risk brands (top targeted brands)
+        high_risk_brands_query = """
+        SELECT TOP 10 i.brand, COUNT(DISTINCT i.case_number) as case_count
+        FROM phishlabs_case_data_incidents i
+        WHERE i.brand IS NOT NULL AND i.brand != ''
+        GROUP BY i.brand
+        HAVING COUNT(DISTINCT i.case_number) >= 5
+        ORDER BY case_count DESC
+        """
+        
+        # Get all kit families from database
+        kit_families_query = """
+        SELECT DISTINCT n.threat_family
+        FROM phishlabs_case_data_notes n
+        WHERE n.threat_family IS NOT NULL AND n.threat_family != ''
+        """
+        
+        # Get high-risk countries (countries with most threats)
+        high_risk_countries_query = """
+        SELECT TOP 10 u.host_country, COUNT(DISTINCT i.case_number) as case_count
+        FROM phishlabs_case_data_associated_urls u
+        JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+        WHERE u.host_country IS NOT NULL AND u.host_country != ''
+        GROUP BY u.host_country
+        HAVING COUNT(DISTINCT i.case_number) >= 10
+        ORDER BY case_count DESC
+        """
+        
+        high_risk_actors = dashboard.execute_query(high_risk_actors_query)
+        high_risk_brands = dashboard.execute_query(high_risk_brands_query)
+        kit_families = dashboard.execute_query(kit_families_query)
+        high_risk_countries = dashboard.execute_query(high_risk_countries_query)
+        
+        return jsonify({
+            'high_risk_actors': [actor['actor_name'] for actor in (high_risk_actors if high_risk_actors and not isinstance(high_risk_actors, dict) else [])],
+            'high_risk_brands': [brand['brand'] for brand in (high_risk_brands if high_risk_brands and not isinstance(high_risk_brands, dict) else [])],
+            'kit_families': [kit['threat_family'] for kit in (kit_families if kit_families and not isinstance(kit_families, dict) else [])],
+            'high_risk_countries': [country['host_country'] for country in (high_risk_countries[:4] if high_risk_countries and not isinstance(high_risk_countries, dict) else [])],
+            'medium_risk_countries': [country['host_country'] for country in (high_risk_countries[4:10] if high_risk_countries and not isinstance(high_risk_countries, dict) and len(high_risk_countries) > 4 else [])]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in risk configuration API: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/insert-test-data', methods=['POST'])
@@ -6574,13 +6552,11 @@ def api_threat_intelligence_metrics():
     """Get threat intelligence metrics for operational dashboard"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
         # Use dashboard methods instead of undefined functions
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-        campaign_condition = dashboard.get_campaign_filter_conditions("i", campaign_filter)
         
         # IP Reuse Analysis - include host_isp and host_country
         ip_reuse_query = f"""
@@ -6591,7 +6567,7 @@ def api_threat_intelligence_metrics():
             COUNT(DISTINCT u.case_number) as case_count
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
-        WHERE u.ip_address IS NOT NULL AND {date_condition} AND {campaign_condition}
+        WHERE u.ip_address IS NOT NULL AND {date_condition}
         GROUP BY u.ip_address
         HAVING COUNT(DISTINCT u.case_number) > 1
         ORDER BY case_count DESC
@@ -6602,7 +6578,7 @@ def api_threat_intelligence_metrics():
         SELECT TOP 10 host_isp, COUNT(*) as threat_count
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
-        WHERE u.host_isp IS NOT NULL AND {date_condition} AND {campaign_condition}
+        WHERE u.host_isp IS NOT NULL AND {date_condition}
         GROUP BY host_isp
         ORDER BY threat_count DESC
         """
@@ -6615,7 +6591,7 @@ def api_threat_intelligence_metrics():
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
         LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-        WHERE r.name IS NOT NULL AND {date_condition} AND {campaign_condition}
+        WHERE r.name IS NOT NULL AND {date_condition}
         GROUP BY r.name
         ORDER BY abuse_count DESC
         """
@@ -6625,7 +6601,7 @@ def api_threat_intelligence_metrics():
         SELECT TOP 15 u.url_path, COUNT(DISTINCT u.case_number) as case_count
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
-        WHERE u.url_path IS NOT NULL AND u.url_path != '' AND {date_condition} AND {campaign_condition}
+        WHERE u.url_path IS NOT NULL AND u.url_path != '' AND {date_condition}
         GROUP BY u.url_path
         ORDER BY case_count DESC
         """
@@ -6656,7 +6632,9 @@ def api_threat_intelligence_metrics():
                 'total_reused_ips': len(ip_reuse) if ip_reuse else 0,
                 'top_isp': isp_data[0].get('host_isp', 'N/A') if isp_data and len(isp_data) > 0 else 'N/A',
                 'top_registrar': registrar_data[0].get('registrar_name', 'N/A') if registrar_data and len(registrar_data) > 0 else 'N/A',
-                'top_url_path': url_path_data[0].get('url_path', 'N/A') if url_path_data and len(url_path_data) > 0 else 'N/A'
+                'top_url_path': url_path_data[0].get('url_path', 'N/A') if url_path_data and len(url_path_data) > 0 else 'N/A',
+                'top_3_registrars': registrar_data[:3] if registrar_data else [],
+                'top_3_url_paths': url_path_data[:3] if url_path_data else []
             }
         })
             
