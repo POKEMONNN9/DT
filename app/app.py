@@ -896,6 +896,88 @@ class ThreatDashboard:
             logger.error(f"Error in get_brand_targeting_patterns: {e}")
             return []
     
+    def get_actor_infrastructure_all_values(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
+        """Get ALL infrastructure values (TLD, Registrar, ISP, Country) for each threat actor"""
+        try:
+            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
+            
+            # Get all TLD values for each actor
+            tld_query = f"""
+            SELECT 
+                th.name as threat_actor,
+                u.tld,
+                COUNT(DISTINCT i.case_number) as case_count
+            FROM phishlabs_case_data_incidents i
+            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}            AND u.tld IS NOT NULL AND u.tld != ''
+            AND th.name IS NOT NULL AND th.name != ''
+            GROUP BY th.name, u.tld
+            ORDER BY th.name, COUNT(DISTINCT i.case_number) DESC
+            """
+            
+            # Get all registrar values for each actor
+            registrar_query = f"""
+            SELECT 
+                th.name as threat_actor,
+                u.registrar_name,
+                COUNT(DISTINCT i.case_number) as case_count
+            FROM phishlabs_case_data_incidents i
+            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}            AND u.registrar_name IS NOT NULL AND u.registrar_name != ''
+            AND th.name IS NOT NULL AND th.name != ''
+            GROUP BY th.name, u.registrar_name
+            ORDER BY th.name, COUNT(DISTINCT i.case_number) DESC
+            """
+            
+            # Get all ISP values for each actor
+            isp_query = f"""
+            SELECT 
+                th.name as threat_actor,
+                u.host_isp,
+                COUNT(DISTINCT i.case_number) as case_count
+            FROM phishlabs_case_data_incidents i
+            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}            AND u.host_isp IS NOT NULL AND u.host_isp != ''
+            AND th.name IS NOT NULL AND th.name != ''
+            GROUP BY th.name, u.host_isp
+            ORDER BY th.name, COUNT(DISTINCT i.case_number) DESC
+            """
+            
+            # Get all country values for each actor
+            country_query = f"""
+            SELECT 
+                th.name as threat_actor,
+                u.host_country,
+                COUNT(DISTINCT i.case_number) as case_count
+            FROM phishlabs_case_data_incidents i
+            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}            AND u.host_country IS NOT NULL AND u.host_country != ''
+            AND th.name IS NOT NULL AND th.name != ''
+            GROUP BY th.name, u.host_country
+            ORDER BY th.name, COUNT(DISTINCT i.case_number) DESC
+            """
+            
+            tld_data = self.execute_query(tld_query)
+            registrar_data = self.execute_query(registrar_query)
+            isp_data = self.execute_query(isp_query)
+            country_data = self.execute_query(country_query)
+            
+            return {
+                "tlds": tld_data if tld_data and not isinstance(tld_data, dict) else [],
+                "registrars": registrar_data if registrar_data and not isinstance(registrar_data, dict) else [],
+                "isps": isp_data if isp_data and not isinstance(isp_data, dict) else [],
+                "countries": country_data if country_data and not isinstance(country_data, dict) else []
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in get_actor_infrastructure_all_values: {e}")
+            return {"tlds": [], "registrars": [], "isps": [], "countries": []}
+
     def get_url_path_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get URL path patterns by threat actors"""
         try:
@@ -914,10 +996,13 @@ class ThreatDashboard:
             WHERE {date_condition}            AND u.url_path IS NOT NULL AND u.url_path != ''
             AND th.name IS NOT NULL AND th.name != ''
             GROUP BY u.url_path, th.name
-            HAVING COUNT(DISTINCT i.case_number) >= 2
             ORDER BY COUNT(DISTINCT i.case_number) DESC
             """
-            return self.execute_query(query)
+            result = self.execute_query(query)
+            logger.info(f"URL path patterns query returned {len(result) if result and not isinstance(result, dict) else 0} records")
+            if result and not isinstance(result, dict) and len(result) > 0:
+                logger.info(f"Sample URL path data: {result[0] if len(result) > 0 else 'No data'}")
+            return result
             
         except Exception as e:
             logger.error(f"Error in get_url_path_patterns: {e}")
@@ -1466,16 +1551,14 @@ class ThreatDashboard:
     def get_executive_summary_metrics(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get comprehensive executive summary metrics"""
         try:
-            # Get date and campaign conditions
+            # Get date conditions - all metrics should respect the selected time window
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
-            # Get active cases (case_status = 'Active' or resolution_status != 'Closed')
-            # Note: Active cases should be ALL cases that are currently active, not filtered by date
+            # Get active cases created in the selected time window
             active_cases_query = f"""
             SELECT COUNT(DISTINCT i.case_number) as active_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {campaign_condition} 
+            WHERE {date_condition}
             AND (i.case_status = 'Active' OR i.resolution_status != 'Closed' OR i.date_closed_local IS NULL)
             """
             
@@ -1487,7 +1570,7 @@ class ThreatDashboard:
             closed_query = f"""
             SELECT COUNT(DISTINCT i.case_number) as closed_in_period
             FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition}            AND i.date_closed_local IS NOT NULL
+            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
             """
             
             closed_data = self.execute_query(closed_query)
@@ -1497,7 +1580,7 @@ class ThreatDashboard:
             resolution_time_query = f"""
             SELECT AVG(DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as avg_resolution_hours
             FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition}            AND i.date_closed_local IS NOT NULL
+            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
             """
             
             resolution_time = self.execute_query(resolution_time_query)
@@ -1509,7 +1592,8 @@ class ThreatDashboard:
                 COALESCE(i.resolution_status, 'Open') as resolution_status,
                 COUNT(DISTINCT i.case_number) as case_count
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition}            GROUP BY COALESCE(i.resolution_status, 'Open')
+            WHERE {date_condition}
+            GROUP BY COALESCE(i.resolution_status, 'Open')
             ORDER BY case_count DESC
             """
             
@@ -1672,20 +1756,22 @@ class ThreatDashboard:
     def get_performance_metrics(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get performance metrics for case management dashboard"""
         try:
-            # Performance metrics should show current overall stats, not filtered by date
-            # This gives a true picture of operational performance
+            # Performance metrics should respect the selected date filter
+            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
             
-            # Performance metrics query - show all cases for current state
-            performance_query = """
+            # Performance metrics query - filtered by date
+            performance_query = f"""
             SELECT 
                 AVG(CASE WHEN i.resolution_status = 'Closed' AND i.date_closed_local IS NOT NULL 
                     THEN DATEDIFF(hour, i.date_created_local, i.date_closed_local) END) as avg_resolution_hours,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' THEN i.case_number END) as closed_cases,
-                COUNT(DISTINCT CASE WHEN i.resolution_status != 'Closed' OR i.resolution_status IS NULL OR i.date_closed_local IS NULL THEN i.case_number END) as active_cases,
+                COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' AND ({closed_condition}) THEN i.case_number END) as closed_cases,
+                COUNT(DISTINCT CASE WHEN (i.resolution_status != 'Closed' OR i.resolution_status IS NULL OR i.date_closed_local IS NULL) AND ({date_condition}) THEN i.case_number END) as active_cases,
                 MIN(i.date_created_local) as earliest_case,
                 MAX(i.date_created_local) as latest_case
             FROM phishlabs_case_data_incidents i
+            WHERE {date_condition}
             """
             
             performance_data = self.execute_query(performance_query)
@@ -1702,7 +1788,6 @@ class ThreatDashboard:
         """Get comprehensive case status overview across all three table types"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             # Cred Theft Cases (from phishlabs_case_data_incidents)
             cred_theft_query = f"""
@@ -1726,9 +1811,7 @@ class ThreatDashboard:
                 cred_theft = []
             
             # Domain Monitoring Cases (from phishlabs_threat_intelligence_incident)
-            # Remove date filtering temporarily to get all data for testing
-            domain_monitoring_date_condition = "1=1"
-            domain_monitoring_campaign_condition = "1=1"
+            domain_monitoring_date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "ti.create_date")
             
             domain_monitoring_query = f"""
             SELECT 
@@ -1739,7 +1822,7 @@ class ThreatDashboard:
                 END as status,
                 COUNT(*) as count
             FROM phishlabs_threat_intelligence_incident ti
-            WHERE {domain_monitoring_date_condition} AND {domain_monitoring_campaign_condition}
+            WHERE {domain_monitoring_date_condition}
             GROUP BY CASE 
                 WHEN ti.date_resolved IS NULL THEN 'Monitoring'
                 WHEN ti.date_resolved IS NOT NULL THEN 'Closed'
@@ -2249,7 +2332,7 @@ class ThreatDashboard:
             
             for campaign_name, campaign_data in self.campaigns.items():
                 if isinstance(campaign_data, list):
-                    case_numbers = [mapping['value'] for mapping in campaign_data if mapping.get('field') == 'case_number']
+                    case_numbers = [str(mapping['value']) for mapping in campaign_data if mapping.get('field') == 'case_number']
                     
                     if case_numbers:
                         case_list = "', '".join(case_numbers)
@@ -2604,56 +2687,6 @@ class ThreatDashboard:
             logger.error(f"Error in get_kit_family_distribution: {e}")
             return []
 
-    def get_attribution_timeline(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
-        """Get attribution timeline showing threat actor activity patterns"""
-        try:
-            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            
-            timeline_query = f"""
-            SELECT 
-                CAST(i.date_created_local AS DATE) as activity_date,
-                th.name as threat_actor,
-                n.threat_family,
-                COUNT(DISTINCT i.case_number) as daily_cases,
-                COUNT(DISTINCT u.domain) as daily_domains,
-                STRING_AGG(u.host_country, ',') as target_countries
-            FROM phishlabs_case_data_incidents i
-            INNER JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}
-            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
-            ORDER BY activity_date DESC, daily_cases DESC
-            """
-            
-            timeline = self.execute_query(timeline_query)
-            if isinstance(timeline, dict) and 'error' in timeline:
-                timeline = []
-            
-            # Calculate insights
-            insights = {
-                "active_actors_30d": 0,
-                "new_actors_30d": 0,
-                "avg_campaign_duration": 0
-            }
-            
-            if timeline:
-                unique_actors = set()
-                for entry in timeline:
-                    unique_actors.add(entry.get('threat_actor'))
-                
-                insights["active_actors_30d"] = len(unique_actors)
-                # Additional calculations would go here
-            
-            return {
-                "timeline_data": timeline,
-                "insights": insights
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in get_attribution_timeline: {e}")
-            return {"timeline_data": [], "insights": {"active_actors_30d": 0, "new_actors_30d": 0, "avg_campaign_duration": 0}}
-
     def get_infrastructure_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get infrastructure patterns showing threat actor preferences"""
         try:
@@ -2720,15 +2753,16 @@ class ThreatDashboard:
         """Get WHOIS attribution for repeat offender registrants"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             whois_query = f"""
             SELECT 
                 COALESCE(n.flagged_whois_email, n.flagged_whois_name, 'Unknown') as registrant,
+                n.flagged_whois_email,
+                n.flagged_whois_name,
                 COUNT(DISTINCT i.case_number) as total_cases,
                 COUNT(DISTINCT u.domain) as domains_registered,
-                STRING_AGG(n.threat_family, ',') as threat_families_used,
-                STRING_AGG(u.tld, ',') as tlds_used,
+                STRING_AGG(n.threat_family, ', ') as threat_families_used,
+                STRING_AGG(u.tld, ', ') as tlds_used,
                 MIN(i.date_created_local) as first_registration,
                 MAX(i.date_created_local) as last_registration,
                 CASE 
@@ -2739,20 +2773,27 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             INNER JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
-            GROUP BY COALESCE(n.flagged_whois_email, n.flagged_whois_name)
-            HAVING COUNT(DISTINCT i.case_number) >= 2
+            WHERE {date_condition}
+            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
+            GROUP BY n.flagged_whois_email, n.flagged_whois_name
+            HAVING COUNT(DISTINCT i.case_number) >= 1
             ORDER BY total_cases DESC
             """
             
+            logger.info(f"WHOIS Attribution Query: {whois_query}")
             whois_data = self.execute_query(whois_query)
+            logger.info(f"WHOIS Attribution returned {len(whois_data) if whois_data and not isinstance(whois_data, dict) else 0} records")
+            
             if isinstance(whois_data, dict) and 'error' in whois_data:
+                logger.error(f"WHOIS Attribution query error: {whois_data.get('error')}")
                 whois_data = []
                 
             return whois_data or []
             
         except Exception as e:
             logger.error(f"Error in get_whois_attribution: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
     def get_priority_attribution_cases(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
@@ -2949,7 +2990,6 @@ class ThreatDashboard:
         """Get attribution timeline showing threat actor activity patterns"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             timeline_query = f"""
             SELECT 
@@ -2958,17 +2998,22 @@ class ThreatDashboard:
                 n.threat_family,
                 COUNT(DISTINCT i.case_number) as cases,
                 COUNT(DISTINCT u.domain) as domains,
-                STRING_AGG(u.host_country, ',') as target_countries
+                STRING_AGG(u.host_country, ', ') as target_countries
             FROM phishlabs_case_data_incidents i
             INNER JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
+            WHERE {date_condition}
+            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
             ORDER BY week DESC, cases DESC
             """
             
+            logger.info(f"Attribution Timeline Query: Fetching data with date_filter={date_filter}")
             timeline = self.execute_query(timeline_query)
+            logger.info(f"Attribution Timeline returned {len(timeline) if timeline and not isinstance(timeline, dict) else 0} records")
+            
             if isinstance(timeline, dict) and 'error' in timeline:
+                logger.error(f"Attribution Timeline query error: {timeline.get('error')}")
                 timeline = []
             
             # Calculate insights
@@ -2981,7 +3026,8 @@ class ThreatDashboard:
             if timeline:
                 unique_actors = set()
                 for entry in timeline:
-                    unique_actors.add(entry.get('threat_actor'))
+                    if entry.get('threat_actor'):
+                        unique_actors.add(entry.get('threat_actor'))
                 
                 insights["active_actors"] = len(unique_actors)
                 # Additional calculations would go here
@@ -2993,6 +3039,8 @@ class ThreatDashboard:
             
         except Exception as e:
             logger.error(f"Error in get_attribution_timeline: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"timeline": [], "insights": {"active_actors": 0, "new_actors": 0, "avg_campaign_duration": 0}}
 
     def get_infrastructure_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
@@ -3073,200 +3121,6 @@ class ThreatDashboard:
         except Exception as e:
             logger.error(f"Error in get_infrastructure_patterns: {e}")
             return {"tlds": [], "countries": [], "providers": [], "registrars": []}
-
-    def get_whois_attribution(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
-        """Get WHOIS attribution for repeat offender registrants"""
-        try:
-            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
-            
-            whois_query = f"""
-            SELECT 
-                COALESCE(n.flagged_whois_email, n.flagged_whois_name, 'Unknown') as identifier,
-                COUNT(DISTINCT i.case_number) as total_cases,
-                'TA505, FIN7, Carbanak' as threat_families
-            FROM phishlabs_case_data_notes n
-            INNER JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
-            WHERE {date_condition}            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
-            GROUP BY n.flagged_whois_email, n.flagged_whois_name
-            HAVING COUNT(DISTINCT i.case_number) >= 2
-            ORDER BY total_cases DESC
-            """
-            
-            whois_data = self.execute_query(whois_query)
-            if isinstance(whois_data, dict) and 'error' in whois_data:
-                whois_data = []
-                
-            return whois_data or []
-            
-        except Exception as e:
-            logger.error(f"Error in get_whois_attribution: {e}")
-            return []
-
-
-            """Insert comprehensive test data for Threat Intelligence Dashboard"""
-            try:
-                conn = self.get_connection()
-                cursor = conn.cursor()
-                
-                logger.info("Starting comprehensive test data insertion...")
-                
-                # Test data arrays
-                brands = ['Microsoft', 'PayPal', 'Amazon', 'Apple', 'Google', 'Netflix', 'Facebook']
-                case_types = ['Credential Theft']
-                case_statuses = ['Active', 'Closed']
-                resolution_statuses = ['Open', 'Investigating', 'Mitigating', 'Closed']
-                threat_families = ['Emotet', 'Trickbot', 'Qakbot', 'IcedID', 'Cobalt Strike']
-                threat_actors = ['TA505', 'FIN7', 'Carbanak', 'Lazarus Group', 'APT29']
-                
-                # Bot data - using note and url columns
-                bot_data = [
-                    ('Emotet Loader detected in phishing campaign', 'https://microsoft-security-update.com/login'),
-                    ('Trickbot Banking Trojan identified', 'https://paypal-verification.net/secure'),
-                    ('Qakbot Info Stealer analysis complete', 'https://amazon-prime-renewal.org/account'),
-                    ('IcedID Banking Trojan detected', 'https://apple-id-suspended.info/verify'),
-                    ('Cobalt Strike Beacon communication detected', 'https://netflix-billing-issue.co/update')
-                ]
-                
-                # WHOIS data
-                whois_data = [
-                    ('john.smith@tempmail.com', 'John Smith'),
-                    ('mike.johnson@privacy.com', 'Mike Johnson'),
-                    ('alex.brown@protonmail.com', 'Alex Brown'),
-                    ('sarah.davis@guerrillamail.com', 'Sarah Davis'),
-                    ('robert.wilson@10minutemail.com', 'Robert Wilson')
-                ]
-                
-                # Infrastructure data
-                infrastructure_data = [
-                    ('com', 'US', 'Cloudflare Inc'),
-                    ('net', 'NL', 'DigitalOcean LLC'),
-                    ('org', 'DE', 'Hetzner Online GmbH'),
-                    ('info', 'RU', 'OVH SAS'),
-                    ('biz', 'CN', 'Alibaba Cloud'),
-                    ('co', 'FR', 'Online SAS'),
-                    ('me', 'UK', 'Amazon Web Services')
-                ]
-                
-                # IANA IDs for registrars
-                iana_ids = [13, 146, 292]
-                
-                # Generate 30 test cases across different time periods
-                cases_data = []
-                urls_data = []
-                notes_data = []
-                actors_data = []
-                bots_data = []
-                
-                for i in range(1, 31):
-                    case_number = f"TI-2024-{i:03d}"
-                    
-                    # Time distribution
-                    if i <= 7:
-                        days_ago = random.randint(1, 7)  # Last week
-                    elif i <= 14:
-                        days_ago = random.randint(8, 14)  # 1-2 weeks ago
-                    elif i <= 20:
-                        days_ago = random.randint(15, 30)  # 3-4 weeks ago
-                    elif i <= 25:
-                        days_ago = random.randint(31, 60)  # 1-2 months ago
-                    else:
-                        days_ago = random.randint(61, 90)  # 2-3 months ago
-                    
-                    created_date = datetime.now() - timedelta(days=days_ago)
-                    
-                    # Case data
-                    brand = random.choice(brands)
-                    case_type = random.choice(case_types)
-                    case_status = random.choice(case_statuses)
-                    resolution_status = random.choice(resolution_statuses)
-                    iana_id = random.choice(iana_ids)
-                    
-                    # Closed cases need a closed date
-                    closed_date = None
-                    if case_status == 'Closed':
-                        closed_days = random.randint(1, min(days_ago - 1, 30))
-                        closed_date = created_date + timedelta(days=closed_days)
-                    
-                    cases_data.append((
-                        case_number, brand, case_type, case_status, 
-                        resolution_status, created_date, closed_date, iana_id
-                    ))
-                    
-                    # URL data
-                    infra = random.choice(infrastructure_data)
-                    tld, country, isp = infra
-                    domain = f"{brand.lower()}-{random.choice(['security', 'verification', 'update', 'alert'])}-{random.randint(1000, 9999)}.{tld}"
-                    ip = f"192.168.{random.randint(1, 255)}.{random.randint(1, 255)}"
-                    url = f"https://{domain}/{random.choice(['login', 'verify', 'update', 'secure'])}"
-                    
-                    urls_data.append((
-                        case_number, url, domain, ip, tld, country, isp
-                    ))
-                    
-                    # Threat intelligence data
-                    threat_family = random.choice(threat_families)
-                    whois_email, whois_name = random.choice(whois_data)
-                    
-                    notes_data.append((
-                        case_number, threat_family, whois_email, whois_name
-                    ))
-                    
-                    # Threat actor data
-                    threat_actor = random.choice(threat_actors)
-                    actors_data.append((case_number, threat_actor))
-                    
-                    # Bot data
-                    bot_note, bot_url = random.choice(bot_data)
-                    bots_data.append((case_number, bot_note, bot_url))
-                
-                # Insert data
-                logger.info("Inserting case data...")
-                cursor.executemany("""
-                    INSERT INTO phishlabs_case_data_incidents 
-                    (case_number, brand, case_type, case_status, resolution_status, 
-                    date_created_local, date_closed_local, iana_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, cases_data)
-                
-                logger.info("Inserting URL data...")
-                cursor.executemany("""
-                    INSERT INTO phishlabs_case_data_associated_urls 
-                    (case_number, url, domain, ip_address, tld, host_country, host_isp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, urls_data)
-                
-                logger.info("Inserting threat intelligence notes...")
-                cursor.executemany("""
-                    INSERT INTO phishlabs_case_data_notes 
-                    (case_number, threat_family, flagged_whois_email, flagged_whois_name)
-                    VALUES (?, ?, ?, ?)
-                """, notes_data)
-                
-                logger.info("Inserting threat actor data...")
-                cursor.executemany("""
-                    INSERT INTO phishlabs_case_data_note_threatactor_handles 
-                    (case_number, name)
-                    VALUES (?, ?)
-                """, actors_data)
-                
-                logger.info("Inserting bot detection data...")
-                cursor.executemany("""
-                    INSERT INTO phishlabs_case_data_note_bots 
-                    (case_number, note, url)
-                    VALUES (?, ?, ?)
-                """, bots_data)
-                
-                conn.commit()
-                logger.info("✅ All test data inserted successfully!")
-                
-            except Exception as e:
-                logger.error(f"Error inserting test data: {e}")
-                conn.rollback()
-                raise
-            finally:
-                cursor.close()
-                conn.close()
 
     def clear_test_data(self):
         """Clear existing test data from all tables"""
@@ -4001,68 +3855,66 @@ def api_predictive_insights():
 def api_infrastructure_relationships():
     """API endpoint for infrastructure relationship analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
         # Get date and campaign conditions
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-        campaign_condition = dashboard.get_campaign_filter_conditions("i", campaign_filter)
         
         # Query for infrastructure relationship analysis
         query = f"""
-        WITH registrar_usage AS (
+            WITH registrar_usage AS (
+                SELECT 
+                    r.name as registrar,
+                    COUNT(DISTINCT i.case_number) as abuse_cases,
+                    1 as campaigns,  -- Simplified for now
+                    COUNT(DISTINCT u.host_country) as countries_affected,
+                    MIN(i.date_created_local) as first_abuse,
+                    MAX(i.date_created_local) as last_abuse
+                FROM phishlabs_case_data_incidents i
+                LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND r.name IS NOT NULL
+                GROUP BY r.name
+                HAVING COUNT(DISTINCT i.case_number) >= 2
+            ),
+            isp_usage AS (
+                SELECT 
+                    u.host_isp as isp,
+                    COUNT(DISTINCT i.case_number) as abuse_cases,
+                    1 as campaigns,  -- Simplified for now
+                    COUNT(DISTINCT u.host_country) as countries_affected
+                FROM phishlabs_case_data_incidents i
+                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND u.host_isp IS NOT NULL
+                GROUP BY u.host_isp
+                HAVING COUNT(DISTINCT i.case_number) >= 2
+            ),
+            shared_infrastructure AS (
+                SELECT 
+                    'Registrar: ' + r.name as shared_element,
+                    'Multiple Cases' as campaigns,
+                    COUNT(DISTINCT u.domain) as shared_domains,
+                    CASE 
+                        WHEN COUNT(DISTINCT i.case_number) >= 10 THEN 'High'
+                        WHEN COUNT(DISTINCT i.case_number) >= 5 THEN 'Medium'
+                        ELSE 'Low'
+                    END as connection_strength,
+                    MIN(i.date_created_local) as first_shared,
+                    MAX(i.date_created_local) as last_shared
+                FROM phishlabs_case_data_incidents i
+                LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND r.name IS NOT NULL
+                GROUP BY r.name
+                HAVING COUNT(DISTINCT i.case_number) >= 2
+            )
             SELECT 
-                r.name as registrar,
-                COUNT(DISTINCT i.case_number) as abuse_cases,
-                1 as campaigns,  -- Simplified for now
-                COUNT(DISTINCT u.host_country) as countries_affected,
-                MIN(i.date_created_local) as first_abuse,
-                MAX(i.date_created_local) as last_abuse
-            FROM phishlabs_case_data_incidents i
-            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND r.name IS NOT NULL
-            GROUP BY r.name
-            HAVING COUNT(DISTINCT i.case_number) >= 2
-        ),
-        isp_usage AS (
-            SELECT 
-                u.host_isp as isp,
-                COUNT(DISTINCT i.case_number) as abuse_cases,
-                1 as campaigns,  -- Simplified for now
-                COUNT(DISTINCT u.host_country) as countries_affected
-            FROM phishlabs_case_data_incidents i
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND u.host_isp IS NOT NULL
-            GROUP BY u.host_isp
-            HAVING COUNT(DISTINCT i.case_number) >= 2
-        ),
-        shared_infrastructure AS (
-            SELECT 
-                'Registrar: ' + r.name as shared_element,
-                'Multiple Cases' as campaigns,
-                COUNT(DISTINCT u.domain) as shared_domains,
-                CASE 
-                    WHEN COUNT(DISTINCT i.case_number) >= 10 THEN 'High'
-                    WHEN COUNT(DISTINCT i.case_number) >= 5 THEN 'Medium'
-                    ELSE 'Low'
-                END as connection_strength,
-                MIN(i.date_created_local) as first_shared,
-                MAX(i.date_created_local) as last_shared
-            FROM phishlabs_case_data_incidents i
-            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND r.name IS NOT NULL
-            GROUP BY r.name
-            HAVING COUNT(DISTINCT i.case_number) >= 2
-        )
-        SELECT 
-            (SELECT COUNT(*) FROM registrar_usage) as registrar_count,
-            (SELECT COUNT(*) FROM isp_usage) as isp_count,
-            (SELECT COUNT(*) FROM shared_infrastructure) as shared_infrastructure_count
-        """
+                (SELECT COUNT(*) FROM registrar_usage) as registrar_count,
+                (SELECT COUNT(*) FROM isp_usage) as isp_count,
+                (SELECT COUNT(*) FROM shared_infrastructure) as shared_infrastructure_count
+            """
         
         result = dashboard.execute_query(query)
         if isinstance(result, dict) and 'error' in result:
@@ -4106,14 +3958,12 @@ def api_infrastructure_relationships():
 def api_trend():
     """API endpoint for trend analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
         # Get date and campaign conditions
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-        campaign_condition = dashboard.get_campaign_filter_conditions("i", campaign_filter)
         
         # Query for trend data based on actual database records
         query = f"""
@@ -4175,12 +4025,11 @@ def api_trend():
 def api_intelligence():
     """API endpoint for intelligence analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        intelligence_data = dashboard.get_intelligence_analysis(date_filter, campaign_filter, start_date, end_date)
+        intelligence_data = dashboard.get_intelligence_analysis(date_filter, 'all', start_date, end_date)
         return jsonify(intelligence_data)
     except Exception as e:
         logger.error(f"Error in intelligence API: {e}")
@@ -5398,25 +5247,25 @@ def api_get_multiple_campaigns_data():
                             field_type = identifier.get('field', 'case_number')
                             field_value = identifier.get('value', '')
                             
-                            if field_type == 'case_number' and field_value.isdigit():
+                            if field_type == 'case_number' and str(field_value).isdigit():
                                 identifiers.append({
                                     'type': 'case_number',
-                                    'value': field_value
+                                    'value': str(field_value)
                                 })
                             elif field_type == 'infrid':
                                 identifiers.append({
                                     'type': 'infrid',
-                                    'value': field_value
+                                    'value': str(field_value)
                                 })
                             elif field_type == 'incident_id':
                                 identifiers.append({
                                     'type': 'incident_id',
-                                    'value': field_value
+                                    'value': str(field_value)
                                 })
                             elif field_type in ['domain', 'fqdn', 'url', 'url_path']:
                                 identifiers.append({
                                     'type': 'domain',
-                                    'value': field_value
+                                    'value': str(field_value)
                                 })
                 # Handle old format (list of mapping objects)
                 elif isinstance(campaign_data_obj, list):
@@ -5425,12 +5274,12 @@ def api_get_multiple_campaigns_data():
                             if mapping.get('identifier_type') and mapping.get('identifier_value'):
                                 identifiers.append({
                                     'type': mapping['identifier_type'],
-                                    'value': mapping['identifier_value']
+                                    'value': str(mapping['identifier_value'])
                                 })
                             elif mapping.get('field') and mapping.get('value'):
                                 identifiers.append({
                                     'type': mapping['field'],
-                                    'value': mapping['value']
+                                    'value': str(mapping['value'])
                                 })
                 
                 # Search across all tables for each identifier
@@ -5575,12 +5424,11 @@ def api_connection_status():
 def api_executive_summary_metrics():
     """API endpoint for executive summary metrics"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        metrics_data = dashboard.get_executive_summary_metrics(date_filter, campaign_filter, start_date, end_date)
+        metrics_data = dashboard.get_executive_summary_metrics(date_filter, 'all', start_date, end_date)
         return jsonify(metrics_data)
     except Exception as e:
         logger.error(f"Error in executive summary metrics API: {e}")
@@ -5590,12 +5438,11 @@ def api_executive_summary_metrics():
 def api_threat_landscape_overview():
     """API endpoint for threat landscape overview"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        threat_data = dashboard.get_threat_landscape_overview(date_filter, campaign_filter, start_date, end_date)
+        threat_data = dashboard.get_threat_landscape_overview(date_filter, 'all', start_date, end_date)
         return jsonify(threat_data)
     except Exception as e:
         logger.error(f"Error in threat landscape overview API: {e}")
@@ -5605,12 +5452,11 @@ def api_threat_landscape_overview():
 def api_geographic_heatmap():
     """API endpoint for geographic heatmap data"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        geo_data = dashboard.get_geographic_heatmap_data(date_filter, campaign_filter, start_date, end_date)
+        geo_data = dashboard.get_geographic_heatmap_data(date_filter, 'all', start_date, end_date)
         return jsonify(geo_data)
     except Exception as e:
         logger.error(f"Error in geographic heatmap API: {e}")
@@ -5620,12 +5466,11 @@ def api_geographic_heatmap():
 def api_timeline_trends():
     """API endpoint for timeline trends"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        trends_data = dashboard.get_timeline_trends(date_filter, campaign_filter, start_date, end_date)
+        trends_data = dashboard.get_timeline_trends(date_filter, 'all', start_date, end_date)
         return jsonify(trends_data)
     except Exception as e:
         logger.error(f"Error in timeline trends API: {e}")
@@ -5639,12 +5484,11 @@ def api_timeline_trends():
 def api_case_status_overview():
     """API endpoint for comprehensive case status overview"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        status_data = dashboard.get_case_status_overview_comprehensive(date_filter, campaign_filter, start_date, end_date)
+        status_data = dashboard.get_case_status_overview_comprehensive(date_filter, 'all', start_date, end_date)
         return jsonify(status_data)
     except Exception as e:
         logger.error(f"Error in case status overview API: {e}")
@@ -5654,12 +5498,11 @@ def api_case_status_overview():
 def api_case_type_distribution():
     """API endpoint for case type distribution"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        type_data = dashboard.get_case_type_distribution(date_filter, campaign_filter, start_date, end_date)
+        type_data = dashboard.get_case_type_distribution(date_filter, 'all', start_date, end_date)
         return jsonify(type_data)
     except Exception as e:
         logger.error(f"Error in case type distribution API: {e}")
@@ -5669,12 +5512,11 @@ def api_case_type_distribution():
 def api_resolution_performance():
     """API endpoint for resolution performance"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        performance_data = dashboard.get_resolution_performance(date_filter, campaign_filter, start_date, end_date)
+        performance_data = dashboard.get_resolution_performance(date_filter, 'all', start_date, end_date)
         return jsonify(performance_data)
     except Exception as e:
         logger.error(f"Error in resolution performance API: {e}")
@@ -5684,12 +5526,11 @@ def api_resolution_performance():
 def api_workload_distribution():
     """API endpoint for workload distribution"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        workload_data = dashboard.get_workload_distribution(date_filter, campaign_filter, start_date, end_date)
+        workload_data = dashboard.get_workload_distribution(date_filter, 'all', start_date, end_date)
         return jsonify(workload_data)
     except Exception as e:
         logger.error(f"Error in workload distribution API: {e}")
@@ -5731,12 +5572,11 @@ def api_sla_category_totals():
 def api_domain_monitoring():
     """API endpoint for domain monitoring"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        domain_data = dashboard.get_domain_monitoring(date_filter, campaign_filter, start_date, end_date)
+        domain_data = dashboard.get_domain_monitoring(date_filter, 'all', start_date, end_date)
         return jsonify(domain_data)
     except Exception as e:
         logger.error(f"Error in domain monitoring API: {e}")
@@ -5746,12 +5586,11 @@ def api_domain_monitoring():
 def api_threat_family_analysis():
     """API endpoint for threat family analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        threat_data = dashboard.get_threat_family_analysis(date_filter, campaign_filter, start_date, end_date)
+        threat_data = dashboard.get_threat_family_analysis(date_filter, 'all', start_date, end_date)
         return jsonify(threat_data)
     except Exception as e:
         logger.error(f"Error in threat family analysis API: {e}")
@@ -5761,12 +5600,11 @@ def api_threat_family_analysis():
 def api_infrastructure_analysis_detailed():
     """API endpoint for detailed infrastructure analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        infrastructure_data = dashboard.get_infrastructure_analysis_detailed(date_filter, campaign_filter, start_date, end_date)
+        infrastructure_data = dashboard.get_infrastructure_analysis_detailed(date_filter, 'all', start_date, end_date)
         return jsonify(infrastructure_data)
     except Exception as e:
         logger.error(f"Error in infrastructure analysis API: {e}")
@@ -5776,12 +5614,11 @@ def api_infrastructure_analysis_detailed():
 def api_infrastructure_analysis():
     """API endpoint for infrastructure analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        infrastructure_data = dashboard.get_infrastructure_analysis(date_filter, campaign_filter, start_date, end_date)
+        infrastructure_data = dashboard.get_infrastructure_analysis(date_filter, 'all', start_date, end_date)
         return jsonify(infrastructure_data)
     except Exception as e:
         logger.error(f"Error in infrastructure analysis API: {e}")
@@ -5805,12 +5642,11 @@ def api_performance_metrics():
 def api_ioc_tracking():
     """API endpoint for IOC tracking"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        ioc_data = dashboard.get_ioc_tracking(date_filter, campaign_filter, start_date, end_date)
+        ioc_data = dashboard.get_ioc_tracking(date_filter, 'all', start_date, end_date)
         return jsonify(ioc_data)
     except Exception as e:
         logger.error(f"Error in IOC tracking API: {e}")
@@ -5835,11 +5671,10 @@ def api_threat_actors():
     """Get top threat actors by activity"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        actor_data = dashboard.get_top_threat_actors(date_filter, campaign_filter, start_date, end_date)
+        actor_data = dashboard.get_top_threat_actors(date_filter, 'all', start_date, end_date)
         return jsonify(actor_data)
     except Exception as e:
         logger.error(f"Error in threat actors API: {e}")
@@ -5850,11 +5685,10 @@ def api_kit_families():
     """Get phishing kit family distribution"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        kit_data = dashboard.get_kit_family_distribution(date_filter, campaign_filter, start_date, end_date)
+        kit_data = dashboard.get_kit_family_distribution(date_filter, 'all', start_date, end_date)
         return jsonify(kit_data)
     except Exception as e:
         logger.error(f"Error in kit families API: {e}")
@@ -5879,11 +5713,10 @@ def api_infrastructure_patterns():
     """Get infrastructure patterns by threat actors"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        infra_data = dashboard.get_infrastructure_patterns(date_filter, campaign_filter, start_date, end_date)
+        infra_data = dashboard.get_infrastructure_patterns(date_filter, 'all', start_date, end_date)
         return jsonify(infra_data)
     except Exception as e:
         logger.error(f"Error in infrastructure patterns API: {e}")
@@ -5893,16 +5726,17 @@ def api_infrastructure_patterns():
 def api_actor_infrastructure_preferences():
     """API endpoint for actor infrastructure preferences"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        preferences_data = dashboard.get_actor_infrastructure_preferences(date_filter, campaign_filter, start_date, end_date)
-        url_paths_data = dashboard.get_url_path_patterns(date_filter, campaign_filter, start_date, end_date)
+        preferences_data = dashboard.get_actor_infrastructure_preferences(date_filter, 'all', start_date, end_date)
+        url_paths_data = dashboard.get_url_path_patterns(date_filter, 'all', start_date, end_date)
+        infrastructure_data = dashboard.get_actor_infrastructure_all_values(date_filter, 'all', start_date, end_date)
         return jsonify({
             "actors": preferences_data,
-            "url_paths": url_paths_data
+            "url_paths": url_paths_data,
+            "infrastructure": infrastructure_data
         })
     except Exception as e:
         logger.error(f"Error in actor infrastructure preferences API: {e}")
@@ -5944,12 +5778,11 @@ def api_comprehensive_threat_family_intelligence():
 def api_infrastructure_patterns_detailed():
     """API endpoint for detailed infrastructure patterns"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        patterns_data = dashboard.get_infrastructure_patterns_detailed(date_filter, campaign_filter, start_date, end_date)
+        patterns_data = dashboard.get_infrastructure_patterns_detailed(date_filter, 'all', start_date, end_date)
         
         # Separate the data by pattern type
         reuse_data = [item for item in patterns_data if item.get('pattern_type') == 'reuse']
@@ -5969,12 +5802,11 @@ def api_infrastructure_patterns_detailed():
 def api_campaign_lifecycle():
     """API endpoint for campaign lifecycle analysis"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        lifecycle_data = dashboard.get_campaign_lifecycle_analysis(date_filter, campaign_filter, start_date, end_date)
+        lifecycle_data = dashboard.get_campaign_lifecycle_analysis(date_filter, 'all', start_date, end_date)
         return jsonify(lifecycle_data)
     except Exception as e:
         logger.error(f"Error in campaign lifecycle API: {e}")
@@ -5985,11 +5817,10 @@ def api_whois_attribution():
     """Get WHOIS attribution data for repeat offenders"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        whois_data = dashboard.get_whois_attribution(date_filter, campaign_filter, start_date, end_date)
+        whois_data = dashboard.get_whois_attribution(date_filter, 'all', start_date, end_date)
         return jsonify(whois_data)
     except Exception as e:
         logger.error(f"Error in WHOIS attribution API: {e}")
@@ -6000,11 +5831,10 @@ def api_priority_cases():
     """Get high-priority cases with strong attribution signals"""
     try:
         date_filter = request.args.get('date_filter', 'today')
-        campaign_filter = request.args.get('campaign_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        priority_data = dashboard.get_priority_attribution_cases(date_filter, campaign_filter, start_date, end_date)
+        priority_data = dashboard.get_priority_attribution_cases(date_filter, 'all', start_date, end_date)
         return jsonify(priority_data)
     except Exception as e:
         logger.error(f"Error in priority cases API: {e}")
@@ -6103,12 +5933,11 @@ def insert_test_data():
 def api_campaign_overview():
     """API endpoint for campaign overview"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        campaign_data = dashboard.get_campaign_overview(date_filter, campaign_filter, start_date, end_date)
+        campaign_data = dashboard.get_campaign_overview(date_filter, 'all', start_date, end_date)
         return jsonify(campaign_data)
     except Exception as e:
         logger.error(f"Error in campaign overview API: {e}")
@@ -6118,12 +5947,11 @@ def api_campaign_overview():
 def api_campaign_progress():
     """API endpoint for campaign progress"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        progress_data = dashboard.get_campaign_progress(date_filter, campaign_filter, start_date, end_date)
+        progress_data = dashboard.get_campaign_progress(date_filter, 'all', start_date, end_date)
         return jsonify(progress_data)
     except Exception as e:
         logger.error(f"Error in campaign progress API: {e}")
@@ -6133,12 +5961,11 @@ def api_campaign_progress():
 def api_cross_table_campaign_view():
     """API endpoint for cross-table campaign view"""
     date_filter = request.args.get('date_filter', 'today')
-    campaign_filter = request.args.get('campaign_filter', 'all')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     
     try:
-        cross_table_data = dashboard.get_cross_table_campaign_view(date_filter, campaign_filter, start_date, end_date)
+        cross_table_data = dashboard.get_cross_table_campaign_view(date_filter, 'all', start_date, end_date)
         return jsonify(cross_table_data)
     except Exception as e:
         logger.error(f"Error in cross-table campaign view API: {e}")
@@ -6687,11 +6514,11 @@ def api_default_analysis():
                     value = identifier.get('value', '')
                     
                     if field == 'case_number':
-                        case_numbers.append(value)
+                        case_numbers.append(str(value))
                     elif field == 'infrid':
-                        infrids.append(value)
+                        infrids.append(str(value))
                     elif field == 'incident_id':
-                        incident_ids.append(value)
+                        incident_ids.append(str(value))
             
             # Get counts for each type
             cred_theft_count = len(case_numbers)
@@ -6717,8 +6544,8 @@ def api_default_analysis():
                 status_results = dashboard.execute_query(status_query)
                 if status_results and isinstance(status_results, list) and len(status_results) > 0:
                     row = status_results[0]
-                    active_cases += row.get('active_cases', 0)
-                    closed_cases += row.get('closed_cases', 0)
+                    active_cases += row.get('active_cases', 0) or 0
+                    closed_cases += row.get('closed_cases', 0) or 0
             
             # Query incident table for social media status
             if incident_ids:
@@ -6733,8 +6560,8 @@ def api_default_analysis():
                 social_status_results = dashboard.execute_query(social_status_query)
                 if social_status_results and isinstance(social_status_results, list) and len(social_status_results) > 0:
                     row = social_status_results[0]
-                    active_cases += row.get('active_cases', 0)
-                    closed_cases += row.get('closed_cases', 0)
+                    active_cases += row.get('active_cases', 0) or 0
+                    closed_cases += row.get('closed_cases', 0) or 0
             
             # Domain monitoring cases count (always "active" - golden)
             domain_monitoring_cases = domain_monitoring_count
@@ -6965,17 +6792,17 @@ def api_comprehensive_analysis():
                             value = identifier.get('value', '')
                             
                             if field == 'case_number' and value:
-                                case_numbers.append(value)
+                                case_numbers.append(str(value))
                                 logger.info(f"Added case_number: {value}")
                             elif field == 'infrid' and value:
-                                infrids.append(value)
+                                infrids.append(str(value))
                                 logger.info(f"Added infrid: {value}")
                             elif field == 'incident_id' and value:
-                                incident_ids.append(value)
+                                incident_ids.append(str(value))
                                 logger.info(f"Added incident_id: {value}")
                         elif isinstance(identifier, str) and identifier:
                             # Handle legacy string format - assume case_number
-                            case_numbers.append(identifier)
+                            case_numbers.append(str(identifier))
                             logger.info(f"Added legacy case_number: {identifier}")
                 else:
                     logger.warning(f"Campaign '{campaign_name}' has no identifiers or invalid structure")
