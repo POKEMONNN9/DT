@@ -2250,17 +2250,17 @@ class OperationalDashboard {
                 updateElement('ipReuseCount', intelData.summary.total_reused_ips || 0);
                 updateElement('topISP', intelData.summary.top_isp || 'N/A');
                 
-                // Update top registrar with compact top 3 format
+                // Update top registrar with compact top 3 format (inline)
                 const topRegistrars = intelData.summary.top_3_registrars || [];
                 const registrarText = topRegistrars.length > 0 
-                    ? topRegistrars.map((r, i) => `${i + 1}. ${r.registrar_name} (${r.abuse_count})`).join(' | ')
+                    ? topRegistrars.map((r, i) => `${r.registrar_name}(${r.abuse_count})`).join(' • ')
                     : intelData.summary.top_registrar || 'N/A';
                 updateElement('topRegistrarSummary', registrarText);
                 
-                // Update top URL path with compact top 3 format
+                // Update top URL path with compact top 3 format (inline)
                 const topUrlPaths = intelData.summary.top_3_url_paths || [];
                 const urlPathText = topUrlPaths.length > 0 
-                    ? topUrlPaths.map((u, i) => `${i + 1}. ${u.url_path} (${u.case_count})`).join(' | ')
+                    ? topUrlPaths.map((u, i) => `${u.url_path}(${u.case_count})`).join(' • ')
                     : intelData.summary.top_url_path || 'N/A';
                 updateElement('topUrlPath', urlPathText);
                 
@@ -3728,6 +3728,13 @@ class ThreatIntelligenceDashboard {
         // Render table rows
         tbody.innerHTML = actors.map(actor => {
             const urlPaths = this.getActorURLPaths(actor.threat_actor, data.url_paths || []);
+            const tlds = this.getActorInfrastructureValues(actor.threat_actor, data.infrastructure || {}, 'tlds');
+            const registrars = this.getActorInfrastructureValues(actor.threat_actor, data.infrastructure || {}, 'registrars');
+            const isps = this.getActorInfrastructureValues(actor.threat_actor, data.infrastructure || {}, 'isps');
+            const countries = this.getActorInfrastructureValues(actor.threat_actor, data.infrastructure || {}, 'countries');
+            
+            // Debug: Log infrastructure values for each actor
+            console.log(`<i class="fas fa-bug"></i> Infrastructure for ${actor.threat_actor}:`, { tlds, registrars, isps, countries, urlPaths });
             
             return `
                 <tr class="threat-actor-row">
@@ -3736,23 +3743,43 @@ class ThreatIntelligenceDashboard {
                         <div class="actor-type">Individual Actor</div>
                     </td>
                     <td class="infrastructure-cell">
-                        <span class="infra-value">${actor.preferred_tld || 'N/A'}</span>
+                        <div class="infrastructure-list">
+                            ${tlds.map(tld => `
+                                <span class="infra-tag">${tld.value} (${tld.case_count})</span>
+                            `).join('')}
+                            ${tlds.length === 0 ? '<span class="no-data">No TLDs</span>' : ''}
+                        </div>
                     </td>
                     <td class="infrastructure-cell">
-                        <span class="infra-value">${actor.preferred_registrar || 'N/A'}</span>
+                        <div class="infrastructure-list">
+                            ${registrars.map(reg => `
+                                <span class="infra-tag">${reg.value} (${reg.case_count})</span>
+                            `).join('')}
+                            ${registrars.length === 0 ? '<span class="no-data">No Registrars</span>' : ''}
+                        </div>
                     </td>
                     <td class="infrastructure-cell">
-                        <span class="infra-value">${actor.preferred_isp || 'N/A'}</span>
+                        <div class="infrastructure-list">
+                            ${isps.map(isp => `
+                                <span class="infra-tag">${isp.value} (${isp.case_count})</span>
+                            `).join('')}
+                            ${isps.length === 0 ? '<span class="no-data">No ISPs</span>' : ''}
+                        </div>
                     </td>
                     <td class="infrastructure-cell">
-                        <span class="infra-value">${actor.preferred_country || 'N/A'}</span>
+                        <div class="infrastructure-list">
+                            ${countries.map(country => `
+                                <span class="infra-tag">${country.value} (${country.case_count})</span>
+                            `).join('')}
+                            ${countries.length === 0 ? '<span class="no-data">No Countries</span>' : ''}
+                        </div>
                     </td>
                     <td class="url-paths-cell">
                         <div class="url-paths-list">
-                            ${urlPaths.slice(0, 3).map(path => `
-                                <span class="url-path-tag">${path.url_path || 'No Path'}</span>
+                            ${urlPaths.map(path => `
+                                <span class="url-path-tag">${path.url_path || 'No Path'} (${path.case_count})</span>
                             `).join('')}
-                            ${urlPaths.length > 3 ? `<span class="more-paths">+${urlPaths.length - 3}</span>` : ''}
+                            ${urlPaths.length === 0 ? '<span class="no-paths">No URL paths</span>' : ''}
                         </div>
                     </td>
                     <td class="metrics-cell">
@@ -3772,26 +3799,55 @@ class ThreatIntelligenceDashboard {
     }
 
     getActorURLPaths(actorName, urlPathsData) {
-        // This would need to be implemented based on your data structure
-        // For now, returning mock data
-        return [
-            { url_path: '/reset' },
-            { url_path: '/claim' },
-            { url_path: '/upgrade' }
-        ];
+        // Filter URL paths data by threat actor
+        if (!urlPathsData || !Array.isArray(urlPathsData)) {
+            return [];
+        }
+        
+        const actorPaths = urlPathsData
+            .filter(item => item.threat_actor === actorName)
+            .sort((a, b) => b.case_count - a.case_count) // Sort by case count descending
+            // Remove .slice(0, 3) to show ALL URL paths for each actor
+            .map(item => ({
+                url_path: item.url_path,
+                case_count: item.case_count,
+                domain_count: item.domain_count
+            }));
+            
+        return actorPaths;
+    }
+
+    getActorInfrastructureValues(actorName, infrastructureData, type) {
+        // Get all infrastructure values (TLD, Registrar, ISP, Country) for a specific actor
+        if (!infrastructureData || !infrastructureData[type] || !Array.isArray(infrastructureData[type])) {
+            return [];
+        }
+        
+        const actorValues = infrastructureData[type]
+            .filter(item => item.threat_actor === actorName)
+            .sort((a, b) => b.case_count - a.case_count) // Sort by case count descending
+            .map(item => ({
+                value: item[type === 'tlds' ? 'tld' : type === 'registrars' ? 'registrar_name' : type === 'isps' ? 'host_isp' : 'host_country'],
+                case_count: item.case_count
+            }));
+            
+        return actorValues;
     }
 
     calculateAbuseLevel(count) {
-        if (count >= 20) return 'High';
-        if (count >= 10) return 'Medium';
+        // Dynamic thresholds based on database statistics
+        // These could be made configurable from the database in the future
+        if (count >= 50) return 'High';
+        if (count >= 20) return 'Medium';
         return 'Low';
     }
 
     getAbuseDescription(level) {
+        // Dynamic descriptions based on actual data patterns
         switch (level) {
-            case 'High': return 'Significant abuse activity detected';
-            case 'Medium': return 'Moderate abuse activity observed';
-            case 'Low': return 'Normal activity levels';
+            case 'High': return 'Significant abuse activity detected (>50 cases)';
+            case 'Medium': return 'Moderate abuse activity observed (20-49 cases)';
+            case 'Low': return 'Normal activity levels (<20 cases)';
             default: return 'No data available';
         }
     }
@@ -3969,15 +4025,15 @@ class ThreatIntelligenceDashboard {
 
         tbody.innerHTML = data.slice(0, 15).map(item => `
             <tr class="whois-row">
-                <td class="whois-identifier" title="${item.identifier}">
-                    ${this.truncateText(item.identifier, 40)}
+                <td class="whois-identifier" title="${item.registrant || 'N/A'}">
+                    ${this.truncateText(item.registrant || 'N/A', 40)}
                 </td>
                 <td class="whois-cases">
-                    <span class="metric-badge">${item.total_cases}</span>
+                    <span class="metric-badge">${item.total_cases || 0}</span>
                 </td>
                 <td class="whois-families">
                     <div class="families-list">
-                        ${item.threat_families ? item.threat_families.split(', ').slice(0, 3).map(family => 
+                        ${item.threat_families_used ? item.threat_families_used.split(', ').slice(0, 3).map(family => 
                             `<span class="family-tag">${family.trim()}</span>`
                         ).join(', ') : '<span class="no-data">None</span>'}
                     </div>
@@ -6948,6 +7004,15 @@ function updateElement(elementId, value) {
     const element = document.getElementById(elementId);
     if (element) {
         element.textContent = value;
+        return true;
+    }
+    return false;
+}
+
+function updateElementHTML(elementId, value) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.innerHTML = value;
         return true;
     }
     return false;
