@@ -145,6 +145,20 @@ class ThreatDashboard:
             return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} <= EOMONTH(GETDATE(), -1)"
         else:
             return "1=1"  # All dates
+
+    def format_date_for_display(self, date_value):
+        """Format date for display in the UI"""
+        if not date_value:
+            return "-"
+        try:
+            if isinstance(date_value, str):
+                # Parse the date string and format it
+                from datetime import datetime
+                parsed_date = datetime.strptime(date_value.split(' ')[0], '%Y-%m-%d')
+                return parsed_date.strftime('%Y-%m-%d')
+            return str(date_value)
+        except:
+            return str(date_value) if date_value else "-"
     
     def get_campaign_filter_conditions(self, table_alias, campaign_filter):
         """Generate campaign filter conditions"""
@@ -596,7 +610,7 @@ class ThreatDashboard:
                 FROM phishlabs_case_data_incidents i
                 JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
                 JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-                WHERE {date_condition}                AND n.threat_family IS NOT NULL AND n.threat_family != ''
+                WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
                 GROUP BY n.threat_family, CAST(i.date_created_local AS DATE)
             ),
             threat_family_summary AS (
@@ -758,7 +772,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
             AND u.domain IS NOT NULL AND u.domain != ''
             GROUP BY n.threat_family
             HAVING COUNT(DISTINCT i.case_number) >= 2
@@ -814,9 +828,9 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family
-            HAVING COUNT(DISTINCT i.case_number) >= 2
+            HAVING COUNT(DISTINCT i.case_number) >= 1
             ORDER BY COUNT(DISTINCT i.case_number) DESC
             """
             
@@ -832,7 +846,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family, u.url_path
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
             """
@@ -850,7 +864,7 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
             AND i.brand IS NOT NULL AND i.brand != ''
             GROUP BY n.threat_family, i.brand
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
@@ -977,6 +991,210 @@ class ThreatDashboard:
         except Exception as e:
             logger.error(f"Error in get_actor_infrastructure_all_values: {e}")
             return {"tlds": [], "registrars": [], "isps": [], "countries": []}
+
+    def get_detailed_infrastructure(self, infra_type, infra_value):
+        """Get detailed infrastructure data for a specific threat actor or family"""
+        try:
+            if infra_type == 'actor':
+                # Get basic actor info
+                actor_info_query = """
+                SELECT 
+                    th.name as threat_actor,
+                    COUNT(DISTINCT i.case_number) as total_cases,
+                    MIN(i.date_created_local) as active_since,
+                    MAX(i.date_created_local) as last_case
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                GROUP BY th.name
+                """
+                
+                # Get all TLDs for this actor
+                tld_query = """
+                SELECT 
+                    u.tld,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                AND u.tld IS NOT NULL AND u.tld != ''
+                GROUP BY u.tld
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                # Get all registrars for this actor
+                registrar_query = """
+                SELECT 
+                    u.registrar_name,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                AND u.registrar_name IS NOT NULL AND u.registrar_name != ''
+                GROUP BY u.registrar_name
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                # Get all ISPs for this actor
+                isp_query = """
+                SELECT 
+                    u.host_isp,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                AND u.host_isp IS NOT NULL AND u.host_isp != ''
+                GROUP BY u.host_isp
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                # Get all countries for this actor
+                country_query = """
+                SELECT 
+                    u.host_country,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                AND u.host_country IS NOT NULL AND u.host_country != ''
+                GROUP BY u.host_country
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                # Get all URL paths for this actor
+                url_paths_query = """
+                SELECT 
+                    u.url_path,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE th.name = ?
+                AND u.url_path IS NOT NULL AND u.url_path != ''
+                GROUP BY u.url_path
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+            else:  # family
+                # Similar queries but filtered by threat family instead of actor
+                actor_info_query = """
+                SELECT 
+                    n.threat_family as threat_actor,
+                    COUNT(DISTINCT i.case_number) as total_cases,
+                    MIN(i.date_created_local) as active_since,
+                    MAX(i.date_created_local) as last_case
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                GROUP BY n.threat_family
+                """
+                
+                tld_query = """
+                SELECT 
+                    u.tld,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                AND u.tld IS NOT NULL AND u.tld != ''
+                GROUP BY u.tld
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                registrar_query = """
+                SELECT 
+                    u.registrar_name,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                AND u.registrar_name IS NOT NULL AND u.registrar_name != ''
+                GROUP BY u.registrar_name
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                isp_query = """
+                SELECT 
+                    u.host_isp,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                AND u.host_isp IS NOT NULL AND u.host_isp != ''
+                GROUP BY u.host_isp
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                country_query = """
+                SELECT 
+                    u.host_country,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                AND u.host_country IS NOT NULL AND u.host_country != ''
+                GROUP BY u.host_country
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+                
+                url_paths_query = """
+                SELECT 
+                    u.url_path,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE n.threat_family = ?
+                AND u.url_path IS NOT NULL AND u.url_path != ''
+                GROUP BY u.url_path
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+            
+            # Execute queries with parameter
+            actor_info = self.execute_query(actor_info_query, (infra_value,))
+            tld_data = self.execute_query(tld_query, (infra_value,))
+            registrar_data = self.execute_query(registrar_query, (infra_value,))
+            isp_data = self.execute_query(isp_query, (infra_value,))
+            country_data = self.execute_query(country_query, (infra_value,))
+            url_paths_data = self.execute_query(url_paths_query, (infra_value,))
+            
+            # Format the response
+            actor_info = actor_info[0] if actor_info and not isinstance(actor_info, dict) and len(actor_info) > 0 else {}
+            
+            return {
+                "success": True,
+                "total_cases": actor_info.get('total_cases', 0),
+                "active_since": self.format_date_for_display(actor_info.get('active_since')),
+                "last_case": self.format_date_for_display(actor_info.get('last_case')),
+                "tlds": [{"value": item['tld'], "count": item['case_count']} for item in (tld_data if tld_data and not isinstance(tld_data, dict) else [])],
+                "registrars": [{"value": item['registrar_name'], "count": item['case_count']} for item in (registrar_data if registrar_data and not isinstance(registrar_data, dict) else [])],
+                "isps": [{"value": item['host_isp'], "count": item['case_count']} for item in (isp_data if isp_data and not isinstance(isp_data, dict) else [])],
+                "countries": [{"value": item['host_country'], "count": item['case_count']} for item in (country_data if country_data and not isinstance(country_data, dict) else [])],
+                "url_paths": [{"url_path": item['url_path'], "case_count": item['case_count']} for item in (url_paths_data if url_paths_data and not isinstance(url_paths_data, dict) else [])]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in get_detailed_infrastructure: {e}")
+            return {
+                "success": False,
+                "message": str(e),
+                "total_cases": 0,
+                "active_since": "-",
+                "last_case": "-",
+                "tlds": [],
+                "registrars": [],
+                "isps": [],
+                "countries": [],
+                "url_paths": []
+            }
 
     def get_url_path_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get URL path patterns by threat actors"""
@@ -2539,29 +2757,20 @@ class ThreatDashboard:
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             
-            whois_query = f"""
+            
+            # Simplified WHOIS attribution query that aggregates data properly
+            # Proper WHOIS attribution query with aggregation
+            whois_query = """
             SELECT 
-                COALESCE(n.flagged_whois_email, n.flagged_whois_name, 'Unknown') as registrant,
                 n.flagged_whois_email,
                 n.flagged_whois_name,
-                COUNT(DISTINCT i.case_number) as total_cases,
-                COUNT(DISTINCT u.domain) as domains_registered,
-                STRING_AGG(n.threat_family, ', ') as threat_families_used,
-                STRING_AGG(u.tld, ', ') as tlds_used,
-                MIN(i.date_created_local) as first_registration,
-                MAX(i.date_created_local) as last_registration,
-                CASE 
-                    WHEN COUNT(DISTINCT i.case_number) >= 10 THEN 'High'
-                    WHEN COUNT(DISTINCT i.case_number) >= 5 THEN 'Medium'
-                    ELSE 'Low'
-                END as risk_level
+                n.threat_family,
+                COUNT(*) as total_cases
             FROM phishlabs_case_data_notes n
-            INNER JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}
-            AND (n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
-            GROUP BY n.flagged_whois_email, n.flagged_whois_name
-            HAVING COUNT(DISTINCT i.case_number) >= 1
+            WHERE ((n.flagged_whois_email IS NOT NULL AND n.flagged_whois_email != '') 
+                   OR (n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''))
+            GROUP BY n.flagged_whois_email, n.flagged_whois_name, n.threat_family
+            HAVING COUNT(*) >= 1
             ORDER BY total_cases DESC
             """
             
@@ -2569,9 +2778,41 @@ class ThreatDashboard:
             whois_data = self.execute_query(whois_query)
             logger.info(f"WHOIS Attribution returned {len(whois_data) if whois_data and not isinstance(whois_data, dict) else 0} records")
             
+            # Transform the data to match expected format
+            if whois_data and not isinstance(whois_data, dict) and len(whois_data) > 0:
+                transformed_data = []
+                for row in whois_data:
+                    transformed_row = {
+                        'registrant': row.get('flagged_whois_email') or row.get('flagged_whois_name') or 'Unknown',
+                        'flagged_whois_email': row.get('flagged_whois_email'),
+                        'flagged_whois_name': row.get('flagged_whois_name'),
+                        'total_cases': row.get('total_cases', 0),
+                        'threat_families_used': row.get('threat_family', ''),
+                        'domains_registered': 0,
+                        'tlds_used': '',
+                        'first_registration': None,
+                        'last_registration': None,
+                        'risk_level': 'Low' if row.get('total_cases', 0) < 5 else ('Medium' if row.get('total_cases', 0) < 10 else 'High')
+                    }
+                    transformed_data.append(transformed_row)
+                
+                whois_data = transformed_data
+            
             if isinstance(whois_data, dict) and 'error' in whois_data:
                 logger.error(f"WHOIS Attribution query error: {whois_data.get('error')}")
                 whois_data = []
+            
+            # Clean the threat families data to remove any leading semicolons or formatting issues
+            if whois_data and not isinstance(whois_data, dict):
+                for item in whois_data:
+                    if item.get('threat_families_used'):
+                        # Clean the threat families string
+                        cleaned = item['threat_families_used'].strip()
+                        # Remove leading/trailing semicolons and commas
+                        cleaned = cleaned.strip(';,')
+                        # Split by common delimiters and rejoin with commas
+                        families = [f.strip() for f in cleaned.replace(';', ',').split(',') if f.strip()]
+                        item['threat_families_used'] = ', '.join(families)
                 
             return whois_data or []
             
@@ -3233,7 +3474,7 @@ def api_actor_behavioral_analysis():
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family, n.flagged_whois_name, n.flagged_whois_email
             HAVING COUNT(DISTINCT i.case_number) >= 2
         )
@@ -3454,7 +3695,7 @@ def api_temporal_storytelling():
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND n.threat_family IS NOT NULL
+            WHERE {date_condition} AND n.threat_family IS NOT NULL
             GROUP BY n.threat_family
         )
         SELECT 
@@ -3559,7 +3800,7 @@ def api_predictive_insights():
                     FROM phishlabs_case_data_notes n
                     JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
                     LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                    WHERE {date_condition}                    AND n.threat_family IS NOT NULL
+                    WHERE {date_condition} AND n.threat_family IS NOT NULL
                     GROUP BY n.threat_family
                 )
                 SELECT 
@@ -5685,6 +5926,22 @@ def api_risk_configuration():
         logger.error(f"Error in risk configuration API: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/dashboard/detailed-infrastructure')
+def api_detailed_infrastructure():
+    """Get detailed infrastructure data for a specific threat actor or family"""
+    try:
+        infra_type = request.args.get('type', 'actor')  # 'actor' or 'family'
+        infra_value = request.args.get('value', '')
+        
+        if not infra_value:
+            return jsonify({"error": "No value specified"}), 400
+        
+        detailed_data = dashboard.get_detailed_infrastructure(infra_type, infra_value)
+        return jsonify(detailed_data)
+    except Exception as e:
+        logger.error(f"Error fetching detailed infrastructure: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/insert-test-data', methods=['POST'])
 def insert_test_data():
     """API endpoint to insert comprehensive test data for Threat Intelligence Dashboard"""
@@ -6400,11 +6657,17 @@ def get_overlapping_infrastructure(all_campaigns_data):
                     value = identifier.get('value', '')
                     
                     if field == 'case_number':
-                        case_to_campaign[str(value)] = campaign_name
+                        if str(value) not in case_to_campaign:
+                            case_to_campaign[str(value)] = []
+                        case_to_campaign[str(value)].append(campaign_name)
                     elif field == 'infrid':
-                        infrid_to_campaign[str(value)] = campaign_name
+                        if str(value) not in infrid_to_campaign:
+                            infrid_to_campaign[str(value)] = []
+                        infrid_to_campaign[str(value)].append(campaign_name)
                     elif field == 'incident_id':
-                        incident_to_campaign[str(value)] = campaign_name
+                        if str(value) not in incident_to_campaign:
+                            incident_to_campaign[str(value)] = []
+                        incident_to_campaign[str(value)].append(campaign_name)
         
         overlapping_data = {
             'ip_addresses': {},
@@ -6441,24 +6704,26 @@ def get_overlapping_infrastructure(all_campaigns_data):
                     url_path = row.get('url_path', '')
                     case_number = row.get('case_number', '')
                     
-                    campaign_name = case_to_campaign.get(case_number, '')
-                    if not campaign_name:
+                    campaign_names = case_to_campaign.get(case_number, [])
+                    if not campaign_names:
                         continue
                     
-                    if ip and ip != '':
-                        if ip not in infrastructure_groups:
-                            infrastructure_groups[ip] = {'type': 'ip_addresses', 'campaigns': set()}
-                        infrastructure_groups[ip]['campaigns'].add(campaign_name)
-                    
-                    if domain and domain != '':
-                        if domain not in infrastructure_groups:
-                            infrastructure_groups[domain] = {'type': 'domains', 'campaigns': set()}
-                        infrastructure_groups[domain]['campaigns'].add(campaign_name)
-                    
-                    if url_path and url_path != '':
-                        if url_path not in infrastructure_groups:
-                            infrastructure_groups[url_path] = {'type': 'url_paths', 'campaigns': set()}
-                        infrastructure_groups[url_path]['campaigns'].add(campaign_name)
+                    # Add all campaigns that this case belongs to
+                    for campaign_name in campaign_names:
+                        if ip and ip != '':
+                            if ip not in infrastructure_groups:
+                                infrastructure_groups[ip] = {'type': 'ip_addresses', 'campaigns': set()}
+                            infrastructure_groups[ip]['campaigns'].add(campaign_name)
+                        
+                        if domain and domain != '':
+                            if domain not in infrastructure_groups:
+                                infrastructure_groups[domain] = {'type': 'domains', 'campaigns': set()}
+                            infrastructure_groups[domain]['campaigns'].add(campaign_name)
+                        
+                        if url_path and url_path != '':
+                            if url_path not in infrastructure_groups:
+                                infrastructure_groups[url_path] = {'type': 'url_paths', 'campaigns': set()}
+                            infrastructure_groups[url_path]['campaigns'].add(campaign_name)
                 
                 # Add to overlapping_data only items that appear in multiple campaigns
                 for item, data in infrastructure_groups.items():
@@ -6495,29 +6760,31 @@ def get_overlapping_infrastructure(all_campaigns_data):
                     name = row.get('flagged_whois_name', '')
                     case_number = row.get('case_number', '')
                     
-                    campaign_name = case_to_campaign.get(case_number, '')
-                    if not campaign_name:
+                    campaign_names = case_to_campaign.get(case_number, [])
+                    if not campaign_names:
                         continue
                     
-                    if handle and handle != '':
-                        if handle not in threat_groups:
-                            threat_groups[handle] = {'type': 'threatactor_handles', 'campaigns': set()}
-                        threat_groups[handle]['campaigns'].add(campaign_name)
-                    
-                    if family and family != '':
-                        if family not in threat_groups:
-                            threat_groups[family] = {'type': 'threat_family', 'campaigns': set()}
-                        threat_groups[family]['campaigns'].add(campaign_name)
-                    
-                    if email and email != '':
-                        if email not in threat_groups:
-                            threat_groups[email] = {'type': 'flagged_whois_email', 'campaigns': set()}
-                        threat_groups[email]['campaigns'].add(campaign_name)
-                    
-                    if name and name != '':
-                        if name not in threat_groups:
-                            threat_groups[name] = {'type': 'flagged_whois_name', 'campaigns': set()}
-                        threat_groups[name]['campaigns'].add(campaign_name)
+                    # Add all campaigns that this case belongs to
+                    for campaign_name in campaign_names:
+                        if handle and handle != '':
+                            if handle not in threat_groups:
+                                threat_groups[handle] = {'type': 'threatactor_handles', 'campaigns': set()}
+                            threat_groups[handle]['campaigns'].add(campaign_name)
+                        
+                        if family and family != '':
+                            if family not in threat_groups:
+                                threat_groups[family] = {'type': 'threat_family', 'campaigns': set()}
+                            threat_groups[family]['campaigns'].add(campaign_name)
+                        
+                        if email and email != '':
+                            if email not in threat_groups:
+                                threat_groups[email] = {'type': 'flagged_whois_email', 'campaigns': set()}
+                            threat_groups[email]['campaigns'].add(campaign_name)
+                        
+                        if name and name != '':
+                            if name not in threat_groups:
+                                threat_groups[name] = {'type': 'flagged_whois_name', 'campaigns': set()}
+                            threat_groups[name]['campaigns'].add(campaign_name)
                 
                 # Add to overlapping_data only items that appear in multiple campaigns
                 for item, data in threat_groups.items():
@@ -6667,13 +6934,13 @@ def api_comprehensive_analysis():
                             value = identifier.get('value', '')
                             
                             if field == 'case_number' and value:
-                                campaign_case_numbers.append(value)
+                                campaign_case_numbers.append(str(value))
                             elif field == 'infrid' and value:
-                                campaign_infrids.append(value)
+                                campaign_infrids.append(str(value))
                             elif field == 'incident_id' and value:
-                                campaign_incident_ids.append(value)
+                                campaign_incident_ids.append(str(value))
                         elif isinstance(identifier, str) and identifier:
-                            campaign_case_numbers.append(identifier)
+                            campaign_case_numbers.append(str(identifier))
                     
                     # Query performance for this campaign
                     campaign_total = 0
@@ -7358,6 +7625,14 @@ def api_comprehensive_analysis():
         
         analysis_data['summary']['countries'] = len(analysis_data['geographic'])
         
+        # Calculate overlapping infrastructure across selected campaigns
+        selected_campaigns_data = {}
+        for campaign_name in campaign_names:
+            if campaign_name in dashboard.campaigns:
+                selected_campaigns_data[campaign_name] = dashboard.campaigns[campaign_name]
+        
+        analysis_data['overlapping_infrastructure'] = get_overlapping_infrastructure(selected_campaigns_data)
+        
         logger.info(f"Campaign analysis generated: {analysis_data['summary']}")
         return jsonify(analysis_data)
         
@@ -7378,7 +7653,6 @@ if __name__ == '__main__':
     # Verify dashboard initialization
     if dashboard is None:
         print("ERROR: Dashboard initialization failed!")
-        print("Please update the server and database variables in init_dashboard()")
         exit(1)
     else:
         print("=" * 60)
