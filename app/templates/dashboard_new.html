@@ -921,35 +921,6 @@
 
                             <!-- Threat Actors Tab -->
                             <div id="infra-actors" class="infra-tab-content">
-                                <div class="actor-infrastructure-grid">
-                                    <div class="actor-analysis-section">
-                                        <h4 class="section-title">Actor Infrastructure Preferences</h4>
-                                        <div class="actor-preference-table">
-                                            <table id="actorPreferencesTable">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Threat Actor</th>
-                                                        <th>TLD</th>
-                                                        <th>Registrar</th>
-                                                        <th>ISP</th>
-                                                        <th>Country</th>
-                                                        <th>URL Paths</th>
-                                                        <th>Cases</th>
-                                                        <th>Active Since</th>
-                                                        <th>Last Case</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody id="threatActorInfrastructureBody">
-                                                    <tr><td colspan="9" class="loading-cell">Loading actor preferences...</td></tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Threat Actors Tab -->
-                            <div id="infra-actors" class="infra-tab-content">
                                 <div class="threat-actor-infrastructure-container">
                                     <div class="intelligence-header">
                                         <h3 class="intelligence-title">Threat Actor Infrastructure Analysis</h3>
@@ -1009,7 +980,7 @@
                         </div>
                     </div>
 
-                    <!-- WHOIS Attribution - Below Infrastructure Analysis -->
+                    <!-- WHOIS Attribution -->
                     <div class="intel-card whois-card">
                         <div class="intel-header">
                             <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'WHOIS Attribution')" title="Click to copy chart for email">WHOIS Attribution</h3>
@@ -1031,6 +1002,102 @@
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Infrastructure Analysis -->
+                    <div class="intel-card detailed-infrastructure-card">
+                        <div class="intel-header">
+                            <h3 class="intel-title">Detailed Infrastructure Analysis</h3>
+                            <p class="intel-subtitle">Select a threat actor or family to view complete infrastructure details</p>
+                        </div>
+                        <div class="intel-body">
+                            <div class="selection-controls-sidebar">
+                                <div class="selection-group">
+                                    <label for="infrastructureActorSelect">Threat Actor:</label>
+                                    <select id="infrastructureActorSelect" class="infrastructure-select" onchange="loadDetailedInfrastructure('actor')">
+                                        <option value="">Select a threat actor...</option>
+                                    </select>
+                                </div>
+                                <div class="selection-group">
+                                    <label for="infrastructureFamilySelect">Threat Family:</label>
+                                    <select id="infrastructureFamilySelect" class="infrastructure-select" onchange="loadDetailedInfrastructure('family')">
+                                        <option value="">Select a threat family...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div id="detailedInfrastructureContent" class="detailed-content-sidebar" style="display: none;">
+                                <div class="detailed-info-header-sidebar">
+                                    <h5 id="detailedActorName">Selected Actor</h5>
+                                    <div class="detailed-stats-sidebar">
+                                        <div class="stat-item-sidebar">
+                                            <i class="fas fa-bug"></i>
+                                            <span id="detailedTotalCases">0</span> Cases
+                                        </div>
+                                        <div class="stat-item-sidebar">
+                                            <i class="fas fa-calendar"></i>
+                                            <span>Active: <span id="detailedActiveSince">-</span></span>
+                                        </div>
+                                        <div class="stat-item-sidebar">
+                                            <i class="fas fa-clock"></i>
+                                            <span>Last: <span id="detailedLastCase">-</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="detailed-sections-sidebar">
+                                    <div class="detailed-section-sidebar">
+                                        <h6 class="section-header-sidebar">
+                                            <i class="fas fa-globe"></i>
+                                            TLDs
+                                        </h6>
+                                        <div id="detailedTLDs" class="detailed-list-sidebar">
+                                            <!-- TLDs will be populated here -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="detailed-section-sidebar">
+                                        <h6 class="section-header-sidebar">
+                                            <i class="fas fa-registered"></i>
+                                            Registrars
+                                        </h6>
+                                        <div id="detailedRegistrars" class="detailed-list-sidebar">
+                                            <!-- Registrars will be populated here -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="detailed-section-sidebar">
+                                        <h6 class="section-header-sidebar">
+                                            <i class="fas fa-server"></i>
+                                            ISPs
+                                        </h6>
+                                        <div id="detailedISPs" class="detailed-list-sidebar">
+                                            <!-- ISPs will be populated here -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="detailed-section-sidebar">
+                                        <h6 class="section-header-sidebar">
+                                            <i class="fas fa-flag"></i>
+                                            Countries
+                                        </h6>
+                                        <div id="detailedCountries" class="detailed-list-sidebar">
+                                            <!-- Countries will be populated here -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="detailed-section-sidebar">
+                                        <h6 class="section-header-sidebar">
+                                            <i class="fas fa-link"></i>
+                                            URL Paths
+                                        </h6>
+                                        <div id="detailedURLPaths" class="detailed-list-sidebar url-paths-detailed-sidebar">
+                                            <!-- URL Paths will be populated here -->
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1649,7 +1716,7 @@
     
 
     <!-- JavaScript -->
-    <script src="{{ url_for('static', filename='dashboard-new.js') }}?v=17"></script>
+    <script src="{{ url_for('static', filename='dashboard-new.js') }}?v=30"></script>
     <script>
         // Test CampaignManagement class accessibility
         function testCampaignManagement() {
