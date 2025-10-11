@@ -7953,7 +7953,7 @@ function copyChartAsHTML(chartElement, chartTitle) {
                         }
                     } else {
                         // Default styling for non-Executive Summary charts
-                        img.style.cssText = 'width: 100%; height: auto; max-width: 600px; display: block; margin: 12px auto; border-radius: 8px;';
+                    img.style.cssText = 'width: 100%; height: auto; max-width: 600px; display: block; margin: 12px auto; border-radius: 8px;';
                     }
                     
                     canvas.parentNode.replaceChild(img, canvas);
@@ -8448,10 +8448,18 @@ class CampaignManagement {
             return;
         }
 
-        campaignList.innerHTML = this.campaigns.map(campaign => `
+        campaignList.innerHTML = this.campaigns.map(campaign => {
+            const incompleteCount = campaign.incomplete_metadata_count || 0;
+            const metadataStatus = incompleteCount > 0 
+                ? `<span style="color: #f59e0b; font-size: 11px; margin-left: 8px;" title="${incompleteCount} identifier(s) with incomplete metadata">
+                     <i class="fas fa-exclamation-triangle"></i> ${incompleteCount} pending
+                   </span>`
+                : '';
+            
+            return `
             <div class="campaign-item" data-campaign="${campaign.name}" onclick="campaignManagement.selectCampaign('${campaign.name}')">
                 <div class="campaign-item-info">
-                    <div class="campaign-item-name">${campaign.name}</div>
+                    <div class="campaign-item-name">${campaign.name}${metadataStatus}</div>
                     <div class="campaign-item-description">${campaign.description || 'No description'}</div>
                     <div class="campaign-item-stats">
                         <div class="campaign-item-stat">
@@ -8461,7 +8469,8 @@ class CampaignManagement {
                     </div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
     async selectCampaign(campaignName) {
@@ -9516,6 +9525,81 @@ class CampaignManagement {
                         </button>
                     </div>
                 `;
+            }
+        }
+    }
+
+    async refreshCampaignMetadata(forceRefresh = false) {
+        /**
+         * Refresh metadata for selected campaigns
+         * forceRefresh: if true, refreshes all identifiers regardless of age
+         */
+        try {
+            if (this.selectedCampaignsForViewer.length === 0) {
+                this.showNotification('Please select at least one campaign', 'warning');
+                return;
+            }
+            
+            const statusIndicator = document.getElementById('metadataStatusIndicator');
+            if (statusIndicator) {
+                statusIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing metadata...';
+                statusIndicator.style.color = '#3b82f6';
+            }
+            
+            let totalRefreshed = 0;
+            let totalFailed = 0;
+            
+            // Refresh each selected campaign
+            for (const campaignName of this.selectedCampaignsForViewer) {
+                const forceParam = forceRefresh ? '?force=true' : '';
+                const response = await fetch(`/api/campaigns/${campaignName}/refresh-metadata${forceParam}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    totalRefreshed += result.total_refreshed || 0;
+                    totalFailed += result.failed || 0;
+                    console.log(`<i class="fas fa-sync"></i> Refreshed ${result.total_refreshed} identifiers for ${campaignName}`);
+                } else {
+                    console.error(`<i class="fas fa-times-circle"></i> Failed to refresh ${campaignName}`);
+                    totalFailed++;
+                }
+            }
+            
+            // Show result
+            if (statusIndicator) {
+                if (totalRefreshed > 0) {
+                    statusIndicator.innerHTML = `<i class="fas fa-check-circle"></i> Refreshed ${totalRefreshed} identifier(s)`;
+                    statusIndicator.style.color = '#10b981';
+                    setTimeout(() => {
+                        statusIndicator.innerHTML = '';
+                    }, 5000);
+                } else {
+                    statusIndicator.innerHTML = '<i class="fas fa-info-circle"></i> All metadata up to date';
+                    statusIndicator.style.color = '#6b7280';
+                    setTimeout(() => {
+                        statusIndicator.innerHTML = '';
+                    }, 3000);
+                }
+            }
+            
+            this.showNotification(`Metadata refreshed: ${totalRefreshed} updated, ${totalFailed} failed`, 'success');
+            
+            // Reload campaign data to show updated information
+            await this.loadCampaigns();
+            if (this.selectedCampaignsForViewer.length > 0) {
+                await this.loadCampaignData();
+            }
+            
+        } catch (error) {
+            console.error('<i class="fas fa-times-circle"></i> Error refreshing metadata:', error);
+            this.showNotification('Failed to refresh metadata', 'error');
+            
+            const statusIndicator = document.getElementById('metadataStatusIndicator');
+            if (statusIndicator) {
+                statusIndicator.innerHTML = '<i class="fas fa-exclamation-circle"></i> Refresh failed';
+                statusIndicator.style.color = '#ef4444';
             }
         }
     }
