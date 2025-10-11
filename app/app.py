@@ -4077,34 +4077,555 @@ def api_campaigns_names():
         logger.error(f"Error in campaigns names API: {e}")
         return jsonify({"error": str(e)}), 500
 
+# ==================== CAMPAIGN METADATA FETCH FUNCTIONS ====================
+# 
+# METADATA UPDATE FREQUENCY CONFIGURATION:
+# - Incomplete metadata (fetch failed): Retries every 2 hours (max 10 attempts)
+# - Complete metadata (stale data): Refreshes every 24 hours by default
+# - Manual refresh: User can force immediate refresh via API
+# 
+# TO CHANGE REFRESH FREQUENCY:
+# 1. For incomplete retries: Edit line 4428 - timedelta(hours=2)
+# 2. For complete refresh: Edit line 4469 - refresh_interval_hours=24
+# 3. For per-request: Use API param - ?interval=6 (for 6 hours)
+#
+# ==============================================================================
+
+def fetch_case_metadata(identifier_type, identifier_value, table):
+    """
+    Fetch comprehensive metadata for a case to store in campaigns.json
+    Returns metadata dict with all essential fields, or None if case not found
+    Includes retry tracking for failed fetches
+    """
+    try:
+        logger.info(f"Fetching metadata for {identifier_type}={identifier_value} from {table}")
+        
+        if table == 'phishlabs_case_data_incidents':
+            query = """
+            SELECT 
+                i.case_number,
+                i.case_type,
+                i.date_created_local,
+                i.date_closed_local,
+                CASE WHEN i.date_closed_local IS NULL THEN 'active' ELSE 'closed' END as status,
+                i.brand,
+                i.title,
+                i.case_status,
+                i.resolution_status
+            FROM phishlabs_case_data_incidents i
+            WHERE i.case_number = ?
+            """
+            results = dashboard.execute_query(query, (identifier_value,))
+            
+            if results and len(results) > 0:
+                row = results[0]
+                metadata = {
+                    'table': table,
+                    'field': identifier_type,
+                    'value': identifier_value,
+                    'case_type': row.get('case_type'),
+                    'date_created_local': row.get('date_created_local').isoformat() if row.get('date_created_local') else None,
+                    'date_closed_local': row.get('date_closed_local').isoformat() if row.get('date_closed_local') else None,
+                    'status': row.get('status'),
+                    'brand': row.get('brand'),
+                    'title': row.get('title'),
+                    'case_status': row.get('case_status'),
+                    'resolution_status': row.get('resolution_status'),
+                    'metadata_fetched': datetime.now().isoformat(),
+                    'metadata_complete': True
+                }
+                logger.info(f"Successfully fetched metadata for case_number {identifier_value}")
+                return metadata
+            else:
+                logger.warning(f"No data found for case_number {identifier_value}")
+                return create_incomplete_metadata(table, identifier_type, identifier_value)
+                
+        elif table == 'phishlabs_threat_intelligence_incident':
+            query = """
+            SELECT 
+                ti.infrid,
+                ti.cat_name,
+                ti.create_date,
+                ti.date_resolved,
+                CASE WHEN ti.date_resolved IS NULL THEN 'monitoring' ELSE 'resolved' END as status,
+                ti.domain,
+                ti.url,
+                ti.product,
+                ti.severity,
+                ti.ticket_status
+            FROM phishlabs_threat_intelligence_incident ti
+            WHERE ti.infrid = ?
+            """
+            results = dashboard.execute_query(query, (identifier_value,))
+            
+            if results and len(results) > 0:
+                row = results[0]
+                metadata = {
+                    'table': table,
+                    'field': identifier_type,
+                    'value': identifier_value,
+                    'cat_name': row.get('cat_name'),
+                    'create_date': row.get('create_date').isoformat() if row.get('create_date') else None,
+                    'date_resolved': row.get('date_resolved').isoformat() if row.get('date_resolved') else None,
+                    'status': row.get('status'),
+                    'domain': row.get('domain'),
+                    'url': row.get('url'),
+                    'product': row.get('product'),
+                    'severity': row.get('severity'),
+                    'ticket_status': row.get('ticket_status'),
+                    'metadata_fetched': datetime.now().isoformat(),
+                    'metadata_complete': True
+                }
+                logger.info(f"Successfully fetched metadata for infrid {identifier_value}")
+                return metadata
+            else:
+                logger.warning(f"No data found for infrid {identifier_value}")
+                return create_incomplete_metadata(table, identifier_type, identifier_value)
+                
+        elif table == 'phishlabs_incident':
+            query = """
+            SELECT 
+                si.incident_id,
+                si.incident_type,
+                si.created_local,
+                si.closed_local,
+                CASE WHEN si.closed_local IS NULL THEN 'active' ELSE 'closed' END as status,
+                si.executive_name,
+                si.threat_type,
+                si.title,
+                si.status as incident_status,
+                si.severity,
+                si.brand_name
+            FROM phishlabs_incident si
+            WHERE si.incident_id = ?
+            """
+            results = dashboard.execute_query(query, (identifier_value,))
+            
+            if results and len(results) > 0:
+                row = results[0]
+                metadata = {
+                    'table': table,
+                    'field': identifier_type,
+                    'value': identifier_value,
+                    'incident_type': row.get('incident_type'),
+                    'created_local': row.get('created_local').isoformat() if row.get('created_local') else None,
+                    'closed_local': row.get('closed_local').isoformat() if row.get('closed_local') else None,
+                    'status': row.get('status'),
+                    'executive_name': row.get('executive_name'),
+                    'threat_type': row.get('threat_type'),
+                    'title': row.get('title'),
+                    'incident_status': row.get('incident_status'),
+                    'severity': row.get('severity'),
+                    'brand_name': row.get('brand_name'),
+                    'metadata_fetched': datetime.now().isoformat(),
+                    'metadata_complete': True
+                }
+                logger.info(f"Successfully fetched metadata for incident_id {identifier_value}")
+                return metadata
+            else:
+                logger.warning(f"No data found for incident_id {identifier_value}")
+                return create_incomplete_metadata(table, identifier_type, identifier_value)
+                
+        elif table == 'phishlabs_case_data_associated_urls':
+            # For domains/URLs from associated_urls, get the linked case data
+            query = """
+            SELECT 
+                au.case_number,
+                au.url,
+                au.fqdn,
+                au.domain,
+                au.ip_address,
+                au.tld,
+                au.host_isp,
+                au.host_country,
+                i.case_type,
+                i.date_created_local,
+                i.date_closed_local,
+                CASE WHEN i.date_closed_local IS NULL THEN 'active' ELSE 'closed' END as status,
+                i.brand
+            FROM phishlabs_case_data_associated_urls au
+            LEFT JOIN phishlabs_case_data_incidents i ON au.case_number = i.case_number
+            WHERE au.domain = ? OR au.fqdn = ? OR au.url LIKE ?
+            """
+            results = dashboard.execute_query(query, (identifier_value, identifier_value, f'%{identifier_value}%'))
+            
+            if results and len(results) > 0:
+                row = results[0]
+                metadata = {
+                    'table': table,
+                    'field': identifier_type,
+                    'value': identifier_value,
+                    'case_number': row.get('case_number'),
+                    'url': row.get('url'),
+                    'domain': row.get('domain'),
+                    'fqdn': row.get('fqdn'),
+                    'ip_address': row.get('ip_address'),
+                    'tld': row.get('tld'),
+                    'host_isp': row.get('host_isp'),
+                    'host_country': row.get('host_country'),
+                    'case_type': row.get('case_type'),
+                    'date_created_local': row.get('date_created_local').isoformat() if row.get('date_created_local') else None,
+                    'date_closed_local': row.get('date_closed_local').isoformat() if row.get('date_closed_local') else None,
+                    'status': row.get('status'),
+                    'brand': row.get('brand'),
+                    'metadata_fetched': datetime.now().isoformat(),
+                    'metadata_complete': True
+                }
+                logger.info(f"Successfully fetched metadata for domain {identifier_value}")
+                return metadata
+            else:
+                logger.warning(f"No data found for domain {identifier_value}")
+                return create_incomplete_metadata(table, identifier_type, identifier_value)
+        else:
+            logger.error(f"Unknown table: {table}")
+            return create_incomplete_metadata(table, identifier_type, identifier_value)
+            
+    except Exception as e:
+        logger.error(f"Error fetching metadata for {identifier_type}={identifier_value}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return create_incomplete_metadata(table, identifier_type, identifier_value, error=str(e))
+
+def create_incomplete_metadata(table, identifier_type, identifier_value, error=None):
+    """Create a placeholder metadata entry for cases where fetch failed or no data found"""
+    metadata = {
+        'table': table,
+        'field': identifier_type,
+        'value': identifier_value,
+        'metadata_complete': False,
+        'metadata_fetched': datetime.now().isoformat(),
+        'metadata_retry_count': 0,
+        'metadata_last_retry': None,
+        'metadata_next_retry': (datetime.now() + timedelta(hours=2)).isoformat(),
+        'status': 'pending'  # Default status
+    }
+    if error:
+        metadata['metadata_error'] = error
+    return metadata
+
+def matches_date_filter(identifier, date_filter, start_date, end_date):
+    """Check if identifier matches date filter using cached metadata"""
+    if date_filter == 'all':
+        return True
+    
+    # Get the appropriate date field based on table
+    table = identifier.get('table')
+    date_str = None
+    
+    if table == 'phishlabs_case_data_incidents':
+        date_str = identifier.get('date_created_local')
+    elif table == 'phishlabs_threat_intelligence_incident':
+        date_str = identifier.get('create_date')
+    elif table == 'phishlabs_incident':
+        date_str = identifier.get('created_local')
+    elif table == 'phishlabs_case_data_associated_urls':
+        date_str = identifier.get('date_created_local')
+    
+    if not date_str:
+        return True  # If no date, include it
+    
+    try:
+        case_date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        now = datetime.now()
+        
+        # Apply date filter logic
+        if date_filter == 'today':
+            return case_date.date() == now.date()
+        elif date_filter == 'yesterday':
+            yesterday = (now - timedelta(days=1)).date()
+            return case_date.date() == yesterday
+        elif date_filter == 'last_7_days':
+            return case_date >= (now - timedelta(days=7))
+        elif date_filter == 'last_30_days':
+            return case_date >= (now - timedelta(days=30))
+        elif date_filter == 'custom' and start_date and end_date:
+            start = datetime.fromisoformat(start_date)
+            end = datetime.fromisoformat(end_date)
+            return start <= case_date <= end
+        
+        return True
+    except:
+        return True  # If parsing fails, include it
+
+def calculate_age_days(created_date_str, closed_date_str):
+    """Calculate age in days from cached date strings"""
+    try:
+        if not created_date_str:
+            return None
+        
+        created = datetime.fromisoformat(created_date_str) if isinstance(created_date_str, str) else created_date_str
+        
+        if closed_date_str:
+            closed = datetime.fromisoformat(closed_date_str) if isinstance(closed_date_str, str) else closed_date_str
+            return (closed - created).days
+        else:
+            # Still active, calculate age from creation to now
+            return (datetime.now() - created).days
+    except:
+        return None
+
+def should_retry_metadata_fetch(identifier):
+    """
+    Check if metadata should be retried for an identifier
+    Returns True if:
+    - metadata_complete is False AND next_retry time has passed AND retry_count < 10
+    """
+    if not identifier.get('metadata_complete', False):
+        retry_count = identifier.get('metadata_retry_count', 0)
+        if retry_count >= 10:  # Max retries reached
+            logger.info(f"Max retries reached for {identifier.get('value')}")
+            return False
+        
+        next_retry = identifier.get('metadata_next_retry')
+        if next_retry:
+            try:
+                next_retry_time = datetime.fromisoformat(next_retry)
+                if datetime.now() >= next_retry_time:
+                    logger.info(f"Retry time reached for {identifier.get('value')}")
+                    return True
+            except:
+                return True  # If parsing fails, retry
+        
+        return True  # If no next_retry set, retry
+    
+    return False
+
+def should_refresh_complete_metadata(identifier, refresh_interval_hours=24):
+    """
+    Check if COMPLETE metadata should be refreshed to detect DB updates
+    Returns True if:
+    - metadata_complete is True
+    - last refresh was more than refresh_interval_hours ago (default 24 hours)
+    """
+    if not identifier.get('metadata_complete', False):
+        return False  # Use should_retry_metadata_fetch for incomplete
+    
+    metadata_fetched = identifier.get('metadata_fetched')
+    if not metadata_fetched:
+        return True  # No fetch time, should refresh
+    
+    try:
+        last_fetch_time = datetime.fromisoformat(metadata_fetched)
+        hours_since_fetch = (datetime.now() - last_fetch_time).total_seconds() / 3600
+        
+        if hours_since_fetch >= refresh_interval_hours:
+            logger.info(f"Metadata for {identifier.get('value')} is {hours_since_fetch:.1f} hours old, refreshing")
+            return True
+    except:
+        return True  # If parsing fails, refresh
+    
+    return False
+
+def refresh_incomplete_metadata(campaign_name, force_refresh_all=False, refresh_interval_hours=24):
+    """
+    Refresh metadata for incomplete and stale identifiers in a campaign
+    
+    Args:
+        campaign_name: Name of campaign to refresh
+        force_refresh_all: If True, refresh ALL identifiers regardless of age
+        refresh_interval_hours: Hours before complete metadata is considered stale (default 24)
+    
+    Returns:
+        dict with counts: {'incomplete_refreshed': X, 'complete_refreshed': Y, 'failed': Z}
+    """
+    refresh_stats = {
+        'incomplete_refreshed': 0,
+        'complete_refreshed': 0,
+        'failed': 0
+    }
+    
+    try:
+        if campaign_name not in dashboard.campaigns:
+            return refresh_stats
+        
+        campaign = dashboard.campaigns[campaign_name]
+        
+        # Handle both old and new formats
+        identifiers = []
+        if isinstance(campaign, dict) and 'identifiers' in campaign:
+            identifiers = campaign['identifiers']
+        elif isinstance(campaign, list):
+            identifiers = campaign
+        
+        needs_save = False
+        
+        for i, identifier in enumerate(identifiers):
+            if not isinstance(identifier, dict):
+                continue
+            
+            should_refresh = False
+            refresh_reason = ""
+            
+            # Check if incomplete metadata needs retry
+            if should_retry_metadata_fetch(identifier):
+                should_refresh = True
+                refresh_reason = "incomplete_retry"
+            # Check if complete metadata is stale
+            elif force_refresh_all or should_refresh_complete_metadata(identifier, refresh_interval_hours):
+                should_refresh = True
+                refresh_reason = "stale_refresh"
+            
+            if should_refresh:
+                logger.info(f"Refreshing metadata for {identifier.get('value')} (reason: {refresh_reason})")
+                
+                # Fetch fresh metadata
+                new_metadata = fetch_case_metadata(
+                    identifier.get('field'),
+                    identifier.get('value'),
+                    identifier.get('table')
+                )
+                
+                if new_metadata and new_metadata.get('metadata_complete'):
+                    # Preserve user-added description if exists
+                    old_description = identifier.get('description')
+                    
+                    # Update with new metadata
+                    identifier.update(new_metadata)
+                    
+                    # Restore user description
+                    if old_description and not new_metadata.get('description'):
+                        identifier['description'] = old_description
+                    
+                    if refresh_reason == "incomplete_retry":
+                        refresh_stats['incomplete_refreshed'] += 1
+                    else:
+                        refresh_stats['complete_refreshed'] += 1
+                    
+                    needs_save = True
+                    logger.info(f"Successfully refreshed metadata for {identifier.get('value')}")
+                else:
+                    # Failed to fetch - only increment retry for incomplete
+                    if refresh_reason == "incomplete_retry":
+                        identifier['metadata_retry_count'] = identifier.get('metadata_retry_count', 0) + 1
+                        identifier['metadata_last_retry'] = datetime.now().isoformat()
+                        identifier['metadata_next_retry'] = (datetime.now() + timedelta(hours=2)).isoformat()
+                        refresh_stats['failed'] += 1
+                        needs_save = True
+                        logger.info(f"Metadata fetch still incomplete for {identifier.get('value')}, retry count: {identifier['metadata_retry_count']}")
+                    else:
+                        # For stale refresh failures, just log but don't mark as incomplete
+                        logger.warning(f"Failed to refresh stale metadata for {identifier.get('value')}, will try again later")
+                        refresh_stats['failed'] += 1
+        
+        if needs_save:
+            dashboard.save_campaigns()
+            total_refreshed = refresh_stats['incomplete_refreshed'] + refresh_stats['complete_refreshed']
+            logger.info(f"Campaign {campaign_name}: Refreshed {total_refreshed} identifiers ({refresh_stats['incomplete_refreshed']} incomplete, {refresh_stats['complete_refreshed']} stale), {refresh_stats['failed']} failed")
+        
+        return refresh_stats
+        
+    except Exception as e:
+        logger.error(f"Error refreshing metadata for campaign {campaign_name}: {e}")
+        return refresh_stats
+
 # ==================== CAMPAIGN MANAGEMENT CRUD OPERATIONS ====================
+
+@app.route('/api/campaigns/<campaign_name>/refresh-metadata', methods=['POST'])
+def api_refresh_campaign_metadata(campaign_name):
+    """
+    Manually refresh metadata for a campaign
+    Optional query param: force=true to refresh ALL identifiers regardless of age
+    Optional query param: interval=hours to set custom refresh interval (default 24)
+    """
+    try:
+        if campaign_name not in dashboard.campaigns:
+            return jsonify({"error": "Campaign not found"}), 404
+        
+        # Get optional parameters
+        force_refresh = request.args.get('force', 'false').lower() == 'true'
+        refresh_interval = int(request.args.get('interval', '24'))
+        
+        logger.info(f"Manual metadata refresh requested for campaign {campaign_name} (force={force_refresh}, interval={refresh_interval}h)")
+        
+        # Perform refresh
+        refresh_stats = refresh_incomplete_metadata(
+            campaign_name,
+            force_refresh_all=force_refresh,
+            refresh_interval_hours=refresh_interval
+        )
+        
+        total_refreshed = refresh_stats['incomplete_refreshed'] + refresh_stats['complete_refreshed']
+        
+        return jsonify({
+            "message": f"Metadata refresh completed for campaign {campaign_name}",
+            "total_refreshed": total_refreshed,
+            "incomplete_refreshed": refresh_stats['incomplete_refreshed'],
+            "complete_refreshed": refresh_stats['complete_refreshed'],
+            "failed": refresh_stats['failed'],
+            "force_refresh": force_refresh,
+            "refresh_interval_hours": refresh_interval
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in manual metadata refresh for campaign {campaign_name}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/campaigns/list')
 def api_get_campaigns():
-    """Get all campaigns with their details"""
+    """Get all campaigns with their details and auto-refresh incomplete metadata"""
     try:
         campaigns = []
+        refresh_stats = {
+            'total_campaigns': 0,
+            'campaigns_refreshed': 0,
+            'identifiers_refreshed': 0
+        }
+        
         for campaign_name, campaign_data in dashboard.campaigns.items():
             if campaign_name == "Test_Dynamic_Campaign":  # Skip empty test campaign
                 continue
+            
+            refresh_stats['total_campaigns'] += 1
+            
+            # Auto-refresh incomplete and stale metadata for this campaign
+            try:
+                campaign_refresh_stats = refresh_incomplete_metadata(campaign_name, force_refresh_all=False, refresh_interval_hours=24)
+                total_refreshed = campaign_refresh_stats['incomplete_refreshed'] + campaign_refresh_stats['complete_refreshed']
+                
+                if total_refreshed > 0:
+                    refresh_stats['campaigns_refreshed'] += 1
+                    refresh_stats['identifiers_refreshed'] += total_refreshed
+                    logger.info(f"Auto-refreshed {total_refreshed} identifiers in campaign {campaign_name} (incomplete: {campaign_refresh_stats['incomplete_refreshed']}, stale: {campaign_refresh_stats['complete_refreshed']})")
+            except Exception as refresh_error:
+                logger.error(f"Error refreshing metadata for campaign {campaign_name}: {refresh_error}")
                 
             # Count identifiers for this campaign
             identifiers = []
+            incomplete_count = 0
             
             # Handle different campaign data structures
             if isinstance(campaign_data, list):
                 for mapping in campaign_data:
-                    if isinstance(mapping, dict) and mapping.get('identifier_type') and mapping.get('identifier_value'):
-                        identifiers.append({
-                            'type': mapping['identifier_type'],
-                            'value': mapping['identifier_value'],
-                            'description': mapping.get('description', ''),
-                            'table': mapping.get('table', '')
-                        })
+                    if isinstance(mapping, dict):
+                        if not mapping.get('metadata_complete', True):
+                            incomplete_count += 1
+                        
+                        if mapping.get('identifier_type') and mapping.get('identifier_value'):
+                            identifiers.append({
+                                'type': mapping['identifier_type'],
+                                'value': mapping['identifier_value'],
+                                'description': mapping.get('description', ''),
+                                'table': mapping.get('table', ''),
+                                'metadata_complete': mapping.get('metadata_complete', True)
+                            })
+                        elif mapping.get('field') and mapping.get('value'):
+                            identifiers.append({
+                                'type': mapping['field'],
+                                'value': mapping['value'],
+                                'description': mapping.get('description', ''),
+                                'table': mapping.get('table', ''),
+                                'metadata_complete': mapping.get('metadata_complete', True)
+                            })
             elif isinstance(campaign_data, dict):
                 # Handle new campaign structure with identifiers list
                 if 'identifiers' in campaign_data and isinstance(campaign_data['identifiers'], list):
-                    identifiers = campaign_data['identifiers']
+                    for identifier in campaign_data['identifiers']:
+                        if isinstance(identifier, dict):
+                            if not identifier.get('metadata_complete', True):
+                                incomplete_count += 1
+                            identifiers.append(identifier)
+                        else:
+                            identifiers.append({'value': identifier})
             
             # Extract description based on data structure
             description = ''
@@ -4122,11 +4643,14 @@ def api_get_campaigns():
                 'name': campaign_name,
                 'description': description,
                 'identifier_count': len(identifiers),
+                'incomplete_metadata_count': incomplete_count,
                 'identifiers': identifiers,
                 'created_date': campaign_data.get('created_date', '2024-01-01') if isinstance(campaign_data, dict) else '2024-01-01',
                 'last_updated': campaign_data.get('last_updated', '2024-12-01') if isinstance(campaign_data, dict) else '2024-12-01',
                 'status': status
             })
+        
+        logger.info(f"Campaigns list: {refresh_stats['total_campaigns']} total, refreshed {refresh_stats['identifiers_refreshed']} identifiers in {refresh_stats['campaigns_refreshed']} campaigns")
         
         return jsonify(campaigns)
     except Exception as e:
@@ -4265,7 +4789,7 @@ def api_get_campaign_cases(campaign_name):
 
 @app.route('/api/campaigns/<campaign_name>/cases', methods=['POST'])
 def api_add_campaign_case(campaign_name):
-    """Add a case to a campaign"""
+    """Add a case to a campaign with metadata fetch"""
     try:
         data = request.get_json()
         case_number = data.get('case_number')
@@ -4283,20 +4807,33 @@ def api_add_campaign_case(campaign_name):
             if mapping.get('field') == 'case_number' and mapping.get('value') == case_number:
                 return jsonify({"error": "Case already exists in campaign"}), 400
         
-        # Add case to campaign
-        new_mapping = {
-            'identifier_type': 'case_number',
-            'identifier_value': case_number,
-            'table': table,
-            'description': description
-        }
-        dashboard.campaigns[campaign_name].append(new_mapping)
+        # Fetch comprehensive metadata for the case
+        logger.info(f"Fetching metadata for case_number {case_number} in table {table}")
+        metadata = fetch_case_metadata('case_number', case_number, table)
+        
+        # Add description if provided
+        if description:
+            metadata['description'] = description
+        
+        # Add case with metadata to campaign
+        dashboard.campaigns[campaign_name].append(metadata)
         
         # Save to JSON file
         dashboard.save_campaigns()
         
-        logger.info(f"Added case {case_number} to campaign {campaign_name}")
-        return jsonify({"message": "Case added to campaign successfully"}), 201
+        if metadata.get('metadata_complete'):
+            logger.info(f"Added case {case_number} to campaign {campaign_name} with complete metadata")
+            return jsonify({
+                "message": "Case added to campaign successfully with metadata",
+                "metadata_complete": True
+            }), 201
+        else:
+            logger.info(f"Added case {case_number} to campaign {campaign_name} with incomplete metadata (will retry)")
+            return jsonify({
+                "message": "Case added to campaign (metadata will be fetched)",
+                "metadata_complete": False,
+                "next_retry": metadata.get('metadata_next_retry')
+            }), 201
         
     except Exception as e:
         logger.error(f"Error adding case to campaign: {e}")
@@ -4365,7 +4902,7 @@ def api_get_campaign_domains(campaign_name):
 
 @app.route('/api/campaigns/<campaign_name>/domains', methods=['POST'])
 def api_add_campaign_domain(campaign_name):
-    """Add a domain to a campaign"""
+    """Add a domain to a campaign with metadata fetch"""
     try:
         data = request.get_json()
         domain = data.get('domain')
@@ -4383,20 +4920,33 @@ def api_add_campaign_domain(campaign_name):
             if mapping.get('field') == 'domain' and mapping.get('value') == domain:
                 return jsonify({"error": "Domain already exists in campaign"}), 400
         
-        # Add domain to campaign
-        new_mapping = {
-            'identifier_type': 'domain',
-            'identifier_value': domain,
-            'table': table,
-            'description': description
-        }
-        dashboard.campaigns[campaign_name].append(new_mapping)
+        # Fetch comprehensive metadata for the domain
+        logger.info(f"Fetching metadata for domain {domain} in table {table}")
+        metadata = fetch_case_metadata('domain', domain, table)
+        
+        # Add description if provided
+        if description:
+            metadata['description'] = description
+        
+        # Add domain with metadata to campaign
+        dashboard.campaigns[campaign_name].append(metadata)
         
         # Save to JSON file
         dashboard.save_campaigns()
         
-        logger.info(f"Added domain {domain} to campaign {campaign_name}")
-        return jsonify({"message": "Domain added to campaign successfully"}), 201
+        if metadata.get('metadata_complete'):
+            logger.info(f"Added domain {domain} to campaign {campaign_name} with complete metadata")
+            return jsonify({
+                "message": "Domain added to campaign successfully with metadata",
+                "metadata_complete": True
+            }), 201
+        else:
+            logger.info(f"Added domain {domain} to campaign {campaign_name} with incomplete metadata (will retry)")
+            return jsonify({
+                "message": "Domain added to campaign (metadata will be fetched)",
+                "metadata_complete": False,
+                "next_retry": metadata.get('metadata_next_retry')
+            }), 201
         
     except Exception as e:
         logger.error(f"Error adding domain to campaign: {e}")
@@ -5225,11 +5775,13 @@ def api_get_campaign_data(campaign_name):
 
 @app.route('/api/campaigns/data/multiple')
 def api_get_multiple_campaigns_data():
-    """Get comprehensive data for multiple campaigns"""
+    """Get comprehensive data for multiple campaigns using cached metadata (OPTIMIZED)"""
     try:
         campaign_names = request.args.getlist('campaigns')
         if not campaign_names:
             return jsonify({"error": "No campaigns specified"}), 400
+        
+        logger.info(f"Getting data for campaigns: {campaign_names}")
         
         # Get date filtering parameters
         date_filter = request.args.get('date_filter', 'all')
@@ -5240,6 +5792,7 @@ def api_get_multiple_campaigns_data():
         
         for campaign_name in campaign_names:
             if campaign_name in dashboard.campaigns:
+                logger.info(f"Processing campaign: {campaign_name}")
                 # Get data for this campaign
                 campaign_data = {
                     'case_data_incidents': [],
@@ -5248,183 +5801,101 @@ def api_get_multiple_campaigns_data():
                     'social_incidents': []
                 }
                 
-                # Get all identifiers for this campaign
-                identifiers = []
+                # *** OPTIMIZED: Use cached metadata from campaigns.json ***
                 campaign_data_obj = dashboard.campaigns[campaign_name]
                 
-                # Handle new campaign structure with identifiers array
+                # Handle both old and new campaign formats
+                identifiers = []
                 if isinstance(campaign_data_obj, dict) and 'identifiers' in campaign_data_obj:
-                    for identifier in campaign_data_obj['identifiers']:
-                        # Handle both string and object formats
-                        if isinstance(identifier, str):
-                            # Simple string format
-                            if identifier.isdigit():
-                                identifiers.append({
-                                    'type': 'case_number',
-                                    'value': identifier
-                                })
-                            else:
-                                identifiers.append({
-                                    'type': 'domain',
-                                    'value': identifier
-                                })
-                        elif isinstance(identifier, dict):
-                            # Object format
-                            field_type = identifier.get('field', 'case_number')
-                            field_value = identifier.get('value', '')
-                            
-                            if field_type == 'case_number' and str(field_value).isdigit():
-                                identifiers.append({
-                                    'type': 'case_number',
-                                    'value': str(field_value)
-                                })
-                            elif field_type == 'infrid':
-                                identifiers.append({
-                                    'type': 'infrid',
-                                    'value': str(field_value)
-                                })
-                            elif field_type == 'incident_id':
-                                identifiers.append({
-                                    'type': 'incident_id',
-                                    'value': str(field_value)
-                                })
-                            elif field_type in ['domain', 'fqdn', 'url', 'url_path']:
-                                identifiers.append({
-                                    'type': 'domain',
-                                    'value': str(field_value)
-                                })
-                # Handle old format (list of mapping objects)
+                    identifiers = campaign_data_obj['identifiers']
                 elif isinstance(campaign_data_obj, list):
-                    for mapping in campaign_data_obj:
-                        if isinstance(mapping, dict):
-                            if mapping.get('identifier_type') and mapping.get('identifier_value'):
-                                identifiers.append({
-                                    'type': mapping['identifier_type'],
-                                    'value': str(mapping['identifier_value'])
-                                })
-                            elif mapping.get('field') and mapping.get('value'):
-                                identifiers.append({
-                                    'type': mapping['field'],
-                                    'value': str(mapping['value'])
-                                })
+                    identifiers = campaign_data_obj
                 
-                # Search across all tables for each identifier
+                logger.info(f"Found {len(identifiers)} identifiers in campaign {campaign_name}")
+                
+                # *** OPTIMIZED: Use cached metadata instead of DB queries ***
                 for identifier in identifiers:
-                    identifier_type = identifier['type']
-                    identifier_value = identifier['value']
+                    if not isinstance(identifier, dict):
+                        continue
                     
-                    # Search in phishlabs_case_data_incidents - Get ALL cases for this campaign
-                    if identifier_type == 'case_number':
-                        # Build date condition for case data
-                        date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+                    # Check date filter using cached dates
+                    if not matches_date_filter(identifier, date_filter, start_date, end_date):
+                        continue
+                    
+                    table = identifier.get('table')
+                    identifier_value = identifier.get('value')
+                    
+                    # Use cached metadata for main case data
+                    if table == 'phishlabs_case_data_incidents':
+                        campaign_data['case_data_incidents'].append({
+                            'case_number': identifier_value,
+                            'case_type': identifier.get('case_type'),
+                            'title': identifier.get('title'),
+                            'case_status': identifier.get('case_status'),
+                            'date_created_local': identifier.get('date_created_local'),
+                            'date_closed_local': identifier.get('date_closed_local'),
+                            'age_days': calculate_age_days(identifier.get('date_created_local'), identifier.get('date_closed_local')),
+                            'brand': identifier.get('brand'),
+                            'status': identifier.get('status'),
+                            'resolution_status': identifier.get('resolution_status')
+                        })
                         
-                        case_query = f"""
-                        SELECT DISTINCT 
-                            i.case_number,
-                            u.url,
-                            i.case_type,
-                            i.date_created_local,
-                            i.date_closed_local,
-                            CASE 
-                                WHEN i.date_closed_local IS NOT NULL AND i.date_created_local IS NOT NULL 
-                                THEN DATEDIFF(day, i.date_created_local, i.date_closed_local)
-                                WHEN i.case_status = 'Closed' AND i.date_closed_local IS NULL AND i.date_created_local IS NOT NULL
-                                THEN DATEDIFF(day, i.date_created_local, GETDATE())
-                                ELSE NULL
-                            END as age_days,
-                            i.case_status,
-                            CASE 
-                                WHEN i.case_status = 'Closed' AND i.date_closed_local IS NULL 
-                                THEN 'Data Inconsistency: Status=Closed but no closed date'
-                                ELSE i.case_status
-                            END as case_status_display,
-                            r.name as registrar_name,
-                            u.host_isp
-                        FROM phishlabs_case_data_incidents i
-                        LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                        LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-                        WHERE i.case_number = '{identifier_value}' AND {date_condition}
-                        """
-                        case_results = dashboard.execute_query(case_query)
-                        if case_results and not isinstance(case_results, dict):
-                            campaign_data['case_data_incidents'].extend(case_results)
-                    
-                    # Search in phishlabs_case_data_associated_urls - Get ALL URLs for this campaign
-                    url_query = f"""
-                    SELECT DISTINCT u.case_number, u.url, u.url_path, u.url_type, u.fqdn, 
-                           u.ip_address, u.tld, u.domain, u.host_isp, u.host_country, u.as_number
-                    FROM phishlabs_case_data_associated_urls u
-                    WHERE u.{identifier_type} = '{identifier_value}'
-                    """
-                    url_results = dashboard.execute_query(url_query)
-                    if url_results and not isinstance(url_results, dict):
-                        campaign_data['associated_urls'].extend(url_results)
-                    
-                    # Also get ALL URLs for cases in this campaign
-                    if identifier_type in ['case_number']:
-                        case_urls_query = f"""
+                        # Only query DB for associated URLs (not available in cached metadata)
+                        url_query = f"""
                         SELECT DISTINCT u.case_number, u.url, u.url_path, u.url_type, u.fqdn, 
                                u.ip_address, u.tld, u.domain, u.host_isp, u.host_country, u.as_number
                         FROM phishlabs_case_data_associated_urls u
                         WHERE u.case_number = '{identifier_value}'
                         """
-                        case_url_results = dashboard.execute_query(case_urls_query)
-                        if case_url_results and not isinstance(case_url_results, dict):
-                            campaign_data['associated_urls'].extend(case_url_results)
+                        url_results = dashboard.execute_query(url_query)
+                        if url_results and not isinstance(url_results, dict):
+                            campaign_data['associated_urls'].extend(url_results)
                     
-                    # Search in phishlabs_threat_intelligence_incident - Get ALL threat intel records
-                    if identifier_type == 'infrid':
-                        # Build date condition for threat intelligence data
-                        threat_date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "create_date")
-                        
-                        threat_query = f"""
-                        SELECT DISTINCT 
-                            infrid,
-                            url,
-                            cat_name,
-                            create_date,
-                            date_resolved,
-                            CASE 
-                                WHEN date_resolved IS NOT NULL AND create_date IS NOT NULL 
-                                THEN DATEDIFF(day, create_date, date_resolved)
-                                WHEN date_resolved IS NULL AND create_date IS NOT NULL
-                                THEN DATEDIFF(day, create_date, GETDATE())
-                                ELSE NULL
-                            END as age_days,
-                            incident_status
-                        FROM phishlabs_threat_intelligence_incident
-                        WHERE infrid = '{identifier_value}' AND {threat_date_condition}
-                        """
-                        threat_results = dashboard.execute_query(threat_query)
-                        if threat_results and not isinstance(threat_results, dict):
-                            campaign_data['threat_intelligence_incidents'].extend(threat_results)
+                    elif table == 'phishlabs_threat_intelligence_incident':
+                        campaign_data['threat_intelligence_incidents'].append({
+                            'infrid': identifier_value,
+                            'cat_name': identifier.get('cat_name'),
+                            'url': identifier.get('url'),
+                            'domain': identifier.get('domain'),
+                            'create_date': identifier.get('create_date'),
+                            'date_resolved': identifier.get('date_resolved'),
+                            'age_days': calculate_age_days(identifier.get('create_date'), identifier.get('date_resolved')),
+                            'status': identifier.get('status'),
+                            'product': identifier.get('product'),
+                            'severity': identifier.get('severity'),
+                            'ticket_status': identifier.get('ticket_status')
+                        })
                     
-                    # Search in phishlabs_incidents - Get ALL social media records
-                    if identifier_type == 'incident_id':
-                        # Build date condition for social incidents data
-                        social_date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "created_local")
-                        
-                        social_query = f"""
-                        SELECT DISTINCT 
-                            incident_id,
-                            '' as url,
-                            threat_type,
-                            created_local,
-                            closed_local,
-                            CASE 
-                                WHEN closed_local IS NOT NULL AND created_local IS NOT NULL 
-                                THEN DATEDIFF(day, created_local, closed_local)
-                                WHEN closed_local IS NULL AND created_local IS NOT NULL
-                                THEN DATEDIFF(day, created_local, GETDATE())
-                                ELSE NULL
-                            END as age_days,
-                            status
-                            FROM phishlabs_incident
-                            WHERE incident_id = '{identifier_value}' AND {social_date_condition}
-                        """
-                        social_results = dashboard.execute_query(social_query)
-                        if social_results and not isinstance(social_results, dict):
-                            campaign_data['social_incidents'].extend(social_results)
+                    elif table == 'phishlabs_incident':
+                        campaign_data['social_incidents'].append({
+                            'incident_id': identifier_value,
+                            'incident_type': identifier.get('incident_type'),
+                            'threat_type': identifier.get('threat_type'),
+                            'title': identifier.get('title'),
+                            'created_local': identifier.get('created_local'),
+                            'closed_local': identifier.get('closed_local'),
+                            'age_days': calculate_age_days(identifier.get('created_local'), identifier.get('closed_local')),
+                            'status': identifier.get('status'),
+                            'executive_name': identifier.get('executive_name'),
+                            'severity': identifier.get('severity'),
+                            'brand_name': identifier.get('brand_name')
+                        })
+                    
+                    elif table == 'phishlabs_case_data_associated_urls':
+                        # Domain/URL identifiers
+                        campaign_data['associated_urls'].append({
+                            'case_number': identifier.get('case_number'),
+                            'url': identifier.get('url'),
+                            'domain': identifier.get('domain'),
+                            'fqdn': identifier.get('fqdn'),
+                            'ip_address': identifier.get('ip_address'),
+                            'tld': identifier.get('tld'),
+                            'host_isp': identifier.get('host_isp'),
+                            'host_country': identifier.get('host_country'),
+                            'case_type': identifier.get('case_type'),
+                            'date_created_local': identifier.get('date_created_local'),
+                            'status': identifier.get('status')
+                        })
                 
                 all_campaigns_data[campaign_name] = campaign_data
         
