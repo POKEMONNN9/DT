@@ -755,6 +755,7 @@ class ExecutiveDashboard {
                 scales: {
                     x: {
                         beginAtZero: true,
+                        max: Math.max(50, maxValue * 1.2), // Ensure x-axis goes at least to 50, or 20% beyond max value
                         grid: { 
                             color: '#f3f4f6',
                             drawBorder: false
@@ -763,7 +764,9 @@ class ExecutiveDashboard {
                             font: {
                                 size: 11
                             },
-                            color: '#6b7280'
+                            color: '#6b7280',
+                            maxTicksLimit: 10,
+                            stepSize: Math.ceil(Math.max(50, maxValue * 1.2) / 10)
                         }
                     },
                     y: {
@@ -1025,6 +1028,7 @@ class ExecutiveDashboard {
                         display: true,
                         beginAtZero: true,
                         offset: false,
+                        max: Math.max(...createdData, ...closedData) * 1.2, // Ensure y-axis goes 20% beyond the highest peak
                         grid: { 
                             display: true,
                             color: 'rgba(226, 232, 240, 0.5)',
@@ -1039,7 +1043,8 @@ class ExecutiveDashboard {
                                 weight: '500'
                             },
                             precision: 0,
-                            padding: 8
+                            padding: 8,
+                            stepSize: Math.ceil(Math.max(...createdData, ...closedData) * 1.2 / 8)
                         },
                         border: {
                             display: false
@@ -3409,7 +3414,7 @@ class ThreatIntelligenceDashboard {
         try {
             const params = getFilterParams();
             console.log('<i class="fas fa-rocket"></i> Loading comprehensive threat family intelligence with params:', params);
-            const data = await fetchAPI(`/api/dashboard/family-infrastructure-preferences?${params}`);
+            const data = await fetchAPI(`/api/dashboard/comprehensive-threat-family-intelligence?${params}`);
             
             console.log('<i class="fas fa-chart-bar"></i> Received data:', data);
             if (data && !data.error) {
@@ -3796,6 +3801,11 @@ class ThreatIntelligenceDashboard {
         }).join('');
         
         console.log('<i class="fas fa-check-circle"></i> Rendered threat actor infrastructure table with', actors.length, 'actors');
+        
+        // Populate detailed infrastructure dropdowns
+        if (window.populateInfrastructureDropdowns) {
+            window.populateInfrastructureDropdowns(actors, []);
+        }
     }
 
     getActorURLPaths(actorName, urlPathsData) {
@@ -4033,9 +4043,20 @@ class ThreatIntelligenceDashboard {
                 </td>
                 <td class="whois-families">
                     <div class="families-list">
-                        ${item.threat_families_used ? item.threat_families_used.split(', ').slice(0, 3).map(family => 
-                            `<span class="family-tag">${family.trim()}</span>`
-                        ).join(', ') : '<span class="no-data">None</span>'}
+                        ${item.threat_families_used ? (() => {
+                            // Clean the threat families string - remove leading semicolons and empty entries
+                            const cleanedFamilies = item.threat_families_used
+                                .replace(/^[;,]+/, '') // Remove leading semicolons and commas
+                                .replace(/[;,]+$/, '') // Remove trailing semicolons and commas
+                                .split(/[;,]+/) // Split by semicolons or commas
+                                .map(family => family.trim()) // Trim whitespace
+                                .filter(family => family && family !== '') // Remove empty entries
+                                .slice(0, 5); // Show up to 5 families instead of 3
+                            
+                            return cleanedFamilies.length > 0 
+                                ? cleanedFamilies.map(family => `<span class="family-tag">${family}</span>`).join(' ')
+                                : '<span class="no-data">None</span>';
+                        })() : '<span class="no-data">None</span>'}
                     </div>
                 </td>
             </tr>
@@ -7782,9 +7803,130 @@ function copyChartAsHTML(chartElement, chartTitle) {
             filterSLAForCopy(clone);
         }
         
+        // Special handling for Top Threat Actors - remove height constraints to allow natural expansion
+        if (chartTitle.includes('Top Threat Actors')) {
+            const threatActorList = clone.querySelector('.threat-actor-list');
+            if (threatActorList) {
+                threatActorList.style.maxHeight = 'none';
+                threatActorList.style.overflowY = 'visible';
+                threatActorList.style.height = 'auto';
+            }
+            
+            // Ensure the main container and body expand to fit content
+            const intelBody = clone.querySelector('.intel-body');
+            if (intelBody) {
+                intelBody.style.height = 'auto';
+                intelBody.style.maxHeight = 'none';
+                intelBody.style.overflow = 'visible';
+            }
+            
+            const intelCard = clone.querySelector('.intel-card');
+            if (intelCard) {
+                intelCard.style.height = 'auto';
+                intelCard.style.maxHeight = 'none';
+                intelCard.style.overflow = 'visible';
+            }
+        }
+        
+        // Special handling for Executive Summary to make it email-friendly
+        const isExecutiveSummary = chartTitle && (chartTitle.includes('Executive') || chartTitle.includes('executive'));
+        if (isExecutiveSummary) {
+            // Hide all copy buttons
+            const copyButtons = clone.querySelectorAll('.copy-btn, .chart-copy-btn');
+            copyButtons.forEach(btn => {
+                btn.style.display = 'none';
+            });
+            
+            // Remove fixed dimensions from key containers to allow fluid layout
+            const fluidContainers = clone.querySelectorAll('.chart-container, .chart-wrapper, .chart-body, .timeline-trends');
+            fluidContainers.forEach(container => {
+                // Remove fixed width/height
+                container.style.width = '';
+                container.style.height = '';
+                
+                // Special handling for geographic heatmap chart-body
+                if (container.classList.contains('chart-body') && 
+                    container.closest('.geographic-heatmap')) {
+                    container.style.maxHeight = '100%';
+                    container.style.maxWidth = '100%';
+                }
+                
+                // Remove max constraints from chart-wrapper (Threat Landscape)
+                if (container.classList.contains('chart-wrapper')) {
+                    container.style.maxWidth = '';
+                    container.style.maxHeight = '';
+                }
+            });
+        }
         
         // Apply inline styles to preserve appearance
         applyInlineStyles(clone, chartElement);
+        
+        // Post-processing for Executive Summary: remove fixed dimensions that were just applied
+        if (isExecutiveSummary) {
+            // Remove fixed widths and heights that would break email layout
+            const allElements = clone.querySelectorAll('*');
+            allElements.forEach(el => {
+                const style = el.style;
+                const position = style.position;
+                
+                // Get current values
+                const width = style.width;
+                const height = style.height;
+                
+                // Check if element is absolutely positioned or child of absolutely positioned element
+                const isAbsolutePositioned = position === 'absolute';
+                const isChildOfAbsolute = el.closest('.chart-center-info') !== null;
+                
+                // Special fix for .chart-center-info - set correct inset for proper alignment
+                if (el.classList.contains('chart-center-info')) {
+                    style.inset = '110px 52.7604px 73.2118px 90px';
+                }
+                
+                // Remove pixel-based fixed dimensions, keep percentage/auto
+                // Exception: keep metric-card, stat-item widths, absolutely positioned elements and their children
+                if (width && width.includes('px') && 
+                    !el.classList.contains('metric-card') && 
+                    !el.classList.contains('stat-item') &&
+                    !isAbsolutePositioned &&
+                    !isChildOfAbsolute) {
+                    style.width = '';
+                }
+                
+                // Remove pixel-based heights except for images, absolutely positioned elements and their children
+                if (height && height.includes('px') && 
+                    !el.tagName.toLowerCase().includes('img') &&
+                    !isAbsolutePositioned &&
+                    !isChildOfAbsolute) {
+                    style.height = '';
+                }
+                
+                // For absolutely positioned elements and their children, ensure min/max values are set
+                if (isAbsolutePositioned || isChildOfAbsolute) {
+                    if (!style.minWidth || style.minWidth === '') {
+                        style.minWidth = '0px';
+                    }
+                    if (!style.minHeight || style.minHeight === '') {
+                        style.minHeight = '0px';
+                    }
+                    if (!style.maxWidth || style.maxWidth === '') {
+                        style.maxWidth = '100%';
+                    }
+                }
+                
+                // Remove max constraints from chart-wrapper and timeline-trends
+                if (el.classList.contains('chart-wrapper') || el.classList.contains('timeline-trends')) {
+                    style.maxWidth = '';
+                    style.maxHeight = '';
+                }
+                
+                // Ensure Geographic Distribution chart-body has max-width and max-height: 100%
+                if (el.classList.contains('chart-body') && el.closest('.geographic-heatmap')) {
+                    style.maxWidth = '100%';
+                    style.maxHeight = '100%';
+                }
+            });
+        }
         
         // Convert canvases to images
         const canvases = clone.querySelectorAll('canvas');
@@ -7795,7 +7937,25 @@ function copyChartAsHTML(chartElement, chartTitle) {
                 try {
                     const img = document.createElement('img');
                     img.src = originalCanvases[index].toDataURL('image/png');
-                    img.style.cssText = 'width: 100%; height: auto; max-width: 600px; display: block; margin: 12px auto; border-radius: 8px;';
+                    
+                    // Special handling for Executive Summary - different styling per chart type
+                    if (isExecutiveSummary) {
+                        // Check if this is a geographic distribution chart
+                        const isGeographicChart = canvas.closest('.geographic-heatmap') ||
+                                                canvas.id === 'geographicHeatmapChart';
+                        
+                        if (isGeographicChart) {
+                            // Geographic charts: max-width 550px, NO top/bottom margin
+                            img.style.cssText = 'width: 100%; height: auto; max-width: 550px; display: block; margin: 0 auto; border-radius: 8px;';
+                        } else {
+                            // All other Executive Summary charts (Timeline, Threat Landscape): NO max-width
+                            img.style.cssText = 'width: 100%; height: auto; display: block; margin: 12px auto; border-radius: 8px;';
+                        }
+                    } else {
+                        // Default styling for non-Executive Summary charts
+                        img.style.cssText = 'width: 100%; height: auto; max-width: 600px; display: block; margin: 12px auto; border-radius: 8px;';
+                    }
+                    
                     canvas.parentNode.replaceChild(img, canvas);
                 } catch (e) {
                     const placeholder = document.createElement('div');
@@ -7822,6 +7982,24 @@ function copyChartAsHTML(chartElement, chartTitle) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${chartTitle} - Threat Intelligence Dashboard</title>
     ${getEmailSafeCSS()}
+    <style>
+        /* Ensure containers expand to fit content */
+        .threat-actor-list {
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        .intel-body {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        .intel-card {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+    </style>
 </head>
 <body>
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background: #f9fafb; padding: 20px;">
@@ -7960,7 +8138,7 @@ function applyInlineStyles(cloneElement, originalElement) {
     
     const stylesToCopy = [
         // Layout & Positioning
-        'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index',
+        'display', 'position', 'top', 'right', 'bottom', 'left', 'inset', 'z-index',
         'float', 'clear', 'overflow', 'overflow-x', 'overflow-y',
         'clip', 'clip-path', 'isolation', 'contain', 'contain-intrinsic-size',
         
@@ -8456,7 +8634,7 @@ class CampaignManagement {
                         <div class="identifier-description">${identifier.description || 'No description'}</div>
                     </div>
                     <div class="identifier-actions">
-                        <button class="btn-remove" onclick="campaignManagement.removeIdentifier('${identifier.table || identifier.type}', '${identifier.value}', '${this.currentCampaign.name}')" title="Remove identifier">
+                        <button class="btn-remove" onclick="campaignManagement.removeIdentifier('${identifier.field || 'case_number'}', '${identifier.value}')" title="Remove identifier">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -10314,14 +10492,26 @@ class CampaignManagement {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
             this.showNotification('Identifier removed successfully', 'success');
+            
+            // Reload campaigns to get fresh data
             await this.loadCampaigns();
             
-            // Update the appropriate identifier list based on current view
+            // Refresh the current campaign data with updated information
             if (this.currentCampaign) {
-                // Update the Manage tab identifier list
-                this.renderCampaignIdentifiersList();
+                const campaignName = this.currentCampaign.name;
+                // Fetch the updated campaign data
+                const response = await fetch('/api/campaigns');
+                const allCampaigns = await response.json();
                 
-                // Update campaign details view (method will check if it should render)
+                if (allCampaigns[campaignName]) {
+                    this.currentCampaign = {
+                        name: campaignName,
+                        ...allCampaigns[campaignName]
+                    };
+                }
+                
+                // Update the UI with fresh data
+                this.renderCampaignIdentifiersList();
                 this.renderCampaignIdentifiers();
             }
         } catch (error) {
@@ -10830,10 +11020,10 @@ class CampaignManagement {
                     <div class="chart-body">
                         <div class="cases-content">
                             <div class="cases-tab-content active" id="cases-by-type">
-                                ${this.renderCampaignCasesByType(data.campaign_cases_stats)}
+                                ${this.renderCampaignCasesByType(data.campaign_cases_stats, data.campaign_status)}
                             </div>
                             <div class="cases-tab-content" id="cases-by-status">
-                                ${this.renderCampaignCasesByStatus(data.campaign_cases_stats)}
+                                ${this.renderCampaignCasesByStatus(data.campaign_cases_stats, data.campaign_status)}
                             </div>
                         </div>
                     </div>
@@ -10853,7 +11043,7 @@ class CampaignManagement {
         `;
     }
 
-    renderCampaignCasesByType(campaignCasesStats) {
+    renderCampaignCasesByType(campaignCasesStats, campaignStatus = null) {
         return `
             <div class="cases-table-container">
                 <table class="cases-table">
@@ -10867,15 +11057,27 @@ class CampaignManagement {
                         </tr>
                     </thead>
                     <tbody>
-                        ${campaignCasesStats.map(campaign => `
+                        ${campaignCasesStats.map(campaign => {
+                            // Check campaign status from campaign_status object if available
+                            let isActive;
+                            if (campaignStatus && campaignStatus.active_campaigns && campaignStatus.closed_campaigns) {
+                                isActive = campaignStatus.active_campaigns.includes(campaign.campaign_name);
+                            } else {
+                                // Fallback to checking active cases
+                                isActive = campaign.by_status.active > 0;
+                            }
+                            const statusLabel = isActive ? 'Active' : 'Closed';
+                            const statusColor = isActive ? '#10b981' : '#6b7280';
+                            return `
                             <tr>
-                                <td class="campaign-name">${campaign.campaign_name}</td>
+                                <td class="campaign-name">${campaign.campaign_name} <span style="color: ${statusColor}; font-size: 0.9em; font-weight: 600;">(${statusLabel})</span></td>
                                 <td class="cred-theft-col">${campaign.by_type.cred_theft}</td>
                                 <td class="domain-monitoring-col">${campaign.by_type.domain_monitoring}</td>
                                 <td class="social-media-col">${campaign.by_type.social_media}</td>
                                 <td class="total-col">${campaign.by_type.total}</td>
                             </tr>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </tbody>
                     <tfoot>
                         <tr class="totals-row">
@@ -10891,7 +11093,7 @@ class CampaignManagement {
         `;
     }
 
-    renderCampaignCasesByStatus(campaignCasesStats) {
+    renderCampaignCasesByStatus(campaignCasesStats, campaignStatus = null) {
         return `
             <div class="cases-table-container">
                 <table class="cases-table">
@@ -10905,15 +11107,27 @@ class CampaignManagement {
                         </tr>
                     </thead>
                     <tbody>
-                        ${campaignCasesStats.map(campaign => `
+                        ${campaignCasesStats.map(campaign => {
+                            // Check campaign status from campaign_status object if available
+                            let isActive;
+                            if (campaignStatus && campaignStatus.active_campaigns && campaignStatus.closed_campaigns) {
+                                isActive = campaignStatus.active_campaigns.includes(campaign.campaign_name);
+                            } else {
+                                // Fallback to checking active cases
+                                isActive = campaign.by_status.active > 0;
+                            }
+                            const statusLabel = isActive ? 'Active' : 'Closed';
+                            const statusColor = isActive ? '#10b981' : '#6b7280';
+                            return `
                             <tr>
-                                <td class="campaign-name">${campaign.campaign_name}</td>
+                                <td class="campaign-name">${campaign.campaign_name} <span style="color: ${statusColor}; font-size: 0.9em; font-weight: 600;">(${statusLabel})</span></td>
                                 <td class="active-col">${campaign.by_status.active}</td>
                                 <td class="domain-monitoring-col">${campaign.by_status.domain_monitoring}</td>
                                 <td class="closed-col">${campaign.by_status.closed}</td>
                                 <td class="total-col">${campaign.by_status.total}</td>
                             </tr>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </tbody>
                     <tfoot>
                         <tr class="totals-row">
@@ -11652,6 +11866,158 @@ window.toggleTableColumns = function(tableId) {
         window.campaignManagement.toggleTableColumns(tableId);
     } else {
         console.error('CampaignManagement not available or toggleTableColumns method not found');
+    }
+};
+
+// Detailed Infrastructure Analysis Functions
+window.loadDetailedInfrastructure = async function(type) {
+    try {
+        const actorSelect = document.getElementById('infrastructureActorSelect');
+        const familySelect = document.getElementById('infrastructureFamilySelect');
+        const contentDiv = document.getElementById('detailedInfrastructureContent');
+        
+        let selectedValue = '';
+        let selectedName = '';
+        
+        if (type === 'actor') {
+            selectedValue = actorSelect.value;
+            selectedName = actorSelect.options[actorSelect.selectedIndex].text;
+            familySelect.value = ''; // Clear family selection
+        } else if (type === 'family') {
+            selectedValue = familySelect.value;
+            selectedName = familySelect.options[familySelect.selectedIndex].text;
+            actorSelect.value = ''; // Clear actor selection
+        }
+        
+        if (!selectedValue) {
+            contentDiv.style.display = 'none';
+            return;
+        }
+        
+        // Show loading state
+        contentDiv.style.display = 'block';
+        document.getElementById('detailedActorName').textContent = selectedName;
+        document.getElementById('detailedTotalCases').textContent = 'Loading...';
+        document.getElementById('detailedActiveSince').textContent = 'Loading...';
+        document.getElementById('detailedLastCase').textContent = 'Loading...';
+        
+        // Clear existing content
+        ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
+            document.getElementById(id).innerHTML = '<div class="no-detailed-data-sidebar">Loading...</div>';
+        });
+        
+        // Fetch detailed data
+        const response = await fetch(`/api/dashboard/detailed-infrastructure?type=${type}&value=${encodeURIComponent(selectedValue)}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update header info
+            document.getElementById('detailedTotalCases').textContent = data.total_cases || 0;
+            document.getElementById('detailedActiveSince').textContent = data.active_since || '-';
+            document.getElementById('detailedLastCase').textContent = data.last_case || '-';
+            
+            // Populate detailed sections
+            populateDetailedSection('detailedTLDs', data.tlds, 'TLD');
+            populateDetailedSection('detailedRegistrars', data.registrars, 'Registrar');
+            populateDetailedSection('detailedISPs', data.isps, 'ISP');
+            populateDetailedSection('detailedCountries', data.countries, 'Country');
+            populateDetailedURLPaths('detailedURLPaths', data.url_paths);
+            
+        } else {
+            throw new Error(data.message || 'Failed to load detailed infrastructure data');
+        }
+        
+    } catch (error) {
+        console.error('Error loading detailed infrastructure:', error);
+        showNotification('Failed to load detailed infrastructure data', 'error');
+        
+        // Show error state
+        document.getElementById('detailedActorName').textContent = 'Error';
+        document.getElementById('detailedTotalCases').textContent = 'Error';
+        document.getElementById('detailedActiveSince').textContent = 'Error';
+        document.getElementById('detailedLastCase').textContent = 'Error';
+        
+        ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
+            document.getElementById(id).innerHTML = '<div class="no-detailed-data-sidebar">Failed to load data</div>';
+        });
+    }
+};
+
+function populateDetailedSection(containerId, data, type) {
+    const container = document.getElementById(containerId);
+    
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div class="no-detailed-data-sidebar">No ' + type.toLowerCase() + ' data available</div>';
+        return;
+    }
+    
+    const html = data.map(item => {
+        const countClass = getCountClass(item.count);
+        return `
+            <div class="detailed-item-sidebar">
+                <span class="detailed-item-value-sidebar" title="${item.value}">${item.value}</span>
+                <span class="detailed-item-count-sidebar ${countClass}">${item.count}</span>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+}
+
+function populateDetailedURLPaths(containerId, data) {
+    const container = document.getElementById(containerId);
+    
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div class="no-detailed-data-sidebar">No URL paths available</div>';
+        return;
+    }
+    
+    const html = data.map(item => {
+        const countClass = getCountClass(item.case_count);
+        return `
+            <div class="detailed-item-sidebar">
+                <span class="detailed-item-value-sidebar" title="${item.url_path}">${item.url_path}</span>
+                <span class="detailed-item-count-sidebar ${countClass}">${item.case_count}</span>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+}
+
+function getCountClass(count) {
+    if (count >= 10) return 'high';
+    if (count >= 5) return 'medium';
+    return 'low';
+}
+
+// Populate dropdowns when threat actor infrastructure data is loaded
+window.populateInfrastructureDropdowns = function(actorData, familyData) {
+    const actorSelect = document.getElementById('infrastructureActorSelect');
+    const familySelect = document.getElementById('infrastructureFamilySelect');
+    
+    // Clear existing options (except the first one)
+    actorSelect.innerHTML = '<option value="">Select a threat actor...</option>';
+    familySelect.innerHTML = '<option value="">Select a threat family...</option>';
+    
+    // Populate actor dropdown
+    if (actorData && actorData.length > 0) {
+        actorData.forEach(actor => {
+            const option = document.createElement('option');
+            option.value = actor.threat_actor;
+            option.textContent = `${actor.threat_actor} (${actor.total_cases} cases)`;
+            actorSelect.appendChild(option);
+        });
+    }
+    
+    // Populate family dropdown (if we have family data)
+    if (familyData && familyData.length > 0) {
+        familyData.forEach(family => {
+            const option = document.createElement('option');
+            option.value = family.threat_family;
+            option.textContent = `${family.threat_family} (${family.total_cases} cases)`;
+            familySelect.appendChild(option);
+        });
     }
 };
 
