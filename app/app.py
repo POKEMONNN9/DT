@@ -145,7 +145,7 @@ class ThreatDashboard:
             return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} <= EOMONTH(GETDATE(), -1)"
         else:
             return "1=1"  # All dates
-
+    
     def format_date_for_display(self, date_value):
         """Format date for display in the UI"""
         if not date_value:
@@ -1195,7 +1195,7 @@ class ThreatDashboard:
                 "countries": [],
                 "url_paths": []
             }
-
+    
     def get_url_path_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get URL path patterns by threat actors"""
         try:
@@ -2238,14 +2238,7 @@ class ThreatDashboard:
             if isinstance(workload, dict) and 'error' in workload:
                 workload = []
             
-            # If no data found, generate some sample data
-            if not workload:
-                workload = [
-                    {"status": "Active", "case_count": 15},
-                    {"status": "Closed", "case_count": 8},
-                    {"status": "Other", "case_count": 2}
-                ]
-            
+            # Return actual data from database only - no mock data
             return workload
             
         except Exception as e:
@@ -2428,16 +2421,7 @@ class ThreatDashboard:
             if isinstance(infrastructure, dict) and 'error' in infrastructure:
                 infrastructure = []
             
-            # If no data found, generate some sample data
-            if not infrastructure:
-                infrastructure = [
-                    {"host_country": "US", "isp": "Cloudflare", "asn": "AS13335", "case_count": 12, "domain_count": 18, "threat_families": 3},
-                    {"host_country": "NL", "isp": "Amazon AWS", "asn": "AS16509", "case_count": 8, "domain_count": 12, "threat_families": 2},
-                    {"host_country": "GB", "isp": "DigitalOcean", "asn": "AS14061", "case_count": 6, "domain_count": 9, "threat_families": 2},
-                    {"host_country": "CN", "isp": "Alibaba Cloud", "asn": "AS45102", "case_count": 5, "domain_count": 7, "threat_families": 1},
-                    {"host_country": "RU", "isp": "Yandex", "asn": "AS13238", "case_count": 4, "domain_count": 6, "threat_families": 1}
-                ]
-            
+            # Return actual data from database only - no mock data
             return infrastructure
             
         except Exception as e:
@@ -2476,16 +2460,7 @@ class ThreatDashboard:
             if isinstance(iocs, dict) and 'error' in iocs:
                 iocs = []
             
-            # If no data found, generate some sample data
-            if not iocs:
-                iocs = [
-                    {"domain": "malicious-site1.com", "ip_address": "192.168.1.100", "url": "https://malicious-site1.com/phish", "threat_family": "FIN7", "severity": "High", "case_frequency": 5, "threat_score": 8},
-                    {"domain": "fake-bank.net", "ip_address": "10.0.0.50", "url": "https://fake-bank.net/login", "threat_family": "TA505", "severity": "Critical", "case_frequency": 3, "threat_score": 10},
-                    {"domain": "scam-shop.org", "ip_address": "172.16.0.25", "url": "https://scam-shop.org/payment", "threat_family": "Carbanak", "severity": "Medium", "case_frequency": 4, "threat_score": 6},
-                    {"domain": "phish-trap.co", "ip_address": "203.0.113.75", "url": "https://phish-trap.co/verify", "threat_family": "Emotet", "severity": "High", "case_frequency": 2, "threat_score": 8},
-                    {"domain": "fake-paypal.biz", "ip_address": "198.51.100.10", "url": "https://fake-paypal.biz/account", "threat_family": "Social_Scam_Ring", "severity": "Medium", "case_frequency": 3, "threat_score": 6}
-                ]
-            
+            # Return actual data from database only - no mock data
             return iocs
             
         except Exception as e:
@@ -3890,57 +3865,57 @@ def api_infrastructure_relationships():
         
         # Query for infrastructure relationship analysis
         query = f"""
-            WITH registrar_usage AS (
-                SELECT 
-                    r.name as registrar,
-                    COUNT(DISTINCT i.case_number) as abuse_cases,
-                    1 as campaigns,  -- Simplified for now
-                    COUNT(DISTINCT u.host_country) as countries_affected,
-                    MIN(i.date_created_local) as first_abuse,
-                    MAX(i.date_created_local) as last_abuse
-                FROM phishlabs_case_data_incidents i
-                LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition}            AND r.name IS NOT NULL
-                GROUP BY r.name
-                HAVING COUNT(DISTINCT i.case_number) >= 2
-            ),
-            isp_usage AS (
-                SELECT 
-                    u.host_isp as isp,
-                    COUNT(DISTINCT i.case_number) as abuse_cases,
-                    1 as campaigns,  -- Simplified for now
-                    COUNT(DISTINCT u.host_country) as countries_affected
-                FROM phishlabs_case_data_incidents i
-                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition}            AND u.host_isp IS NOT NULL
-                GROUP BY u.host_isp
-                HAVING COUNT(DISTINCT i.case_number) >= 2
-            ),
-            shared_infrastructure AS (
-                SELECT 
-                    'Registrar: ' + r.name as shared_element,
-                    'Multiple Cases' as campaigns,
-                    COUNT(DISTINCT u.domain) as shared_domains,
-                    CASE 
-                        WHEN COUNT(DISTINCT i.case_number) >= 10 THEN 'High'
-                        WHEN COUNT(DISTINCT i.case_number) >= 5 THEN 'Medium'
-                        ELSE 'Low'
-                    END as connection_strength,
-                    MIN(i.date_created_local) as first_shared,
-                    MAX(i.date_created_local) as last_shared
-                FROM phishlabs_case_data_incidents i
-                LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
-                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                WHERE {date_condition}            AND r.name IS NOT NULL
-                GROUP BY r.name
-                HAVING COUNT(DISTINCT i.case_number) >= 2
-            )
+        WITH registrar_usage AS (
             SELECT 
-                (SELECT COUNT(*) FROM registrar_usage) as registrar_count,
-                (SELECT COUNT(*) FROM isp_usage) as isp_count,
-                (SELECT COUNT(*) FROM shared_infrastructure) as shared_infrastructure_count
-            """
+                r.name as registrar,
+                COUNT(DISTINCT i.case_number) as abuse_cases,
+                1 as campaigns,  -- Simplified for now
+                COUNT(DISTINCT u.host_country) as countries_affected,
+                MIN(i.date_created_local) as first_abuse,
+                MAX(i.date_created_local) as last_abuse
+            FROM phishlabs_case_data_incidents i
+            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND r.name IS NOT NULL
+            GROUP BY r.name
+            HAVING COUNT(DISTINCT i.case_number) >= 2
+        ),
+        isp_usage AS (
+            SELECT 
+                u.host_isp as isp,
+                COUNT(DISTINCT i.case_number) as abuse_cases,
+                1 as campaigns,  -- Simplified for now
+                COUNT(DISTINCT u.host_country) as countries_affected
+            FROM phishlabs_case_data_incidents i
+            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND u.host_isp IS NOT NULL
+            GROUP BY u.host_isp
+            HAVING COUNT(DISTINCT i.case_number) >= 2
+        ),
+        shared_infrastructure AS (
+            SELECT 
+                'Registrar: ' + r.name as shared_element,
+                'Multiple Cases' as campaigns,
+                COUNT(DISTINCT u.domain) as shared_domains,
+                CASE 
+                    WHEN COUNT(DISTINCT i.case_number) >= 10 THEN 'High'
+                    WHEN COUNT(DISTINCT i.case_number) >= 5 THEN 'Medium'
+                    ELSE 'Low'
+                END as connection_strength,
+                MIN(i.date_created_local) as first_shared,
+                MAX(i.date_created_local) as last_shared
+            FROM phishlabs_case_data_incidents i
+            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+                WHERE {date_condition}            AND r.name IS NOT NULL
+            GROUP BY r.name
+            HAVING COUNT(DISTINCT i.case_number) >= 2
+        )
+        SELECT 
+            (SELECT COUNT(*) FROM registrar_usage) as registrar_count,
+            (SELECT COUNT(*) FROM isp_usage) as isp_count,
+            (SELECT COUNT(*) FROM shared_infrastructure) as shared_infrastructure_count
+        """
         
         result = dashboard.execute_query(query)
         if isinstance(result, dict) and 'error' in result:
@@ -4596,18 +4571,18 @@ def api_get_campaigns():
             # Handle different campaign data structures
             if isinstance(campaign_data, list):
                 for mapping in campaign_data:
-                    if isinstance(mapping, dict):
-                        if not mapping.get('metadata_complete', True):
-                            incomplete_count += 1
-                        
+                        if isinstance(mapping, dict):
+                            if not mapping.get('metadata_complete', True):
+                                incomplete_count += 1
+                                
                         if mapping.get('identifier_type') and mapping.get('identifier_value'):
                             identifiers.append({
                                 'type': mapping['identifier_type'],
                                 'value': mapping['identifier_value'],
                                 'description': mapping.get('description', ''),
-                                'table': mapping.get('table', ''),
-                                'metadata_complete': mapping.get('metadata_complete', True)
-                            })
+                                            'table': mapping.get('table', ''),
+                                            'metadata_complete': mapping.get('metadata_complete', True)
+                                        })
                         elif mapping.get('field') and mapping.get('value'):
                             identifiers.append({
                                 'type': mapping['field'],
@@ -4616,16 +4591,16 @@ def api_get_campaigns():
                                 'table': mapping.get('table', ''),
                                 'metadata_complete': mapping.get('metadata_complete', True)
                             })
-            elif isinstance(campaign_data, dict):
-                # Handle new campaign structure with identifiers list
-                if 'identifiers' in campaign_data and isinstance(campaign_data['identifiers'], list):
-                    for identifier in campaign_data['identifiers']:
-                        if isinstance(identifier, dict):
-                            if not identifier.get('metadata_complete', True):
-                                incomplete_count += 1
-                            identifiers.append(identifier)
-                        else:
-                            identifiers.append({'value': identifier})
+                        elif isinstance(campaign_data, dict):
+                            # Handle new campaign structure with identifiers list
+                            if 'identifiers' in campaign_data and isinstance(campaign_data['identifiers'], list):
+                                for identifier in campaign_data['identifiers']:
+                                    if isinstance(identifier, dict):
+                                        if not identifier.get('metadata_complete', True):
+                                            incomplete_count += 1
+                                        identifiers.append(identifier)
+                                    else:
+                                        identifiers.append({'value': identifier})
             
             # Extract description based on data structure
             description = ''
@@ -5841,15 +5816,15 @@ def api_get_multiple_campaigns_data():
                         })
                         
                         # Only query DB for associated URLs (not available in cached metadata)
-                        url_query = f"""
-                        SELECT DISTINCT u.case_number, u.url, u.url_path, u.url_type, u.fqdn, 
-                               u.ip_address, u.tld, u.domain, u.host_isp, u.host_country, u.as_number
-                        FROM phishlabs_case_data_associated_urls u
+                    url_query = f"""
+                    SELECT DISTINCT u.case_number, u.url, u.url_path, u.url_type, u.fqdn, 
+                           u.ip_address, u.tld, u.domain, u.host_isp, u.host_country, u.as_number
+                    FROM phishlabs_case_data_associated_urls u
                         WHERE u.case_number = '{identifier_value}'
-                        """
-                        url_results = dashboard.execute_query(url_query)
-                        if url_results and not isinstance(url_results, dict):
-                            campaign_data['associated_urls'].extend(url_results)
+                    """
+                    url_results = dashboard.execute_query(url_query)
+                    if url_results and not isinstance(url_results, dict):
+                        campaign_data['associated_urls'].extend(url_results)
                     
                     elif table == 'phishlabs_threat_intelligence_incident':
                         campaign_data['threat_intelligence_incidents'].append({
@@ -6424,7 +6399,7 @@ def insert_test_data():
         
         # Generate and insert test data
         dashboard.insert_comprehensive_test_data()
-        
+            
         return jsonify({
             "success": True,
             "message": "Test data inserted successfully",
@@ -7111,6 +7086,169 @@ def api_default_analysis():
         
     except Exception as e:
         logger.error(f"Error in default analysis API: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/analysis/campaign-activity-timeline')
+def api_campaign_activity_timeline():
+    """Generate campaign activity timeline with time window filtering"""
+    try:
+        # Get time window filter parameter
+        time_window = request.args.get('time_window', 'all')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        logger.info(f"Generating campaign activity timeline with time_window={time_window}")
+        
+        # Get date filter condition for creation dates
+        date_condition_created = dashboard.get_date_filter_condition(
+            time_window, start_date, end_date, "date_created_local"
+        )
+        
+        # Get date filter condition for closed dates
+        date_condition_closed = dashboard.get_date_filter_condition(
+            time_window, start_date, end_date, "date_closed_local"
+        )
+        
+        campaign_activity_stats = []
+        
+        for campaign_name, campaign_data in dashboard.campaigns.items():
+            if not isinstance(campaign_data, dict) or 'identifiers' not in campaign_data:
+                continue
+            
+            # Separate identifiers by type
+            case_numbers = []
+            infrids = []
+            incident_ids = []
+            
+            for identifier in campaign_data.get('identifiers', []):
+                if isinstance(identifier, dict):
+                    field = identifier.get('field', 'case_number')
+                    value = str(identifier.get('value', ''))
+                    
+                    if field == 'case_number':
+                        case_numbers.append(value)
+                    elif field == 'infrid':
+                        infrids.append(value)
+                    elif field == 'incident_id':
+                        incident_ids.append(value)
+            
+            # Initialize counts
+            mitigating_time_window = 0  # Created in time window + not closed
+            monitoring_time_window = 0  # Domain monitoring created in time window
+            closed_time_window = 0      # Closed date in time window
+            mitigating_all_time = 0     # Currently active (no closed date) regardless of creation date
+            
+            # Query Cred Theft cases (phishlabs_case_data_incidents)
+            if case_numbers:
+                case_list = "','".join(case_numbers)
+                
+                # Mitigating in time window: created in window + not closed
+                mitigating_tw_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_case_data_incidents
+                WHERE case_number IN ('{case_list}')
+                AND {date_condition_created}
+                AND date_closed_local IS NULL
+                """
+                result = dashboard.execute_query(mitigating_tw_query)
+                if result and len(result) > 0:
+                    mitigating_time_window += result[0].get('count', 0) or 0
+                
+                # Closed in time window: closed date in window
+                closed_tw_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_case_data_incidents
+                WHERE case_number IN ('{case_list}')
+                AND {date_condition_closed}
+                """
+                result = dashboard.execute_query(closed_tw_query)
+                if result and len(result) > 0:
+                    closed_time_window += result[0].get('count', 0) or 0
+                
+                # Mitigating all time: currently active (no closed date)
+                mitigating_all_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_case_data_incidents
+                WHERE case_number IN ('{case_list}')
+                AND date_closed_local IS NULL
+                """
+                result = dashboard.execute_query(mitigating_all_query)
+                if result and len(result) > 0:
+                    mitigating_all_time += result[0].get('count', 0) or 0
+            
+            # Query Social Media cases (phishlabs_incident)
+            if incident_ids:
+                incident_list = "','".join(incident_ids)
+                
+                # Mitigating in time window: created in window + not closed
+                mitigating_social_tw_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_incident
+                WHERE incident_id IN ('{incident_list}')
+                AND {date_condition_created.replace('date_created_local', 'created_local')}
+                AND closed_local IS NULL
+                """
+                result = dashboard.execute_query(mitigating_social_tw_query)
+                if result and len(result) > 0:
+                    mitigating_time_window += result[0].get('count', 0) or 0
+                
+                # Closed in time window: closed date in window
+                closed_social_tw_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_incident
+                WHERE incident_id IN ('{incident_list}')
+                AND {date_condition_closed.replace('date_closed_local', 'closed_local')}
+                """
+                result = dashboard.execute_query(closed_social_tw_query)
+                if result and len(result) > 0:
+                    closed_time_window += result[0].get('count', 0) or 0
+                
+                # Mitigating all time: currently active (no closed date)
+                mitigating_social_all_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_incident
+                WHERE incident_id IN ('{incident_list}')
+                AND closed_local IS NULL
+                """
+                result = dashboard.execute_query(mitigating_social_all_query)
+                if result and len(result) > 0:
+                    mitigating_all_time += result[0].get('count', 0) or 0
+            
+            # Query Domain Monitoring cases (phishlabs_threat_intelligence_incident)
+            if infrids:
+                infrid_list = "','".join(infrids)
+                
+                # Monitoring in time window: created in window
+                monitoring_tw_query = f"""
+                SELECT COUNT(*) as count
+                FROM phishlabs_threat_intelligence_incident
+                WHERE infrid IN ('{infrid_list}')
+                AND {date_condition_created.replace('date_created_local', 'create_date')}
+                """
+                result = dashboard.execute_query(monitoring_tw_query)
+                if result and len(result) > 0:
+                    monitoring_time_window += result[0].get('count', 0) or 0
+            
+            # Get campaign status
+            campaign_status = campaign_data.get('status', 'Active')
+            is_active = campaign_status.lower() in ['active', 'open']
+            
+            campaign_activity_stats.append({
+                'campaign_name': campaign_name,
+                'campaign_status': 'Active' if is_active else 'Closed',
+                'mitigating_time_window': mitigating_time_window,
+                'monitoring_time_window': monitoring_time_window,
+                'closed_time_window': closed_time_window,
+                'mitigating_all_time': mitigating_all_time
+            })
+        
+        return jsonify({
+            'time_window': time_window,
+            'campaign_activity': campaign_activity_stats
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in campaign activity timeline API: {e}")
         return jsonify({"error": str(e)}), 500
 
 def get_overlapping_infrastructure(all_campaigns_data):
