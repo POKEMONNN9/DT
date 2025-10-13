@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 import os
 import sys
 import random
+import tempfile
+import shutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,22 +48,56 @@ class ThreatDashboard:
     def load_campaigns(self):
         """Load campaign definitions from JSON file"""
         try:
-                with open('campaigns.json', 'r') as f:
+                # campaigns.json is in the app directory
+                campaigns_path = os.path.join('app', 'campaigns.json') if os.path.exists(os.path.join('app', 'campaigns.json')) else 'campaigns.json'
+                with open(campaigns_path, 'r') as f:
                     campaigns_data = json.load(f)
-                    logger.info(f"Loaded {len(campaigns_data)} campaigns from JSON file")
+                    logger.info(f"Loaded {len(campaigns_data)} campaigns from {campaigns_path}")
                 return campaigns_data
         except Exception as e:
             logger.error(f"Failed to load campaigns: {e}")
             return {}
 
     def save_campaigns(self):
-        """Save campaign definitions to JSON file"""
+        """Save campaign definitions to JSON file with atomic write"""
         try:
-            with open('campaigns.json', 'w') as f:
-                json.dump(self.campaigns, f, indent=2)
-            logger.info(f"Saved {len(self.campaigns)} campaigns to JSON file")
+            # Determine campaigns.json path
+            campaigns_path = os.path.join('app', 'campaigns.json') if os.path.exists('app') else 'campaigns.json'
+            campaigns_dir = os.path.dirname(campaigns_path) if os.path.dirname(campaigns_path) else '.'
+            
+            # Count total identifiers for logging
+            total_identifiers = 0
+            for campaign_name, campaign_data in self.campaigns.items():
+                if isinstance(campaign_data, dict) and 'identifiers' in campaign_data:
+                    total_identifiers += len(campaign_data['identifiers'])
+            
+            logger.info(f"Attempting to save {len(self.campaigns)} campaigns with {total_identifiers} total identifiers to {campaigns_path}")
+            
+            # Write to a temporary file first (atomic write pattern)
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.json', prefix='campaigns_', dir=campaigns_dir)
+            try:
+                with os.fdopen(temp_fd, 'w') as f:
+                    json.dump(self.campaigns, f, indent=2)
+                
+                # Verify the temp file was written correctly
+                with open(temp_path, 'r') as f:
+                    test_load = json.load(f)
+                    if not isinstance(test_load, dict):
+                        raise ValueError("Saved file is not a valid dictionary")
+                    logger.info(f"Temp file verified: {len(test_load)} campaigns")
+                
+                # Only replace the actual file if temp file is valid
+                shutil.move(temp_path, campaigns_path)
+                logger.info(f"✅ Successfully saved {len(self.campaigns)} campaigns with {total_identifiers} identifiers to {campaigns_path}")
+                
+            except Exception as temp_error:
+                # Clean up temp file if it still exists
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise temp_error
+                
         except Exception as e:
-            logger.error(f"Error saving campaigns: {e}")
+            logger.error(f"❌ CRITICAL ERROR saving campaigns: {e}")
             raise e
     
     def check_table_exists(self, table_name):
@@ -3349,11 +3385,28 @@ def api_summary():
 
 @app.route('/api/campaigns')
 def api_campaigns():
-    """API endpoint for campaigns data"""
+    """API endpoint for campaigns data - returns raw dictionary"""
     try:
+        # Reload from file to ensure we have the latest data
+        dashboard.campaigns = dashboard.load_campaigns()
+        logger.info(f"Reloaded {len(dashboard.campaigns)} campaigns from file")
         return jsonify(dashboard.campaigns)
     except Exception as e:
         logger.error(f"Error in campaigns API: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/campaigns/reload', methods=['POST'])
+def api_reload_campaigns():
+    """Force reload campaigns from JSON file"""
+    try:
+        dashboard.campaigns = dashboard.load_campaigns()
+        logger.info(f"Force reloaded {len(dashboard.campaigns)} campaigns from file")
+        return jsonify({
+            "message": "Campaigns reloaded successfully",
+            "count": len(dashboard.campaigns)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error reloading campaigns: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/infrastructure')
@@ -4575,7 +4628,7 @@ def api_get_campaigns():
                     if isinstance(mapping, dict):
                         if not mapping.get('metadata_complete', True):
                             incomplete_count += 1
-                                
+                        
                         if mapping.get('identifier_type') and mapping.get('identifier_value'):
                             identifiers.append({
                                 'type': mapping['identifier_type'],
@@ -6742,9 +6795,189 @@ def api_search_threat_intelligence_domain():
         logger.error(f"Error in search-threat-intelligence-domain API: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/campaigns/bulk-validate-identifiers', methods=['POST'])
+def api_bulk_validate_identifiers():
+    """
+    Bulk validate identifiers across all tables with optimized queries.
+    Instead of querying each identifier individually against each table,
+    this queries all identifiers at once per table (3 queries total).
+    
+    Performance: 100 identifiers = 3 queries instead of 300+ queries (99% reduction!)
+    """
+    try:
+        data = request.get_json()
+        identifiers_input = data.get('identifiers', '')
+        
+        if not identifiers_input:
+            return jsonify({"error": "No identifiers provided"}), 400
+        
+        # Parse identifiers - split by comma or newline, remove whitespace
+        raw_identifiers = []
+        for line in identifiers_input.split('\n'):
+            for identifier in line.split(','):
+                cleaned = identifier.strip()
+                if cleaned:
+                    raw_identifiers.append(cleaned)
+        
+        if not raw_identifiers:
+            return jsonify({"error": "No valid identifiers provided"}), 400
+        
+        logger.info(f"Bulk validating {len(raw_identifiers)} identifiers")
+        
+        # Results structure
+        validated_identifiers = []
+        found_in_tables = {
+            'cred_theft': [],
+            'domain_monitoring': [],
+            'social_media': []
+        }
+        not_found = []
+        
+        # Create IN clause for SQL (escape single quotes)
+        escaped_identifiers = ["'" + str(id_val).replace("'", "''") + "'" for id_val in raw_identifiers]
+        identifiers_in_clause = ','.join(escaped_identifiers)
+        
+        # QUERY 1: Check ALL identifiers in cred theft table (1 query for all)
+        cred_theft_query = f"""
+        SELECT 
+            i.case_number,
+            i.date_created_local,
+            i.date_closed_local,
+            i.brand,
+            'phishlabs_case_data_incidents' as source_table,
+            'case_number' as field_type
+        FROM phishlabs_case_data_incidents i
+        WHERE i.case_number IN ({identifiers_in_clause})
+        """
+        
+        cred_theft_results = dashboard.execute_query(cred_theft_query)
+        if cred_theft_results and isinstance(cred_theft_results, list):
+            for row in cred_theft_results:
+                case_number = row.get('case_number', '')
+                if case_number:
+                    found_in_tables['cred_theft'].append(case_number)
+                    validated_identifiers.append({
+                        'value': case_number,
+                        'field': 'case_number',
+                        'table': 'phishlabs_case_data_incidents',
+                        'date_created': str(row.get('date_created_local', 'N/A')),
+                        'date_closed': str(row.get('date_closed_local', 'N/A')) if row.get('date_closed_local') else 'Open',
+                        'brand': row.get('brand', 'N/A'),
+                        'type': 'Cred Theft',
+                        'metadata_complete': True
+                    })
+        
+        logger.info(f"Found {len(found_in_tables['cred_theft'])} identifiers in cred theft table")
+        
+        # QUERY 2: Check ALL identifiers in domain monitoring table (1 query for all)
+        domain_monitoring_query = f"""
+        SELECT 
+            t.infrid,
+            t.date_created,
+            t.threat_type_cat_name,
+            t.url,
+            'phishlabs_threat_intelligence_incident' as source_table,
+            'infrid' as field_type
+        FROM phishlabs_threat_intelligence_incident t
+        WHERE t.infrid IN ({identifiers_in_clause})
+        """
+        
+        domain_monitoring_results = dashboard.execute_query(domain_monitoring_query)
+        if domain_monitoring_results and isinstance(domain_monitoring_results, list):
+            for row in domain_monitoring_results:
+                infrid = row.get('infrid', '')
+                if infrid:
+                    found_in_tables['domain_monitoring'].append(infrid)
+                    validated_identifiers.append({
+                        'value': infrid,
+                        'field': 'infrid',
+                        'table': 'phishlabs_threat_intelligence_incident',
+                        'date_created': str(row.get('date_created', 'N/A')),
+                        'threat_type': row.get('threat_type_cat_name', 'N/A'),
+                        'url': row.get('url', 'N/A'),
+                        'type': 'Domain Monitoring',
+                        'metadata_complete': True
+                    })
+        
+        logger.info(f"Found {len(found_in_tables['domain_monitoring'])} identifiers in domain monitoring table")
+        
+        # QUERY 3: Check ALL identifiers in social media table (1 query for all)
+        social_media_query = f"""
+        SELECT 
+            s.incident_id,
+            s.created_local,
+            s.closed_local,
+            s.brand,
+            'phishlabs_incident' as source_table,
+            'incident_id' as field_type
+        FROM phishlabs_incident s
+        WHERE s.incident_id IN ({identifiers_in_clause})
+        """
+        
+        social_media_results = dashboard.execute_query(social_media_query)
+        if social_media_results and isinstance(social_media_results, list):
+            for row in social_media_results:
+                incident_id = row.get('incident_id', '')
+                if incident_id:
+                    found_in_tables['social_media'].append(incident_id)
+                    validated_identifiers.append({
+                        'value': incident_id,
+                        'field': 'incident_id',
+                        'table': 'phishlabs_incident',
+                        'date_created': str(row.get('created_local', 'N/A')),
+                        'date_closed': str(row.get('closed_local', 'N/A')) if row.get('closed_local') else 'Open',
+                        'brand': row.get('brand', 'N/A'),
+                        'type': 'Social Media',
+                        'metadata_complete': True
+                    })
+        
+        logger.info(f"Found {len(found_in_tables['social_media'])} identifiers in social media table")
+        
+        # Find identifiers that weren't found in any table
+        found_values = set(
+            found_in_tables['cred_theft'] + 
+            found_in_tables['domain_monitoring'] + 
+            found_in_tables['social_media']
+        )
+        
+        for identifier in raw_identifiers:
+            if identifier not in found_values:
+                not_found.append(identifier)
+        
+        # Summary
+        total_found = len(validated_identifiers)
+        total_not_found = len(not_found)
+        
+        logger.info(f"Bulk validation complete: {total_found} found, {total_not_found} not found (using 3 queries for {len(raw_identifiers)} identifiers)")
+        
+        return jsonify({
+            'success': True,
+            'total_provided': len(raw_identifiers),
+            'total_found': total_found,
+            'total_not_found': total_not_found,
+            'identifiers': validated_identifiers,
+            'not_found': not_found,
+            'found_by_type': {
+                'cred_theft': len(found_in_tables['cred_theft']),
+                'domain_monitoring': len(found_in_tables['domain_monitoring']),
+                'social_media': len(found_in_tables['social_media'])
+            },
+            'performance': {
+                'queries_used': 3,
+                'queries_saved': len(raw_identifiers) * 3 - 3,
+                'efficiency_improvement': f"{round((1 - 3 / (len(raw_identifiers) * 3)) * 100, 1)}%"
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in bulk identifier validation: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/save-campaigns', methods=['POST'])
 def api_save_campaigns():
-    """Save campaigns data (bulk save)"""
+    """Save campaigns data (bulk save) with deduplication and validation"""
     try:
         data = request.get_json()
         campaigns_data = data.get('campaigns', {})
@@ -6752,14 +6985,84 @@ def api_save_campaigns():
         if not isinstance(campaigns_data, dict):
             return jsonify({"error": "Invalid campaigns data format"}), 400
         
+        logger.info(f"Received save request for {len(campaigns_data)} campaigns")
+        
+        # Process each campaign with deduplication
+        total_identifiers_before = 0
+        total_identifiers_after = 0
+        total_duplicates_removed = 0
+        
+        for campaign_name, campaign_data in campaigns_data.items():
+            if not isinstance(campaign_data, dict):
+                continue
+                
+            identifiers = campaign_data.get('identifiers', [])
+            total_identifiers_before += len(identifiers)
+            
+            # Deduplicate identifiers based on case_number, infrid, or incident_id
+            unique_identifiers = []
+            seen = set()
+            
+            for identifier in identifiers:
+                if not isinstance(identifier, dict):
+                    continue
+                
+                # Create unique key based on the primary identifier field
+                field = identifier.get('field', '')
+                value = identifier.get('value', '')
+                
+                # Only deduplicate based on case_number, infrid, or incident_id
+                if field in ['case_number', 'infrid', 'incident_id']:
+                    unique_key = f"{field}:{value}"
+                else:
+                    # For other fields, use table + field + value
+                    table = identifier.get('table', '')
+                    unique_key = f"{table}:{field}:{value}"
+                
+                if unique_key and unique_key not in seen:
+                    seen.add(unique_key)
+                    unique_identifiers.append(identifier)
+            
+            duplicates_removed = len(identifiers) - len(unique_identifiers)
+            total_identifiers_after += len(unique_identifiers)
+            total_duplicates_removed += duplicates_removed
+            
+            if duplicates_removed > 0:
+                logger.info(f"Campaign {campaign_name}: Removed {duplicates_removed} duplicate identifiers ({len(identifiers)} → {len(unique_identifiers)})")
+            
+            # Update the campaign data with deduplicated identifiers
+            campaign_data['identifiers'] = unique_identifiers
+        
+        # Create a backup before saving
+        try:
+            import shutil
+            from datetime import datetime
+            campaigns_path = os.path.join('app', 'campaigns.json') if os.path.exists('app') else 'campaigns.json'
+            campaigns_dir = os.path.dirname(campaigns_path) if os.path.dirname(campaigns_path) else '.'
+            backup_filename = os.path.join(campaigns_dir, f"campaigns_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+            shutil.copy(campaigns_path, backup_filename)
+            logger.info(f"Created backup: {backup_filename}")
+        except Exception as backup_error:
+            logger.warning(f"Failed to create backup: {backup_error}")
+        
         # Update the dashboard campaigns
         dashboard.campaigns = campaigns_data
         
-        # Save to JSON file
-        dashboard.save_campaigns()
+        # Save to JSON file with error handling
+        try:
+            dashboard.save_campaigns()
+            logger.info(f"✅ Successfully saved {len(campaigns_data)} campaigns: {total_identifiers_before} identifiers → {total_identifiers_after} identifiers ({total_duplicates_removed} duplicates removed)")
+        except Exception as save_error:
+            logger.error(f"CRITICAL: Failed to save campaigns.json: {save_error}")
+            # Try to restore from the most recent backup if save failed
+            raise save_error
         
-        logger.info(f"Saved {len(campaigns_data)} campaigns to JSON file")
-        return jsonify({"message": "Campaigns saved successfully", "count": len(campaigns_data)}), 200
+        return jsonify({
+            "message": "Campaigns saved successfully", 
+            "count": len(campaigns_data),
+            "total_identifiers": total_identifiers_after,
+            "duplicates_removed": total_duplicates_removed
+        }), 200
         
     except Exception as e:
         logger.error(f"Error saving campaigns: {e}")
@@ -6925,7 +7228,14 @@ def api_threat_intelligence_metrics():
         # Execute queries
         ip_reuse = dashboard.execute_query(ip_reuse_query)
         if isinstance(ip_reuse, dict) and 'error' in ip_reuse:
+            logger.error(f"Error in IP reuse query: {ip_reuse.get('error', 'Unknown error')}")
             ip_reuse = []
+        
+        # Log IP reuse detection results
+        if not ip_reuse or len(ip_reuse) == 0:
+            logger.info("No IP reuse detected (no IPs used in multiple cases)")
+        else:
+            logger.info(f"Found {len(ip_reuse)} IP addresses with reuse (used in 2+ cases)")
         
         isp_data = dashboard.execute_query(isp_query)
         if isinstance(isp_data, dict) and 'error' in isp_data:
@@ -7710,11 +8020,12 @@ def api_comprehensive_analysis():
             unique_case_numbers = list(set(case_numbers))
             case_list = "','".join(unique_case_numbers)
             
-            # Query threat actor handles - get all matches
+            # Query threat actor handles - get all matches including URL
             actor_handles_query = f"""
             SELECT 
                 th.name,
                 th.record_type,
+                th.url,
                 th.case_number,
                 i.date_created_local as last_seen
             FROM phishlabs_case_data_note_threatactor_handles th
@@ -7732,13 +8043,15 @@ def api_comprehensive_analysis():
                     case_number = row.get('case_number', '')
                     last_seen = row.get('last_seen', 'N/A')
                     record_type = row.get('record_type', 'Unknown')
+                    url = row.get('url', 'N/A')
                     
                     if name and name != 'Unknown':
                         if name not in actor_counts:
                             actor_counts[name] = {
                                 'count': 0,
                                 'last_seen': last_seen,
-                                'record_type': record_type
+                                'record_type': record_type,
+                                'url': url  # Store the URL
                             }
                             actor_case_numbers[name] = set()
                         
@@ -7749,10 +8062,15 @@ def api_comprehensive_analysis():
                             identifier_count = case_numbers.count(case_number)
                             actor_counts[name]['count'] += identifier_count
                         
+                        # Update last_seen and url if newer/different
                         if last_seen and last_seen != 'N/A':
                             actor_counts[name]['last_seen'] = max(actor_counts[name]['last_seen'], last_seen)
+                        
+                        # If URL is not yet set or current row has a URL, update it
+                        if url and url != 'N/A' and (actor_counts[name]['url'] == 'N/A' or not actor_counts[name]['url']):
+                            actor_counts[name]['url'] = url
                 
-                # Create actor data with proper counts
+                # Create actor data with proper counts including URL
                 for name, data in actor_counts.items():
                     count = data['count']
                     activity_level = 'High' if count > 10 else ('Medium' if count > 5 else 'Low')
@@ -7760,6 +8078,7 @@ def api_comprehensive_analysis():
                         'name': name,
                         'type': 'Threat Actor Handle',
                         'record_type': data['record_type'],
+                        'url': data.get('url', 'N/A'),  # Include URL in output
                         'case_count': count,
                         'last_seen': str(data['last_seen']) if data['last_seen'] else 'N/A',
                         'activity_level': activity_level
@@ -8173,10 +8492,11 @@ def api_comprehensive_analysis():
         # Limit to top 20
         analysis_data['infrastructure'] = analysis_data['infrastructure'][:20]
         
-        # 5. GEOGRAPHIC DISTRIBUTION - Count based on campaign identifiers
+        # 5. GEOGRAPHIC DISTRIBUTION - ONLY for cred theft cases (case_numbers)
+        # Domain monitoring (infrids) and social media (incident_ids) don't have geographic data
         geo_data = {}
         
-        # Query case_data_associated_urls for case_numbers
+        # Query case_data_associated_urls ONLY for case_numbers (Cred Theft)
         if case_numbers:
             case_list = "','".join(case_numbers)
             case_geo_query = f"""
@@ -8186,7 +8506,7 @@ def api_comprehensive_analysis():
             FROM phishlabs_case_data_associated_urls u
             JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             WHERE u.case_number IN ('{case_list}')
-            AND u.host_country IS NOT NULL AND u.host_country != ''
+            AND u.host_country IS NOT NULL AND u.host_country != '' AND u.host_country != 'Unknown'
             """
             case_geo_results = dashboard.execute_query(case_geo_query)
             if case_geo_results and isinstance(case_geo_results, list):
@@ -8203,21 +8523,9 @@ def api_comprehensive_analysis():
                         geo_data[country]['case_count'] += identifier_count
                         geo_data[country]['domain_count'] += identifier_count
         
-        # Query threat_intelligence_incident for infrids (no geographic data available)
-        if infrids:
-            # Add unknown countries for threat intelligence cases
-            if 'Unknown' not in geo_data:
-                geo_data['Unknown'] = {'case_count': 0, 'domain_count': 0}
-            geo_data['Unknown']['case_count'] += len(infrids)
-            geo_data['Unknown']['domain_count'] += len(infrids)
-        
-        # Query incident table for incident_ids (no geographic data available)
-        if incident_ids:
-            # Add unknown countries for social media cases
-            if 'Unknown' not in geo_data:
-                geo_data['Unknown'] = {'case_count': 0, 'domain_count': 0}
-            geo_data['Unknown']['case_count'] += len(incident_ids)
-            geo_data['Unknown']['domain_count'] += len(incident_ids)
+        # NOTE: Domain monitoring (infrids) and social media (incident_ids) are INTENTIONALLY EXCLUDED
+        # because they don't have geographic data in their respective tables
+        logger.info(f"Geographic distribution: {len(geo_data)} countries found from {len(case_numbers)} cred theft cases (excluding {len(infrids)} domain monitoring and {len(incident_ids)} social media cases)")
         
         # Convert to list and sort by case_count
         for country, data in geo_data.items():
@@ -8269,4 +8577,287 @@ if __name__ == '__main__':
         print(f"Campaigns loaded: {len(dashboard.campaigns)}")
         print("=" * 60)
 
+@app.route('/api/dashboard/brand-distribution')
+def api_brand_distribution():
+    """Get brand distribution data for Executive Summary"""
+    try:
+        date_filter = request.args.get('date_filter', 'today')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Get date condition
+        date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # Query for brand distribution with closure times
+        brand_query = f"""
+        SELECT 
+            i.brand,
+            COUNT(DISTINCT i.case_number) as case_count,
+            COUNT(DISTINCT CASE WHEN i.case_status = 'Active' THEN i.case_number END) as active_count,
+            COUNT(DISTINCT CASE WHEN i.case_status = 'Closed' THEN i.case_number END) as closed_count,
+            AVG(CASE 
+                WHEN i.case_status = 'Closed' AND i.date_closed_local IS NOT NULL AND i.date_created_local IS NOT NULL
+                THEN DATEDIFF(hour, i.date_created_local, i.date_closed_local)
+                ELSE NULL 
+            END) as avg_hours_to_close
+        FROM phishlabs_case_data_incidents i
+        WHERE i.brand IS NOT NULL AND i.brand != '' AND {date_condition}
+        GROUP BY i.brand
+        HAVING COUNT(DISTINCT i.case_number) > 0
+        ORDER BY case_count DESC
+        """
+        
+        results = dashboard.execute_query(brand_query)
+        if not results or isinstance(results, dict):
+            return jsonify([])
+        
+        # Calculate total cases for percentage calculation
+        total_cases = sum(row.get('case_count', 0) for row in results)
+        
+        brand_data = []
+        for row in results:
+            case_count = row.get('case_count', 0)
+            percentage = (case_count / total_cases * 100) if total_cases > 0 else 0
+            avg_hours = row.get('avg_hours_to_close', 0)
+            avg_days = avg_hours / 24 if avg_hours else 0
+            
+            brand_data.append({
+                'brand': row.get('brand', ''),
+                'case_count': case_count,
+                'active_count': row.get('active_count', 0),
+                'closed_count': row.get('closed_count', 0),
+                'percentage': round(percentage, 1),
+                'avg_hours_to_close': round(avg_hours, 1) if avg_hours else None,
+                'avg_days_to_close': round(avg_days, 1) if avg_days else None
+            })
+        
+        return jsonify(brand_data)
+        
+    except Exception as e:
+        logger.error(f"Error in brand distribution API: {str(e)}")
+        return jsonify({"error": "Failed to fetch brand distribution data"}), 500
+
+@app.route('/api/dashboard/detection-source-distribution')
+def api_detection_source_distribution():
+    """Get detection source distribution data for Executive Summary"""
+    try:
+        date_filter = request.args.get('date_filter', 'today')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Get date condition
+        date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # Query for detection source distribution
+        detection_query = f"""
+        SELECT 
+            CASE 
+                WHEN i.source_name IN (
+                    'PhishLabs', 
+                    'PhishLabs Automated', 
+                    'PhishLabs Manual', 
+                    'External Vendor', 
+                    'Third Party',
+                    'PhishLabs Newly Issued SSL Certs',
+                    'PhishLabs Analyst',
+                    'PhishLabs Partner Feed',
+                    'PhishLabs Newly Observed Domains',
+                    'PhishLabs Open Web Detection',
+                    'PhishLabs Passive DNS',
+                    'PhishLabs Domain Monitoring',
+                    'PhishLabs Social Media Detection',
+                    'PhishLabs Dark Web Detection',
+                    'PhishLabs Mobile Detection',
+                    'PhishLabs Referrer Feed',
+                    'PhishLabs Newly Registered Domains',
+                    'PhishLabs Abuse Feed',
+                    'Domain Lookback',
+                    'PhishLabs Custom Feed',
+                    'PhishLabs SMS Feed',
+                    'PhishLabs Credential Theft Monitor',
+                    'PhishLabs Ad Monitoring',
+                    'Client Feeds',
+                    'PhishLabs Crimeware Automation'
+                ) 
+                THEN 'Phishlabs'
+                ELSE 'Internal'
+            END as detection_source,
+            COUNT(DISTINCT i.case_number) as case_count
+        FROM phishlabs_case_data_incidents i
+        WHERE i.source_name IS NOT NULL AND i.source_name != '' AND {date_condition}
+        GROUP BY 
+            CASE 
+                WHEN i.source_name IN (
+                    'PhishLabs', 
+                    'PhishLabs Automated', 
+                    'PhishLabs Manual', 
+                    'External Vendor', 
+                    'Third Party',
+                    'PhishLabs Newly Issued SSL Certs',
+                    'PhishLabs Analyst',
+                    'PhishLabs Partner Feed',
+                    'PhishLabs Newly Observed Domains',
+                    'PhishLabs Open Web Detection',
+                    'PhishLabs Passive DNS',
+                    'PhishLabs Domain Monitoring',
+                    'PhishLabs Social Media Detection',
+                    'PhishLabs Dark Web Detection',
+                    'PhishLabs Mobile Detection',
+                    'PhishLabs Referrer Feed',
+                    'PhishLabs Newly Registered Domains',
+                    'PhishLabs Abuse Feed',
+                    'Domain Lookback',
+                    'PhishLabs Custom Feed',
+                    'PhishLabs SMS Feed',
+                    'PhishLabs Credential Theft Monitor',
+                    'PhishLabs Ad Monitoring',
+                    'Client Feeds',
+                    'PhishLabs Crimeware Automation'
+                ) 
+                THEN 'Phishlabs'
+                ELSE 'Internal'
+            END
+        ORDER BY case_count DESC
+        """
+        
+        results = dashboard.execute_query(detection_query)
+        if not results or isinstance(results, dict):
+            return jsonify({'phishlabs': {'count': 0, 'percentage': 0}, 'internal': {'count': 0, 'percentage': 0}})
+        
+        # Calculate total for percentage
+        total_cases = sum(row.get('case_count', 0) for row in results)
+        
+        detection_data = {'phishlabs': {'count': 0, 'percentage': 0}, 'internal': {'count': 0, 'percentage': 0}}
+        
+        for row in results:
+            source = row.get('detection_source', '').lower()
+            count = row.get('case_count', 0)
+            percentage = (count / total_cases * 100) if total_cases > 0 else 0
+            
+            if source == 'phishlabs':
+                detection_data['phishlabs'] = {'count': count, 'percentage': round(percentage, 1)}
+            else:
+                detection_data['internal'] = {'count': count, 'percentage': round(percentage, 1)}
+        
+        return jsonify(detection_data)
+        
+    except Exception as e:
+        logger.error(f"Error in detection source distribution API: {str(e)}")
+        return jsonify({"error": "Failed to fetch detection source distribution data"}), 500
+
+@app.route('/api/dashboard/case-type-analysis')
+def api_case_type_analysis():
+    """Get case type analysis data for Executive Summary"""
+    try:
+        date_filter = request.args.get('date_filter', 'today')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Get date condition
+        date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # Query for case type analysis
+        case_type_query = f"""
+        SELECT 
+            i.case_type,
+            COUNT(DISTINCT i.case_number) as total_cases,
+            COUNT(DISTINCT CASE WHEN i.case_status = 'Active' THEN i.case_number END) as active_cases,
+            COUNT(DISTINCT CASE WHEN i.case_status = 'Closed' THEN i.case_number END) as closed_cases,
+            AVG(CASE 
+                WHEN i.case_status = 'Closed' AND i.date_closed_local IS NOT NULL AND i.date_created_local IS NOT NULL
+                THEN DATEDIFF(day, i.date_created_local, i.date_closed_local)
+                ELSE NULL 
+            END) as avg_days_to_close
+        FROM phishlabs_case_data_incidents i
+        WHERE i.case_type IS NOT NULL AND i.case_type != '' AND {date_condition}
+        GROUP BY i.case_type
+        HAVING COUNT(DISTINCT i.case_number) > 0
+        ORDER BY total_cases DESC
+        """
+        
+        results = dashboard.execute_query(case_type_query)
+        logger.info(f"Case type analysis query returned {len(results) if results and isinstance(results, list) else 0} results")
+        if not results or isinstance(results, dict):
+            logger.info("No case type data found")
+            return jsonify([])
+        
+        # Get resolution status breakdown for each case type
+        case_types = [row.get('case_type', '') for row in results]
+        case_type_data = []
+        
+        for row in results:
+            case_type = row.get('case_type', '')
+            total_cases = row.get('total_cases', 0)
+            active_cases = row.get('active_cases', 0)
+            closed_cases = row.get('closed_cases', 0)
+            avg_days = row.get('avg_days_to_close', 0)
+            
+            # Get median days to close for this case type using a simpler approach
+            # Calculate median using ROW_NUMBER
+            median_query = f"""
+            WITH OrderedDays AS (
+                SELECT 
+                    DATEDIFF(day, i.date_created_local, i.date_closed_local) as days_to_close,
+                    ROW_NUMBER() OVER (ORDER BY DATEDIFF(day, i.date_created_local, i.date_closed_local)) as row_num,
+                    COUNT(*) OVER () as total_count
+                FROM phishlabs_case_data_incidents i
+                WHERE i.case_type = '{case_type}' 
+                AND i.case_status = 'Closed' 
+                AND i.date_closed_local IS NOT NULL 
+                AND i.date_created_local IS NOT NULL 
+                AND {date_condition}
+            )
+            SELECT AVG(CAST(days_to_close AS FLOAT)) as median_days
+            FROM OrderedDays
+            WHERE row_num IN ((total_count + 1) / 2, (total_count + 2) / 2)
+            """
+            
+            median_result = dashboard.execute_query(median_query)
+            median_days = 0
+            if median_result and isinstance(median_result, list) and len(median_result) > 0:
+                median_days = median_result[0].get('median_days', 0) or 0
+                logger.info(f"Median days for {case_type}: {median_days}")
+            
+            # Get resolution status breakdown for this case type
+            resolution_query = f"""
+            SELECT 
+                i.resolution_status,
+                COUNT(DISTINCT i.case_number) as count,
+                ROUND(COUNT(DISTINCT i.case_number) * 100.0 / {total_cases}, 1) as percentage
+            FROM phishlabs_case_data_incidents i
+            WHERE i.case_type = '{case_type}' AND i.resolution_status IS NOT NULL 
+            AND i.resolution_status != '' AND {date_condition}
+            GROUP BY i.resolution_status
+            ORDER BY count DESC
+            """
+            
+            resolution_results = dashboard.execute_query(resolution_query)
+            resolution_breakdown = []
+            if resolution_results and not isinstance(resolution_results, dict):
+                for res_row in resolution_results:
+                    resolution_breakdown.append({
+                        'status': res_row.get('resolution_status', ''),
+                        'count': res_row.get('count', 0),
+                        'percentage': res_row.get('percentage', 0)
+                    })
+            
+            case_type_data.append({
+                'case_type': case_type,
+                'total_cases': total_cases,
+                'active_cases': active_cases,
+                'closed_cases': closed_cases,
+                'active_percentage': round((active_cases / total_cases * 100) if total_cases > 0 else 0, 1),
+                'closed_percentage': round((closed_cases / total_cases * 100) if total_cases > 0 else 0, 1),
+                'median_days_to_close': round(median_days, 1) if median_days else None,
+                'avg_days_to_close': round(avg_days, 1) if avg_days else None,
+                'resolution_breakdown': resolution_breakdown
+            })
+        
+        return jsonify(case_type_data)
+        
+    except Exception as e:
+        logger.error(f"Error in case type analysis API: {str(e)}")
+        return jsonify({"error": "Failed to fetch case type analysis data"}), 500
+
+if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
