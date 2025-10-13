@@ -255,6 +255,10 @@ class ExecutiveDashboard {
             await this.updateMetrics();
             await this.updateThreatLandscapeChart();
             await this.updateGeographicHeatmapChart();
+            
+            // Load new Executive Summary charts
+            await this.loadNewExecutiveCharts();
+            
             this.renderActivityTimeline(); // Render the timeline HTML structure
             await this.updateTimelineTrendsChart();
             await this.updateMiniTrendChart();
@@ -1200,6 +1204,378 @@ class ExecutiveDashboard {
         
         // Clean up timeline auto-refresh interval
         this.stopTimelineAutoRefresh();
+    }
+
+    // ===== NEW EXECUTIVE SUMMARY CHART METHODS =====
+
+    /**
+     * Load and render Brand Distribution Chart
+     */
+    async loadBrandDistributionChart() {
+        try {
+            const dateFilter = document.getElementById('dateFilter')?.value || 'all';
+            const startDate = document.getElementById('startDate')?.value || '';
+            const endDate = document.getElementById('endDate')?.value || '';
+            
+            const params = new URLSearchParams({
+                date_filter: dateFilter,
+                start_date: startDate,
+                end_date: endDate
+            });
+            
+            const response = await fetch(`/api/dashboard/brand-distribution?${params}`);
+            const brandData = await response.json();
+            
+            if (!brandData || brandData.length === 0) {
+                document.getElementById('brandDistributionLoading').style.display = 'none';
+                document.getElementById('brandDistributionNoData').style.display = 'block';
+                return;
+            }
+            
+            this.renderBrandDistributionChart(brandData);
+            
+        } catch (error) {
+            console.error('Error loading brand distribution:', error);
+            document.getElementById('brandDistributionLoading').style.display = 'none';
+            document.getElementById('brandDistributionNoData').style.display = 'block';
+        }
+    }
+
+    /**
+     * Render Brand Distribution Chart
+     */
+    renderBrandDistributionChart(brandData) {
+        // Hide loading, show container
+        document.getElementById('brandDistributionLoading').style.display = 'none';
+        document.getElementById('brandDistributionContainer').style.display = 'block';
+        
+        // Generate color palette using app theme colors
+        const colors = [
+            '#1e40af', '#3b82f6', '#dc2626', '#059669', '#f59e0b', '#0891b2',
+            '#7c3aed', '#10b981', '#ef4444', '#06b6d4', '#84cc16', '#f97316'
+        ];
+        
+        // Create horizontal segmented bar
+        const totalCases = brandData.reduce((sum, brand) => sum + brand.case_count, 0);
+        const barContainer = document.getElementById('brandDistributionBar');
+        barContainer.innerHTML = '';
+        
+        brandData.forEach((brand, index) => {
+            const percentage = (brand.case_count / totalCases) * 100;
+            const segment = document.createElement('div');
+            segment.className = 'distribution-segment';
+            segment.style.width = `${percentage}%`;
+            segment.style.backgroundColor = colors[index % colors.length];
+            
+            const label = document.createElement('div');
+            label.className = 'segment-label';
+            label.textContent = percentage > 5 ? brand.brand : ''; // Only show label if segment is large enough
+            
+            segment.appendChild(label);
+            barContainer.appendChild(segment);
+        });
+        
+        // Create brand cards
+        const cardsContainer = document.getElementById('brandCardsGrid');
+        cardsContainer.innerHTML = '';
+        
+        brandData.forEach((brand, index) => {
+            const card = document.createElement('div');
+            card.className = 'brand-card';
+            
+            const icon = document.createElement('div');
+            icon.className = 'brand-icon';
+            icon.style.backgroundColor = colors[index % colors.length];
+            icon.textContent = brand.brand.charAt(0).toUpperCase();
+            
+            const info = document.createElement('div');
+            info.className = 'brand-info';
+            
+            const name = document.createElement('div');
+            name.className = 'brand-name';
+            name.textContent = brand.brand;
+            
+            const stats = document.createElement('div');
+            stats.className = 'brand-stats';
+            
+            const cases = document.createElement('span');
+            cases.className = 'brand-cases';
+            cases.textContent = `${brand.case_count} cases`;
+            
+            const percentage = document.createElement('span');
+            percentage.className = 'brand-percentage';
+            percentage.textContent = ` (${brand.percentage}%)`;
+            
+            const time = document.createElement('div');
+            time.className = 'brand-time';
+            if (brand.avg_hours_to_close) {
+                const days = Math.round(brand.avg_hours_to_close / 24 * 10) / 10;
+                time.textContent = `Avg: ${brand.avg_hours_to_close}h (${days}d) to close`;
+            } else {
+                time.textContent = 'No closure data';
+            }
+            
+            stats.appendChild(cases);
+            stats.appendChild(percentage);
+            
+            info.appendChild(name);
+            info.appendChild(stats);
+            info.appendChild(time);
+            
+            card.appendChild(icon);
+            card.appendChild(info);
+            cardsContainer.appendChild(card);
+        });
+    }
+
+    /**
+     * Load and render Detection Source Distribution Chart
+     */
+    async loadDetectionSourceChart() {
+        try {
+            const dateFilter = document.getElementById('dateFilter')?.value || 'all';
+            const startDate = document.getElementById('startDate')?.value || '';
+            const endDate = document.getElementById('endDate')?.value || '';
+            
+            const params = new URLSearchParams({
+                date_filter: dateFilter,
+                start_date: startDate,
+                end_date: endDate
+            });
+            
+            const response = await fetch(`/api/dashboard/detection-source-distribution?${params}`);
+            const detectionData = await response.json();
+            
+            if (!detectionData || (!detectionData.phishlabs?.count && !detectionData.internal?.count)) {
+                document.getElementById('detectionSourceLoading').style.display = 'none';
+                document.getElementById('detectionSourceNoData').style.display = 'block';
+                return;
+            }
+            
+            this.renderDetectionSourceChart(detectionData);
+            
+        } catch (error) {
+            console.error('Error loading detection source distribution:', error);
+            document.getElementById('detectionSourceLoading').style.display = 'none';
+            document.getElementById('detectionSourceNoData').style.display = 'block';
+        }
+    }
+
+    /**
+     * Render Detection Source Distribution Chart
+     */
+    renderDetectionSourceChart(detectionData) {
+        // Hide loading, show container
+        document.getElementById('detectionSourceLoading').style.display = 'none';
+        document.getElementById('detectionSourceContainer').style.display = 'block';
+        
+        // Update card values
+        document.getElementById('phishlabsCount').textContent = detectionData.phishlabs?.count || 0;
+        document.getElementById('phishlabsPercentage').textContent = `${detectionData.phishlabs?.percentage || 0}%`;
+        document.getElementById('internalCount').textContent = detectionData.internal?.count || 0;
+        document.getElementById('internalPercentage').textContent = `${detectionData.internal?.percentage || 0}%`;
+        
+        // Create simple colored bar with HTML
+        const totalCases = (detectionData.phishlabs?.count || 0) + (detectionData.internal?.count || 0);
+        const barContainer = document.getElementById('detectionDistributionBar');
+        
+        let barHTML = '';
+        
+        if (detectionData.phishlabs?.count > 0) {
+            const phishlabsPercentage = (detectionData.phishlabs.count / totalCases) * 100;
+            barHTML += `
+                <div style="
+                    width: ${phishlabsPercentage}%;
+                    height: 32px;
+                    background: #1e40af;
+                    display: inline-block;
+                    position: relative;
+                    float: left;
+                    border-radius: ${phishlabsPercentage === 100 ? '16px' : '16px 0 0 16px'};
+                ">
+                    <div style="
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        color: white;
+                        font-weight: bold;
+                        font-size: 13px;
+                        text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+                    ">Phishlabs: ${detectionData.phishlabs.count} (${detectionData.phishlabs.percentage}%)</div>
+                </div>
+            `;
+        }
+        
+        if (detectionData.internal?.count > 0) {
+            const internalPercentage = (detectionData.internal.count / totalCases) * 100;
+            barHTML += `
+                <div style="
+                    width: ${internalPercentage}%;
+                    height: 32px;
+                    background: #10b981;
+                    display: inline-block;
+                    position: relative;
+                    float: left;
+                    border-radius: ${internalPercentage === 100 ? '16px' : '0 16px 16px 0'};
+                ">
+                    <div style="
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        color: white;
+                        font-weight: bold;
+                        font-size: 13px;
+                        text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+                    ">Internal: ${detectionData.internal.count} (${detectionData.internal.percentage}%)</div>
+                </div>
+            `;
+        }
+        
+        barContainer.innerHTML = barHTML;
+    }
+
+    /**
+     * Load and render Case Type Analysis Chart
+     */
+    async loadCaseTypeAnalysisChart() {
+        try {
+            const dateFilter = document.getElementById('dateFilter')?.value || 'all';
+            const startDate = document.getElementById('startDate')?.value || '';
+            const endDate = document.getElementById('endDate')?.value || '';
+            
+            const params = new URLSearchParams({
+                date_filter: dateFilter,
+                start_date: startDate,
+                end_date: endDate
+            });
+            
+            const response = await fetch(`/api/dashboard/case-type-analysis?${params}`);
+            const caseTypeData = await response.json();
+            
+            if (!caseTypeData || caseTypeData.length === 0) {
+                document.getElementById('caseTypeAnalysisLoading').style.display = 'none';
+                document.getElementById('caseTypeAnalysisNoData').style.display = 'block';
+                return;
+            }
+            
+            this.renderCaseTypeAnalysisChart(caseTypeData);
+            
+        } catch (error) {
+            console.error('Error loading case type analysis:', error);
+            document.getElementById('caseTypeAnalysisLoading').style.display = 'none';
+            document.getElementById('caseTypeAnalysisNoData').style.display = 'block';
+        }
+    }
+
+    /**
+     * Render Case Type Analysis Chart
+     */
+    renderCaseTypeAnalysisChart(caseTypeData) {
+        // Hide loading, show container
+        document.getElementById('caseTypeAnalysisLoading').style.display = 'none';
+        document.getElementById('caseTypeAnalysisContainer').style.display = 'block';
+        
+        // Create compact table
+        const container = document.getElementById('caseTypeCardsGrid');
+        
+        let tableHTML = `
+            <div class="case-type-table-wrapper">
+                <table class="case-type-table">
+                    <thead>
+                        <tr>
+                            <th>Case Type</th>
+                            <th style="text-align: center;">Total Cases</th>
+                            <th>Active / Closed</th>
+                            <th style="text-align: center;">Median Days</th>
+                            <th style="text-align: center;">Avg Days</th>
+                            <th>Resolution Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        caseTypeData.forEach((caseType, index) => {
+            // Build resolution tags
+            let resolutionHTML = '';
+            if (caseType.resolution_breakdown && caseType.resolution_breakdown.length > 0) {
+                resolutionHTML = '<div class="resolution-mini-list">';
+                caseType.resolution_breakdown.forEach(resolution => {
+                    resolutionHTML += `
+                        <span class="resolution-tag">
+                            <span class="resolution-tag-name">${resolution.status}:</span>
+                            <span class="resolution-tag-count">${resolution.count}</span>
+                            <span class="resolution-tag-percentage">(${resolution.percentage}%)</span>
+                        </span>
+                    `;
+                });
+                resolutionHTML += '</div>';
+            } else {
+                resolutionHTML = '<span style="color: #a0aec0; font-size: 12px;">No data</span>';
+            }
+            
+            tableHTML += `
+                <tr>
+                    <td>
+                        <div class="case-type-name">
+                            <div class="case-type-badge">${caseType.case_type.charAt(0).toUpperCase()}</div>
+                            <span class="case-type-label">${caseType.case_type}</span>
+                        </div>
+                    </td>
+                    <td class="case-count-cell">${caseType.total_cases}</td>
+                    <td>
+                        <div class="case-status-breakdown">
+                            <div class="status-item">
+                                <div class="status-dot active"></div>
+                                <span class="status-count">${caseType.active_cases}</span>
+                                <span class="status-percentage">(${caseType.active_percentage}%)</span>
+                            </div>
+                            <div class="status-item">
+                                <div class="status-dot closed"></div>
+                                <span class="status-count">${caseType.closed_cases}</span>
+                                <span class="status-percentage">(${caseType.closed_percentage}%)</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="days-to-close-cell">
+                        <span class="days-value">${caseType.median_days_to_close ? caseType.median_days_to_close.toFixed(1) : 'N/A'}</span>
+                        <span class="days-label">${caseType.median_days_to_close ? 'days' : ''}</span>
+                    </td>
+                    <td class="days-to-close-cell">
+                        <span class="days-value">${caseType.avg_days_to_close ? caseType.avg_days_to_close.toFixed(1) : 'N/A'}</span>
+                        <span class="days-label">${caseType.avg_days_to_close ? 'days' : ''}</span>
+                    </td>
+                    <td class="resolution-breakdown-cell">
+                        ${resolutionHTML}
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = tableHTML;
+    }
+
+    /**
+     * Load all new Executive Summary charts
+     */
+    async loadNewExecutiveCharts() {
+        console.log('Loading new Executive Summary charts...');
+        
+        // Load all three charts in parallel
+        await Promise.all([
+            this.loadBrandDistributionChart(),
+            this.loadDetectionSourceChart(),
+            this.loadCaseTypeAnalysisChart()
+        ]);
+        
+        console.log('All new Executive Summary charts loaded successfully');
     }
 }
 
@@ -7997,7 +8373,7 @@ function copyChartAsHTML(chartElement, chartTitle) {
         // Apply inline styles to preserve appearance - enhanced for Outlook compatibility
         applyInlineStyles(clone, chartElement);
         
-        // Additional Outlook-specific fixes
+        // Additional Outlook-specific fixess
         applyOutlookCompatibilityFixes(clone);
         
         // Post-processing for Executive Summary: remove fixed dimensions that were just applied
@@ -9124,34 +9500,107 @@ class CampaignManagement {
             errors: []
         };
 
+        // Separate identifiers (numeric) from domains/URLs (non-numeric)
+        const identifiers = [];
+        const domainValues = [];
+        
         for (const value of values) {
+            const isNumeric = /^\d+$/.test(value);
+            if (isNumeric) {
+                identifiers.push(value);
+            } else {
+                domainValues.push(value);
+            }
+        }
+
+        // ========== OPTIMIZED: Bulk validate all identifiers with 3 queries instead of N*3 queries ==========
+        if (identifiers.length > 0) {
             try {
-                const isNumeric = /^\d+$/.test(value);
+                console.log(`🚀 Bulk validating ${identifiers.length} identifiers using optimized endpoint (3 queries total)`);
+                const startTime = performance.now();
                 
-                if (isNumeric) {
-                    // Search for case numbers, infrid, or incident_id
-                    const caseResults = await this.searchNumericValue(value, searchType);
-                    if (caseResults.length > 0) {
-                        results.found.push(...caseResults);
-                    } else {
+                // Join identifiers with newlines for the bulk endpoint
+                const identifiersText = identifiers.join('\n');
+                
+                const bulkResponse = await fetch('/api/campaigns/bulk-validate-identifiers', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        identifiers: identifiersText
+                    })
+                });
+                
+                if (bulkResponse.ok) {
+                    const bulkData = await bulkResponse.json();
+                    const endTime = performance.now();
+                    const timeElapsed = (endTime - startTime).toFixed(0);
+                    
+                    console.log(`✅ Bulk validation complete in ${timeElapsed}ms:`, bulkData.performance);
+                    console.log(`   - Found: ${bulkData.total_found} identifiers`);
+                    console.log(`   - Not found: ${bulkData.total_not_found} identifiers`);
+                    console.log(`   - Queries saved: ${bulkData.performance.queries_saved}`);
+                    console.log(`   - Efficiency: ${bulkData.performance.efficiency_improvement}`);
+                    
+                    // Add found identifiers to results
+                    bulkData.identifiers.forEach(item => {
+                        results.found.push({
+                            table: item.table,
+                            field: item.field,
+                            value: item.value,
+                            description: `${item.type}: ${item.value} - Brand: ${item.brand || 'N/A'}, Created: ${item.date_created || 'N/A'}`,
+                            originalInput: item.value,
+                            metadata: item
+                        });
+                    });
+                    
+                    // Add not found identifiers to results
+                    bulkData.not_found.forEach(value => {
                         results.notFound.push({
                             value,
-                            type: 'numeric',
-                            reason: 'No matching case found'
+                            type: 'identifier',
+                            reason: 'Not found in any table (cred theft, domain monitoring, or social media)'
                         });
-                    }
+                    });
                 } else {
-                    // Search for domains, URLs, etc.
-                    const domainResults = await this.searchDomainValue(value, searchType);
-                    if (domainResults.length > 0) {
-                        results.found.push(...domainResults);
-                    } else {
-                        results.notFound.push({
-                            value,
-                            type: 'domain/url',
-                            reason: 'No matching domain or URL found'
-                        });
+                    console.error('Bulk validation failed, falling back to individual queries');
+                    // Fallback: validate individually if bulk fails
+                    for (const value of identifiers) {
+                        const caseResults = await this.searchNumericValue(value, searchType);
+                        if (caseResults.length > 0) {
+                            results.found.push(...caseResults);
+                        } else {
+                            results.notFound.push({
+                                value,
+                                type: 'numeric',
+                                reason: 'No matching case found'
+                            });
+                        }
                     }
+                }
+            } catch (error) {
+                console.error('Error in bulk validation:', error);
+                results.errors.push({
+                    value: 'bulk-validation',
+                    error: `Bulk validation failed: ${error.message}`
+                });
+            }
+        }
+
+        // ========== Non-numeric values (domains/URLs) - still individual queries ==========
+        // These need individual queries because they search across multiple fields/tables
+        for (const value of domainValues) {
+            try {
+                const domainResults = await this.searchDomainValue(value, searchType);
+                if (domainResults.length > 0) {
+                    results.found.push(...domainResults);
+                } else {
+                    results.notFound.push({
+                        value,
+                        type: 'domain/url',
+                        reason: 'No matching domain or URL found'
+                    });
                 }
             } catch (error) {
                 results.errors.push({
@@ -9466,17 +9915,78 @@ class CampaignManagement {
         // This method should save the campaign data to campaigns.json
         // Convert the list format to dictionary format that backend expects
         try {
+            console.log('💾 Saving campaign data...', {
+                totalCampaigns: this.campaigns.length,
+                currentCampaign: this.currentCampaign ? this.currentCampaign.name : 'none',
+                currentIdentifierCount: this.currentCampaign ? this.currentCampaign.identifiers?.length : 0
+            });
+            
+            // CRITICAL: Reload campaigns from backend first to avoid overwriting changes
+            // This prevents data loss if another tab/user made changes
+            try {
+                const response = await fetch('/api/campaigns');
+                if (response.ok) {
+                    const latestCampaigns = await response.json();
+                    
+                    // Merge current campaign's changes into the latest data
+                    if (this.currentCampaign && latestCampaigns[this.currentCampaign.name]) {
+                        // Update the latest version with our current campaign's changes
+                        latestCampaigns[this.currentCampaign.name] = {
+                            ...latestCampaigns[this.currentCampaign.name],
+                            name: this.currentCampaign.name,
+                            description: this.currentCampaign.description,
+                            status: this.currentCampaign.status,
+                            identifiers: this.currentCampaign.identifiers || [],
+                            last_updated: new Date().toISOString().split('T')[0]
+                        };
+                        console.log('🔄 Merged current campaign changes into latest data');
+                    }
+                    
+                    // Update our local campaigns list with the merged data
+                    this.campaigns = Object.values(latestCampaigns);
+                }
+            } catch (reloadError) {
+                console.warn('⚠️ Could not reload latest campaigns, proceeding with current data:', reloadError);
+            }
+            
             // Convert list format to dictionary format
             const campaignsDict = {};
             this.campaigns.forEach(campaign => {
+                // Deduplicate identifiers based on unique combination of table + field + value
+                const uniqueIdentifiers = [];
+                const seen = new Set();
+                
+                (campaign.identifiers || []).forEach(identifier => {
+                    // Create unique key based on case_number, infrid, or incident_id
+                    let uniqueKey;
+                    if (identifier.field === 'case_number' || identifier.field === 'infrid' || identifier.field === 'incident_id') {
+                        uniqueKey = `${identifier.field}:${identifier.value}`;
+                    } else {
+                        // Fallback for other field types
+                        uniqueKey = `${identifier.table}:${identifier.field}:${identifier.value}`;
+                    }
+                    
+                    if (!seen.has(uniqueKey)) {
+                        seen.add(uniqueKey);
+                        uniqueIdentifiers.push(identifier);
+                    }
+                });
+                
+                console.log(`Campaign ${campaign.name}: ${campaign.identifiers?.length || 0} identifiers, ${uniqueIdentifiers.length} after dedup`);
+                
                 campaignsDict[campaign.name] = {
                     name: campaign.name,
-                    description: campaign.description,
-                    status: campaign.status,
-                    identifiers: campaign.identifiers || [],
-                    created_date: campaign.created_date,
-                    last_updated: campaign.last_updated
+                    description: campaign.description || '',
+                    status: campaign.status || 'ACTIVE',
+                    identifiers: uniqueIdentifiers,
+                    created_date: campaign.created_date || new Date().toISOString().split('T')[0],
+                    last_updated: new Date().toISOString().split('T')[0] // Always update to current time
                 };
+            });
+
+            console.log('💾 Sending to backend:', {
+                campaignCount: Object.keys(campaignsDict).length,
+                totalIdentifiers: Object.values(campaignsDict).reduce((sum, c) => sum + c.identifiers.length, 0)
             });
 
             const response = await fetch('/api/save-campaigns', {
@@ -9488,10 +9998,15 @@ class CampaignManagement {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to save campaign data');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to save campaign data');
             }
+            
+            const result = await response.json();
+            console.log('✅ Campaign data saved successfully:', result);
+            
         } catch (error) {
-            console.error('Error saving campaign data:', error);
+            console.error('❌ Error saving campaign data:', error);
             throw error;
         }
     }
