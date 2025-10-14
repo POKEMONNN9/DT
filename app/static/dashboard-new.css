@@ -122,6 +122,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 100;
+    transition: transform 0.3s ease, opacity 0.3s ease;
     box-shadow: var(--shadow-sm);
 }
 
@@ -199,6 +200,65 @@ body {
     border-color: var(--gray-500);
 }
 
+.focus-mode-btn {
+    background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-blue-light) 100%);
+    border-color: var(--primary-blue);
+}
+
+.focus-mode-btn:hover {
+    background: linear-gradient(135deg, var(--primary-blue-light) 0%, var(--primary-blue) 100%);
+    border-color: var(--primary-blue-light);
+}
+
+/* Focus Mode - Hide sidebar and nav bars */
+body.focus-mode .sidebar {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.focus-mode .top-nav {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.focus-mode .filter-toolbar {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.focus-mode .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    justify-content: flex-start;
+    overflow-x: hidden;
+}
+
+body.focus-mode .content-area {
+    flex: none !important;
+    margin: 0 !important;
+    padding: 0 80px 25px 40px !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+}
+
+/* Focus mode toggle button - stays visible */
+body.focus-mode #toggleFocusMode {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    opacity: 1;
+    pointer-events: all;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    background: linear-gradient(135deg, var(--threat-red) 0%, #f87171 100%);
+    border-color: var(--threat-red);
+}
+
 /* ============================================================================
    FILTER TOOLBAR
    ============================================================================ */
@@ -208,6 +268,7 @@ body {
     border-bottom: 1px solid var(--border-light);
     padding: var(--space-md) var(--space-xl);
     box-shadow: var(--shadow-xs);
+    transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
 .filter-container {
@@ -271,6 +332,7 @@ body {
     min-height: calc(100vh - 128px);
     width: 100%;
     max-width: none;
+    transition: margin-left 0.3s ease, margin-top 0.3s ease, width 0.3s ease;
 }
 
 /* ============================================================================
@@ -287,6 +349,7 @@ body {
     height: calc(100vh - 64px);
     overflow-y: auto;
     box-shadow: var(--shadow-sm);
+    transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
 .sidebar-nav {
@@ -353,6 +416,7 @@ body {
     flex: 1;
     padding: var(--space-xl);
     overflow-y: auto;
+    transition: all 0.3s ease;
 }
 
 .content-section {
@@ -20056,4 +20120,40 @@ canvas {
         font-size: 9px;
         padding: 2px 4px;
     }
+}
+
+/* ============================================================================
+   DASHBOARD FOOTER
+   ============================================================================ */
+
+.dashboard-footer {
+    background: var(--gray-800);
+    border-top: 1px solid var(--border-light);
+    padding: 16px 32px;
+    margin-top: auto;
+    width: 100%;
+}
+
+.footer-content {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.footer-text {
+    color: #94a3b8;
+}
+
+.footer-divider {
+    color: #64748b;
+    font-weight: 400;
+}
+
+/* Focus mode - hide footer */
+body.focus-mode .dashboard-footer {
+    display: none;
 }
