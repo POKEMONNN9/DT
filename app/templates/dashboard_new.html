@@ -25,6 +25,9 @@
                     <span class="status-text">Checking connection...</span>
                 </div>
                 <div class="timestamp" id="timestamp">--:--:--</div>
+                <button id="toggleFocusMode" class="nav-btn focus-mode-btn" onclick="toggleFocusMode()" title="Toggle Focus Mode (Hide/Show Sidebar & Nav)">
+                    <i class="fas fa-expand"></i>
+                </button>
                 <button id="refreshData" class="nav-btn refresh-btn refresh-btn-primary" onclick="refreshData()" title="Refresh Data">
                     <i class="fas fa-sync-alt"></i>
                 </button>
@@ -1855,5 +1858,16 @@
         testCampaignManagement();
         window.addEventListener('load', testCampaignManagement);
     </script>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+        <div class="footer-content">
+            <span class="footer-text">CCB</span>
+            <span class="footer-divider">|</span>
+            <span class="footer-text">FCO</span>
+            <span class="footer-divider">|</span>
+            <span class="footer-text">TBG</span>
+        </div>
+    </footer>
 </body>
 </html>
