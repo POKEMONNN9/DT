@@ -2290,7 +2290,13 @@ class ThreatDashboard:
             sla_query = f"""
                 SELECT 
                     i.case_number,
-                    ISNULL(u.url, 'No URL') as url,
+                    ISNULL(
+                        (SELECT TOP 1 u2.url 
+                         FROM phishlabs_case_data_associated_urls u2
+                         WHERE u2.case_number = i.case_number 
+                         ORDER BY LEN(u2.url) DESC), 
+                        'No URL'
+                    ) as url,
                     ISNULL(i.case_type, 'Unknown') as case_type,
                     DATEDIFF(day, i.date_created_local, GETDATE()) as days_open,
                     DATEDIFF(hour, i.date_created_local, GETDATE()) as hours_open,
@@ -2299,18 +2305,30 @@ class ThreatDashboard:
                         WHEN DATEDIFF(day, i.date_created_local, GETDATE()) <= 28 THEN 'Amber'
                         ELSE 'Red'
                     END as sla_status,
-                    ISNULL(r.name, 'Unknown Registrar') as registrar_name,
-                    ISNULL(u.host_isp, 'Unknown ISP') as host_isp
+                    ISNULL(
+                        (SELECT TOP 1 r2.name 
+                         FROM phishlabs_iana_registry r2 
+                         WHERE r2.iana_id = i.iana_id), 
+                        'Unknown Registrar'
+                    ) as registrar_name,
+                    ISNULL(
+                        (SELECT TOP 1 u3.host_isp 
+                         FROM phishlabs_case_data_associated_urls u3
+                         WHERE u3.case_number = i.case_number 
+                         ORDER BY LEN(u3.url) DESC), 
+                        'Unknown ISP'
+                    ) as host_isp
                 FROM phishlabs_case_data_incidents i
-                LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-                LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
                 WHERE {date_condition} AND i.date_closed_local IS NULL
                 ORDER BY days_open DESC
                 """
             
             sla = self.execute_query(sla_query)
             if isinstance(sla, dict) and 'error' in sla:
+                logger.error(f"SLA query error: {sla.get('error')}")
                 sla = []
+            
+            logger.info(f"SLA tracking returned {len(sla) if sla else 0} records")
             
             # Format the data with days and hours
             formatted_data = []
@@ -2321,6 +2339,7 @@ class ThreatDashboard:
                 formatted_item['days_hours'] = f"{days} ({hours}H)"
                 formatted_data.append(formatted_item)
             
+            logger.info(f"SLA tracking formatted {len(formatted_data)} records")
             return formatted_data
             
         except Exception as e:
@@ -2339,7 +2358,7 @@ class ThreatDashboard:
                     WHEN DATEDIFF(day, i.date_created_local, GETDATE()) <= 28 THEN 'Amber'
                     ELSE 'Red'
                 END as sla_status,
-                COUNT(*) as count
+                COUNT(DISTINCT i.case_number) as count
             FROM phishlabs_case_data_incidents i
             WHERE {date_condition} AND i.date_closed_local IS NULL
             GROUP BY CASE 
