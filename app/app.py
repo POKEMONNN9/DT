@@ -1808,12 +1808,13 @@ class ThreatDashboard:
             # Get date conditions - all metrics should respect the selected time window
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             
-            # Get active cases created in the selected time window
+            # Get active cred theft cases created in the selected time window
+            # Only counting cases from phishlabs_case_data_incidents (cred theft)
             active_cases_query = f"""
             SELECT COUNT(DISTINCT i.case_number) as active_cases
             FROM phishlabs_case_data_incidents i
             WHERE {date_condition}
-            AND (i.case_status = 'Active' OR i.resolution_status != 'Closed' OR i.date_closed_local IS NULL)
+            AND (i.case_status = 'Active' OR i.date_closed_local IS NULL)
             """
             
             active_cases = self.execute_query(active_cases_query)
