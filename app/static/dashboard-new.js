@@ -64,6 +64,43 @@ function refreshData() {
     }
 }
 
+/**
+ * Toggle Focus Mode - Hide/Show Sidebar and Navigation
+ */
+function toggleFocusMode() {
+    const body = document.body;
+    const button = document.getElementById('toggleFocusMode');
+    const icon = button.querySelector('i');
+    
+    body.classList.toggle('focus-mode');
+    
+    if (body.classList.contains('focus-mode')) {
+        // Entering focus mode
+        icon.className = 'fas fa-compress';
+        button.title = 'Exit Focus Mode (or press ESC)';
+        showNotification('Focus Mode Enabled - Press ESC or click button to exit', 'info');
+    } else {
+        // Exiting focus mode
+        icon.className = 'fas fa-expand';
+        button.title = 'Toggle Focus Mode (Hide/Show Sidebar & Nav)';
+        showNotification('Focus Mode Disabled', 'info');
+    }
+}
+
+/**
+ * Handle Escape key to exit Focus Mode
+ */
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' || event.key === 'Esc') {
+        const body = document.body;
+        
+        // Only exit focus mode if we're in it
+        if (body.classList.contains('focus-mode')) {
+            toggleFocusMode();
+        }
+    }
+});
+
 function handleDateFilterChange() {
     const dateFilter = document.getElementById('dateFilter');
     const customDateRange = document.getElementById('customDateRange');
@@ -11946,8 +11983,8 @@ class CampaignManagement {
         return `
             <div class="campaign-cases-container">
                 <div class="cases-tabs">
-                    <button class="cases-tab active" onclick="campaignManagement.switchCasesTab('type')">By Type</button>
-                    <button class="cases-tab" onclick="campaignManagement.switchCasesTab('status')">By Status</button>
+                    <button class="cases-tab active" onclick="switchCasesTab('type')">By Type</button>
+                    <button class="cases-tab" onclick="switchCasesTab('status')">By Status</button>
                 </div>
                 <div class="cases-content">
                     <div class="cases-tab-content active" id="filtered-cases-by-type">
@@ -13103,6 +13140,15 @@ window.toggleTableColumns = function(tableId) {
         window.campaignManagement.toggleTableColumns(tableId);
     } else {
         console.error('CampaignManagement not available or toggleTableColumns method not found');
+    }
+};
+
+// Global wrapper for switchCasesTab
+window.switchCasesTab = function(tab) {
+    if (window.campaignManagement && window.campaignManagement.switchCasesTab) {
+        window.campaignManagement.switchCasesTab(tab);
+    } else {
+        console.error('CampaignManagement not available or switchCasesTab method not found');
     }
 };
 
