@@ -1802,11 +1802,56 @@ class ThreatDashboard:
                 'social_cases': []
             }
 
+    def get_previous_period_condition(self, date_filter, start_date, end_date, date_column):
+        """Get date condition for the previous equivalent period for trend comparison"""
+        try:
+            from datetime import datetime, timedelta
+            
+            if date_filter == "all":
+                # For "all time", return a condition that will always be false (no previous period)
+                return "1 = 0"
+            
+            if start_date and end_date:
+                # Custom date range - calculate previous equivalent period
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                period_length = (end_dt - start_dt).days + 1
+                
+                prev_end_dt = start_dt - timedelta(days=1)
+                prev_start_dt = prev_end_dt - timedelta(days=period_length - 1)
+                
+                return f"{date_column} >= '{prev_start_dt.strftime('%Y-%m-%d')}' AND {date_column} <= '{prev_end_dt.strftime('%Y-%m-%d')}'"
+            
+            # Standard period comparisons
+            if date_filter == "today":
+                return f"{date_column} >= CAST(GETDATE() - 1 AS DATE) AND {date_column} < CAST(GETDATE() AS DATE)"
+            elif date_filter == "yesterday":
+                return f"{date_column} >= CAST(GETDATE() - 2 AS DATE) AND {date_column} < CAST(GETDATE() - 1 AS DATE)"
+            elif date_filter == "week":
+                return f"{date_column} >= CAST(GETDATE() - 14 AS DATE) AND {date_column} < CAST(GETDATE() - 7 AS DATE)"
+            elif date_filter == "month":
+                return f"{date_column} >= CAST(DATEADD(month, -2, GETDATE()) AS DATE) AND {date_column} < CAST(DATEADD(month, -1, GETDATE()) AS DATE)"
+            elif date_filter == "this_month":
+                return f"{date_column} >= CAST(DATEADD(month, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS DATE) AND {date_column} < CAST(DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1) AS DATE)"
+            elif date_filter == "last_month":
+                return f"{date_column} >= CAST(DATEADD(month, -2, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS DATE) AND {date_column} < CAST(DATEADD(month, -1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)) AS DATE)"
+            else:
+                # Default to previous day
+                return f"{date_column} >= CAST(GETDATE() - 1 AS DATE) AND {date_column} < CAST(GETDATE() AS DATE)"
+                
+        except Exception as e:
+            logger.error(f"Error in get_previous_period_condition: {e}")
+            return "1 = 0"  # Return false condition on error
+
     def get_executive_summary_metrics(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
-        """Get comprehensive executive summary metrics"""
+        """Get comprehensive executive summary metrics with trend comparison"""
         try:
             # Get date conditions - all metrics should respect the selected time window
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            
+            # Get previous period condition for trend comparison
+            previous_condition = self.get_previous_period_condition(date_filter, start_date, end_date, "i.date_created_local")
+            previous_closed_condition = self.get_previous_period_condition(date_filter, start_date, end_date, "i.date_closed_local")
             
             # Get active cred theft cases created in the selected time window
             # Only counting cases from phishlabs_case_data_incidents (cred theft)
@@ -1820,6 +1865,17 @@ class ThreatDashboard:
             active_cases = self.execute_query(active_cases_query)
             active_count = active_cases[0]['active_cases'] if active_cases and not isinstance(active_cases, dict) else 0
             
+            # Get previous period active cases for trend comparison
+            previous_active_query = f"""
+            SELECT COUNT(DISTINCT i.case_number) as previous_active_cases
+            FROM phishlabs_case_data_incidents i
+            WHERE {previous_condition}
+            AND (i.case_status = 'Active' OR i.date_closed_local IS NULL)
+            """
+            
+            previous_active_cases = self.execute_query(previous_active_query)
+            previous_active_count = previous_active_cases[0]['previous_active_cases'] if previous_active_cases and not isinstance(previous_active_cases, dict) else 0
+            
             # Get cases closed in selected date range (based on date_closed_local, not date_created_local)
             closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
             closed_query = f"""
@@ -1831,15 +1887,54 @@ class ThreatDashboard:
             closed_data = self.execute_query(closed_query)
             closed_count = closed_data[0]['closed_in_period'] if closed_data and not isinstance(closed_data, dict) else 0
             
-            # Get average resolution time (for cases closed in the selected date range)
-            resolution_time_query = f"""
-            SELECT AVG(DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as avg_resolution_hours
+            # Get previous period closed cases for trend comparison
+            previous_closed_query = f"""
+            SELECT COUNT(DISTINCT i.case_number) as previous_closed_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
+            WHERE {previous_closed_condition} AND i.date_closed_local IS NOT NULL
             """
             
-            resolution_time = self.execute_query(resolution_time_query)
-            avg_resolution = resolution_time[0]['avg_resolution_hours'] if resolution_time and not isinstance(resolution_time, dict) else 0
+            previous_closed_data = self.execute_query(previous_closed_query)
+            previous_closed_count = previous_closed_data[0]['previous_closed_cases'] if previous_closed_data and not isinstance(previous_closed_data, dict) else 0
+            
+            # Get median resolution time (for cases closed in the selected date range)
+            # Using ROW_NUMBER approach for better SQL Server compatibility
+            median_resolution_query = f"""
+            WITH OrderedHours AS (
+                SELECT 
+                    DATEDIFF(hour, i.date_created_local, i.date_closed_local) as hours_to_close,
+                    ROW_NUMBER() OVER (ORDER BY DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as row_num,
+                    COUNT(*) OVER () as total_count
+                FROM phishlabs_case_data_incidents i
+                WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
+                AND i.date_created_local IS NOT NULL
+            )
+            SELECT AVG(CAST(hours_to_close AS FLOAT)) as median_resolution_hours
+            FROM OrderedHours
+            WHERE row_num IN ((total_count + 1) / 2, (total_count + 2) / 2)
+            """
+            
+            resolution_time = self.execute_query(median_resolution_query)
+            avg_resolution = resolution_time[0]['median_resolution_hours'] if resolution_time and not isinstance(resolution_time, dict) else 0
+            
+            # Get previous period median resolution time for trend comparison
+            previous_median_resolution_query = f"""
+            WITH OrderedHours AS (
+                SELECT 
+                    DATEDIFF(hour, i.date_created_local, i.date_closed_local) as hours_to_close,
+                    ROW_NUMBER() OVER (ORDER BY DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as row_num,
+                    COUNT(*) OVER () as total_count
+                FROM phishlabs_case_data_incidents i
+                WHERE {previous_closed_condition} AND i.date_closed_local IS NOT NULL
+                AND i.date_created_local IS NOT NULL
+            )
+            SELECT AVG(CAST(hours_to_close AS FLOAT)) as previous_median_resolution_hours
+            FROM OrderedHours
+            WHERE row_num IN ((total_count + 1) / 2, (total_count + 2) / 2)
+            """
+            
+            previous_resolution_time = self.execute_query(previous_median_resolution_query)
+            previous_avg_resolution = previous_resolution_time[0]['previous_median_resolution_hours'] if previous_resolution_time and not isinstance(previous_resolution_time, dict) else 0
             
             # Get resolution status distribution
             resolution_query = f"""
@@ -1877,7 +1972,12 @@ class ThreatDashboard:
                 'avg_resolution_hours': round(avg_resolution, 1) if avg_resolution else 0,
                 'most_targeted_brand': most_targeted_brand,
                 'brand_case_count': brand_case_count,
-                'severity_distribution': resolution_dist or []
+                'severity_distribution': resolution_dist or [],
+                # Previous period data for trend calculation
+                'previous_active_cases': previous_active_count,
+                'previous_closed_cases': previous_closed_count,
+                'previous_avg_resolution_hours': round(previous_avg_resolution, 1) if previous_avg_resolution else 0,
+                'date_filter': date_filter  # Include filter for frontend logic
             }
             
         except Exception as e:
@@ -1983,13 +2083,15 @@ class ThreatDashboard:
                 """
             else:
                 # Daily data for weekly/monthly/custom ranges
+                # For cases_closed, we need to count cases that were closed on each specific date
                 trends_query = f"""
                 SELECT 
                     CAST(i.date_created_local AS DATE) as time_period,
                     COUNT(DISTINCT i.case_number) as cases_created,
                     COUNT(DISTINCT CASE WHEN i.date_closed_local IS NOT NULL THEN i.case_number END) as cases_closed
                 FROM phishlabs_case_data_incidents i
-                WHERE {date_condition}                GROUP BY CAST(i.date_created_local AS DATE)
+                WHERE {date_condition}
+                GROUP BY CAST(i.date_created_local AS DATE)
                 ORDER BY time_period
                 """
             
@@ -1997,8 +2099,23 @@ class ThreatDashboard:
             if isinstance(trends, dict) and 'error' in trends:
                 trends = []
             
-            # Return empty array if no data found - no mock data
-            return trends
+            # Calculate total resolved cases within the selected time window
+            # This should match the main summary cards logic
+            closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
+            total_resolved_query = f"""
+            SELECT COUNT(DISTINCT i.case_number) as total_resolved
+            FROM phishlabs_case_data_incidents i
+            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
+            """
+            
+            total_resolved = self.execute_query(total_resolved_query)
+            total_resolved_count = total_resolved[0]['total_resolved'] if total_resolved and not isinstance(total_resolved, dict) else 0
+            
+            # Return both daily trends and total resolved count
+            return {
+                'daily_trends': trends,
+                'total_resolved': total_resolved_count
+            }
             
         except Exception as e:
             logger.error(f"Error in get_timeline_trends: {e}")
@@ -2015,25 +2132,85 @@ class ThreatDashboard:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
             
-            # Performance metrics query - filtered by date
-            performance_query = f"""
+            # Performance metrics query - CORRECTED logic
+            # We need separate queries for different metrics:
+            # 1. Total cases and closed cases within date range
+            # 2. Active cases (ALL active cases, not filtered by date)
+            # 3. Resolution times for cases closed within date range
+            
+            # Query 1: Cases within the selected date range
+            date_range_query = f"""
             SELECT 
-                AVG(CASE WHEN i.resolution_status = 'Closed' AND i.date_closed_local IS NOT NULL 
+                COUNT(DISTINCT i.case_number) as total_cases_in_range,
+                COUNT(DISTINCT CASE WHEN i.date_closed_local IS NOT NULL AND ({closed_condition}) THEN i.case_number END) as closed_cases_in_range,
+                AVG(CASE WHEN i.date_closed_local IS NOT NULL 
                     THEN DATEDIFF(hour, i.date_created_local, i.date_closed_local) END) as avg_resolution_hours,
-                COUNT(DISTINCT i.case_number) as total_cases,
-                COUNT(DISTINCT CASE WHEN i.resolution_status = 'Closed' AND ({closed_condition}) THEN i.case_number END) as closed_cases,
-                COUNT(DISTINCT CASE WHEN (i.resolution_status != 'Closed' OR i.resolution_status IS NULL OR i.date_closed_local IS NULL) AND ({date_condition}) THEN i.case_number END) as active_cases,
                 MIN(i.date_created_local) as earliest_case,
                 MAX(i.date_created_local) as latest_case
             FROM phishlabs_case_data_incidents i
             WHERE {date_condition}
             """
             
-            performance_data = self.execute_query(performance_query)
-            if isinstance(performance_data, dict) and 'error' in performance_data:
-                return {"error": performance_data['error']}
+            # Query 2: ALL active cases (not filtered by date)
+            active_cases_query = """
+            SELECT COUNT(DISTINCT case_number) as total_active_cases
+            FROM phishlabs_case_data_incidents
+            WHERE date_closed_local IS NULL
+            """
             
-            return performance_data[0] if performance_data else {}
+            logger.info(f"Date range query: {date_range_query}")
+            logger.info(f"Active cases query: {active_cases_query}")
+            
+            # Execute both queries
+            date_range_data = self.execute_query(date_range_query)
+            active_cases_data = self.execute_query(active_cases_query)
+            
+            if isinstance(date_range_data, dict) and 'error' in date_range_data:
+                logger.error(f"Date range query error: {date_range_data['error']}")
+                return {"error": date_range_data['error']}
+            
+            if isinstance(active_cases_data, dict) and 'error' in active_cases_data:
+                logger.error(f"Active cases query error: {active_cases_data['error']}")
+                return {"error": active_cases_data['error']}
+            
+            # Combine results
+            date_result = date_range_data[0] if date_range_data else {}
+            active_result = active_cases_data[0] if active_cases_data else {}
+            
+            result = {
+                'total_cases': date_result.get('total_cases_in_range', 0),
+                'closed_cases': date_result.get('closed_cases_in_range', 0),
+                'active_cases': active_result.get('total_active_cases', 0),
+                'avg_resolution_hours': date_result.get('avg_resolution_hours', 0),
+                'earliest_case': date_result.get('earliest_case'),
+                'latest_case': date_result.get('latest_case')
+            }
+            
+            logger.info(f"Combined performance metrics result: {result}")
+            
+            # Calculate median resolution time using ROW_NUMBER approach
+            median_resolution_query = f"""
+            WITH OrderedHours AS (
+                SELECT 
+                    DATEDIFF(hour, i.date_created_local, i.date_closed_local) as hours_to_close,
+                    ROW_NUMBER() OVER (ORDER BY DATEDIFF(hour, i.date_created_local, i.date_closed_local)) as row_num,
+                    COUNT(*) OVER () as total_count
+                FROM phishlabs_case_data_incidents i
+                WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
+                AND i.date_created_local IS NOT NULL
+            )
+            SELECT AVG(CAST(hours_to_close AS FLOAT)) as median_resolution_hours
+            FROM OrderedHours
+            WHERE row_num IN ((total_count + 1) / 2, (total_count + 2) / 2)
+            """
+            
+            median_data = self.execute_query(median_resolution_query)
+            median_hours = median_data[0]['median_resolution_hours'] if median_data and not isinstance(median_data, dict) else 0
+            
+            # Add median to result
+            result['median_resolution_hours'] = round(median_hours, 1) if median_hours else 0
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error in get_performance_metrics: {e}")
@@ -2320,15 +2497,13 @@ class ThreatDashboard:
                     ) as host_isp
                 FROM phishlabs_case_data_incidents i
                 WHERE {date_condition} AND i.date_closed_local IS NULL
-                ORDER BY days_open DESC
+                ORDER BY DATEDIFF(day, i.date_created_local, GETDATE()) DESC
                 """
             
             sla = self.execute_query(sla_query)
             if isinstance(sla, dict) and 'error' in sla:
                 logger.error(f"SLA query error: {sla.get('error')}")
                 sla = []
-            
-            logger.info(f"SLA tracking returned {len(sla) if sla else 0} records")
             
             # Format the data with days and hours
             formatted_data = []
@@ -2339,7 +2514,6 @@ class ThreatDashboard:
                 formatted_item['days_hours'] = f"{days} ({hours}H)"
                 formatted_data.append(formatted_item)
             
-            logger.info(f"SLA tracking formatted {len(formatted_data)} records")
             return formatted_data
             
         except Exception as e:
@@ -2809,25 +2983,52 @@ class ThreatDashboard:
             whois_data = self.execute_query(whois_query)
             logger.info(f"WHOIS Attribution returned {len(whois_data) if whois_data and not isinstance(whois_data, dict) else 0} records")
             
-            # Transform the data to match expected format
+            # Transform and aggregate the data properly
             if whois_data and not isinstance(whois_data, dict) and len(whois_data) > 0:
-                transformed_data = []
+                # Group by registrant to aggregate threat families
+                registrant_map = {}
                 for row in whois_data:
+                    registrant = row.get('flagged_whois_email') or row.get('flagged_whois_name') or 'Unknown'
+                    threat_family = row.get('threat_family', '').strip()
+                    total_cases = row.get('total_cases', 0)
+                    
+                    if registrant not in registrant_map:
+                        registrant_map[registrant] = {
+                            'registrant': registrant,
+                            'flagged_whois_email': row.get('flagged_whois_email'),
+                            'flagged_whois_name': row.get('flagged_whois_name'),
+                            'total_cases': 0,
+                            'threat_families': set(),
+                            'domains_registered': 0,
+                            'tlds_used': '',
+                            'first_registration': None,
+                            'last_registration': None
+                        }
+                    
+                    registrant_map[registrant]['total_cases'] += total_cases
+                    if threat_family:
+                        registrant_map[registrant]['threat_families'].add(threat_family)
+                
+                # Convert to final format
+                transformed_data = []
+                for registrant_data in registrant_map.values():
+                    threat_families_list = sorted(list(registrant_data['threat_families']))
                     transformed_row = {
-                        'registrant': row.get('flagged_whois_email') or row.get('flagged_whois_name') or 'Unknown',
-                        'flagged_whois_email': row.get('flagged_whois_email'),
-                        'flagged_whois_name': row.get('flagged_whois_name'),
-                        'total_cases': row.get('total_cases', 0),
-                        'threat_families_used': row.get('threat_family', ''),
-                        'domains_registered': 0,
-                        'tlds_used': '',
-                        'first_registration': None,
-                        'last_registration': None,
-                        'risk_level': 'Low' if row.get('total_cases', 0) < 5 else ('Medium' if row.get('total_cases', 0) < 10 else 'High')
+                        'registrant': registrant_data['registrant'],
+                        'flagged_whois_email': registrant_data['flagged_whois_email'],
+                        'flagged_whois_name': registrant_data['flagged_whois_name'],
+                        'total_cases': registrant_data['total_cases'],
+                        'threat_families_used': ', '.join(threat_families_list) if threat_families_list else 'None',
+                        'domains_registered': registrant_data['domains_registered'],
+                        'tlds_used': registrant_data['tlds_used'],
+                        'first_registration': registrant_data['first_registration'],
+                        'last_registration': registrant_data['last_registration'],
+                        'risk_level': 'Low' if registrant_data['total_cases'] < 5 else ('Medium' if registrant_data['total_cases'] < 10 else 'High')
                     }
                     transformed_data.append(transformed_row)
                 
-                whois_data = transformed_data
+                # Sort by total cases descending
+                whois_data = sorted(transformed_data, key=lambda x: x['total_cases'], reverse=True)
             
             if isinstance(whois_data, dict) and 'error' in whois_data:
                 logger.error(f"WHOIS Attribution query error: {whois_data.get('error')}")
@@ -2868,14 +3069,14 @@ class ThreatDashboard:
                 th.name as threat_actor,
                 n.threat_family,
                 n.flagged_whois_email,
+                n.flagged_whois_name,
                 u.domain,
-                u.host_country,
-                2 as attribution_score
+                u.host_country
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition}            AND (th.name IS NOT NULL OR n.threat_family IS NOT NULL)
+            WHERE {date_condition} AND (th.name IS NOT NULL OR n.threat_family IS NOT NULL OR n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
             ORDER BY i.date_created_local DESC
             """
             
@@ -5074,16 +5275,14 @@ def api_social_executive_metrics():
             result = {
                 'executive_targets': metrics[0].get('executive_targets', 0),
                 'brands_protected': metrics[0].get('brands_protected', 0),
-                'social_incidents': metrics[0].get('social_incidents', 0),
-                'trend_score': int(metrics[0].get('avg_resolution_hours', 0)) or 0
+                'social_incidents': metrics[0].get('social_incidents', 0)
             }
         else:
             # Return default values when no data or error
             result = {
                 'executive_targets': 0,
                 'brands_protected': 0,
-                'social_incidents': 0,
-                'trend_score': 0
+                'social_incidents': 0
             }
         
         return jsonify(result)
