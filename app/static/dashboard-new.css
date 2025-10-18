@@ -617,10 +617,20 @@ body.focus-mode #toggleFocusMode {
 
 .executive-charts-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--space-xl);
     margin-bottom: var(--space-2xl);
     padding: 0 var(--space-lg);
+}
+
+/* Social & Executive Dashboard - 2 column layout */
+#social-executive-section .executive-charts-grid {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+/* Executive Summary Dashboard - 2 column layout */
+#executive-section .executive-charts-grid {
+    grid-template-columns: repeat(2, 1fr);
 }
 
 .chart-container {
@@ -1091,27 +1101,6 @@ body.focus-mode #toggleFocusMode {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.timeline-play-btn {
-    background: var(--bg-primary);
-    border: none;
-    border-radius: 8px;
-    width: 3rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* color: white; */
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-}
-
-.timeline-play-btn:hover {
-    background: var(--bg-primary);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
-}
-
 .timeline-content {
     padding: 0 16px 24px 16px;
 }
@@ -1211,7 +1200,7 @@ body.focus-mode #toggleFocusMode {
 }
 
 .overview-card-large {
-    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    background: var(--bg-card);
     border-radius: var(--radius-xl);
     padding: var(--space-xl);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -1313,6 +1302,60 @@ body.focus-mode #toggleFocusMode {
     margin-bottom: var(--space-xs);
 }
 
+/* Resolution time card - vertical split layout */
+.resolution-time-card .resolution-split {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    height: 100% !important;
+    flex-direction: row !important;
+}
+
+.resolution-time-card .resolution-half {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    flex: 1 !important;
+    text-align: left !important;
+}
+
+.resolution-divider {
+    width: 1px;
+    height: 60%;
+    background-color: var(--border-color);
+    margin: 0 0.5rem;
+}
+
+.resolution-label {
+    font-size: 0.7rem !important;
+    font-weight: var(--font-weight-medium) !important;
+    color: var(--text-muted) !important;
+    margin-top: 0.2rem !important;
+    text-align: left !important;
+}
+
+/* Reset the metric values to match other cards */
+.resolution-time-card #medianResolutionHoursEnhanced,
+.resolution-time-card #avgResolutionHoursEnhanced {
+    font-size: 1.75rem !important;
+    font-weight: var(--font-weight-bold) !important;
+    color: var(--text-primary) !important;
+    line-height: 1 !important;
+    margin-bottom: 0 !important;
+    text-align: left !important;
+}
+
+/* Enhanced styling for the resolution time card - overridden by resolution-split */
+.resolution-time-card .metric-content-small.resolution-split {
+    display: flex !important;
+    flex-direction: row !important;
+    /* align-items: left !important; */
+    justify-content: space-between !important;
+    padding: 0 !important;
+}
+
 /* Compact format for threat intelligence top 3 items */
 #topRegistrarSummary,
 #topUrlPath {
@@ -1351,7 +1394,13 @@ body.focus-mode #toggleFocusMode {
 .no-data {
     color: var(--text-muted);
     font-style: italic;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: inline !important;
 }
 
 /* URL paths in threat actor infrastructure table */
@@ -4224,6 +4273,12 @@ body.focus-mode #toggleFocusMode {
    RESPONSIVE DESIGN
    ============================================================================ */
 
+@media (max-width: 1400px) {
+    .executive-charts-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 1200px) {
     .executive-charts-grid {
         grid-template-columns: 1fr;
@@ -5702,15 +5757,6 @@ canvas {
 /* ============================================================================
    THREAT LANDSCAPE & GEOGRAPHIC FIXES - PROFESSIONAL CLEAN LAYOUT
    ============================================================================ */
-
-/* Ensure consistent heights for top row charts */
-.executive-charts-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-xl);
-    margin-bottom: var(--space-2xl);
-}
-
 .executive-charts-grid > .chart-container:not(.full-width) {
     height: 480px; /* Fixed height */
     display: flex;
@@ -5984,15 +6030,14 @@ canvas {
 }
 
 .intel-card {
-    background: var(--white, #ffffff);
+    background: var(--bg-card);
     border: 1px solid var(--border-light, #e5e7eb);
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-sm);
     transition: all 0.3s ease;
     position: relative;
     display: block !important;
     width: 100% !important;
-    margin-bottom: 1.5rem;
     clear: both;
     float: none;
 }
@@ -6355,10 +6400,14 @@ canvas {
 .whois-families {
     word-wrap: break-word;
     overflow-wrap: break-word;
+    max-width: 200px;
+    vertical-align: top;
 }
 
 .families-list {
-    display: block;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
     max-width: 100%;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -6366,7 +6415,7 @@ canvas {
 
 .family-tag {
     display: inline-block;
-    margin: 2px;
+    margin: 1px;
     padding: 2px 6px;
     background: var(--bg-secondary, #f3f4f6);
     border: 1px solid var(--border-light, #e5e7eb);
@@ -6375,6 +6424,21 @@ canvas {
     word-wrap: break-word;
     overflow-wrap: break-word;
     max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.no-data {
+    color: var(--text-muted, #6b7280);
+    font-style: italic;
+    font-size: 0.75rem;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: inline !important;
 }
 
 .whois-table tr:hover {
@@ -6439,6 +6503,24 @@ canvas {
 }
 
 .priority-table tr:hover {
+    background: var(--bg-secondary, #f9fafb);
+}
+
+/* WHOIS columns styling for attributed cases */
+.case-whois-email,
+.case-whois-name {
+    max-width: 150px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.whois-email,
+.whois-name {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.attributed-case-row:hover {
     background: var(--bg-secondary, #f9fafb);
 }
 
@@ -9342,10 +9424,15 @@ canvas {
 .loading-cell,
 .no-data {
     text-align: center;
-    padding: var(--space-2xl, 2rem);
+    padding: 0 !important;
     color: var(--text-muted, #6b7280);
     font-style: italic;
-    font-size: var(--font-size-sm, 0.875rem);
+    font-size: var(--font-size-sm, 0.75rem);
+    background: none !important;
+    border: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: inline !important;
 }
 
 .loading-cell::before {
@@ -12405,10 +12492,14 @@ canvas {
 
 .no-data {
     text-align: center;
-    padding: 40px;
+    padding: 0 !important;
     color: #9ca3af;
     font-style: italic;
-    background: #f9fafb;
+    background: none !important;
+    border: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: inline !important;
 }
 
 /* Responsive Design for Enhanced Tables */
@@ -16804,7 +16895,7 @@ canvas {
 
 #social-executive-section .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: 1fr 1fr 1fr;
     gap: var(--space-lg);
     margin-bottom: var(--space-xl);
     padding: 0 var(--space-lg);
@@ -17254,8 +17345,8 @@ canvas {
 
 #social-executive-section .chart-center-info {
     position: absolute;
-    top: 45%;
-    left: 50%;
+    top: 50%;
+    left: 35%;
     transform: translate(-50%, -50%);
     text-align: center;
     pointer-events: none;
