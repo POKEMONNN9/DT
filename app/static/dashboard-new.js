@@ -330,11 +330,6 @@ class ExecutiveDashboard {
                         </h3>
                         <p class="timeline-subtitle">Case activity and resolution trends</p>
                     </div>
-                    <div class="timeline-controls">
-                        <button class="timeline-play-btn" id="timelinePlayBtn" onclick="playTimelineAnimation()" title="Auto-refresh">
-                            <i class="fas fa-play"></i>
-                        </button>
-                    </div>
                 </div>
                 <div class="timeline-content">
                     <div class="timeline-chart-container">
@@ -512,6 +507,9 @@ class ExecutiveDashboard {
                 // Update labels based on date filter
                 this.updateMetricLabels();
                 
+                // Update trend indicators dynamically
+                this.updateTrendIndicators(metrics);
+                
                 this.updateWorkloadBars(metrics);
             }
         } catch (error) {
@@ -529,35 +527,168 @@ class ExecutiveDashboard {
         switch(currentDateFilter) {
             case 'today':
                 closedLabel.textContent = 'Resolved Today';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'yesterday':
                 closedLabel.textContent = 'Resolved Yesterday';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'week':
                 closedLabel.textContent = 'Resolved This Week';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'month':
                 closedLabel.textContent = 'Resolved Last 30 Days';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'this_month':
                 closedLabel.textContent = 'Resolved This Month';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'last_month':
                 closedLabel.textContent = 'Resolved Last Month';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             case 'custom':
                 closedLabel.textContent = 'Resolved in Period';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
                 break;
             default:
                 closedLabel.textContent = 'Total Resolved';
-                avgLabel.textContent = 'Avg Resolution';
+                avgLabel.textContent = 'Median Resolution';
+        }
+    }
+
+    updateTrendIndicators(metrics) {
+        const dateFilter = metrics.date_filter || getCurrentDateFilter();
+        
+        // For "all" filter, hide all trend indicators
+        if (dateFilter === 'all') {
+            this.hideAllTrendIndicators();
+            return;
+        }
+        
+        // Calculate trends for each metric
+        this.updateActiveThreatsTrend(metrics);
+        this.updateResolvedCasesTrend(metrics);
+        this.updateResolutionTimeTrend(metrics);
+    }
+
+    hideAllTrendIndicators() {
+        // Hide trend indicators for all cards when "all" filter is selected
+        const trendElements = document.querySelectorAll('.metric-change');
+        trendElements.forEach(element => {
+            element.style.display = 'none';
+        });
+    }
+
+    updateActiveThreatsTrend(metrics) {
+        const current = metrics.active_cases || 0;
+        const previous = metrics.previous_active_cases || 0;
+        const trendElement = document.querySelector('#activeCases').parentElement.querySelector('.metric-change');
+        
+        if (!trendElement) return;
+        
+        const change = this.calculatePercentageChange(current, previous);
+        const trendInfo = this.getTrendInfo(change, 'threats');
+        
+        // Update arrow direction and color
+        const arrow = trendElement.querySelector('i');
+        const span = trendElement.querySelector('span');
+        
+        arrow.className = `fas ${trendInfo.icon}`;
+        trendElement.className = `metric-change ${trendInfo.color}`;
+        span.textContent = trendInfo.text;
+        
+        trendElement.style.display = 'flex';
+    }
+
+    updateResolvedCasesTrend(metrics) {
+        const current = metrics.closed_today || 0;
+        const previous = metrics.previous_closed_cases || 0;
+        const trendElement = document.querySelector('#closedToday').parentElement.querySelector('.metric-change');
+        
+        if (!trendElement) return;
+        
+        const change = this.calculatePercentageChange(current, previous);
+        const trendInfo = this.getTrendInfo(change, 'resolved');
+        
+        // Update arrow direction and color
+        const arrow = trendElement.querySelector('i');
+        const span = trendElement.querySelector('span');
+        
+        arrow.className = `fas ${trendInfo.icon}`;
+        trendElement.className = `metric-change ${trendInfo.color}`;
+        span.textContent = trendInfo.text;
+        
+        trendElement.style.display = 'flex';
+    }
+
+    updateResolutionTimeTrend(metrics) {
+        const current = metrics.avg_resolution_hours || 0;
+        const previous = metrics.previous_avg_resolution_hours || 0;
+        const trendElement = document.querySelector('#avgResolutionTime').parentElement.querySelector('.metric-change');
+        
+        if (!trendElement) return;
+        
+        const change = this.calculatePercentageChange(current, previous);
+        const trendInfo = this.getTrendInfo(change, 'resolution');
+        
+        // Update arrow direction and color
+        const arrow = trendElement.querySelector('i');
+        const span = trendElement.querySelector('span');
+        
+        arrow.className = `fas ${trendInfo.icon}`;
+        trendElement.className = `metric-change ${trendInfo.color}`;
+        span.textContent = trendInfo.text;
+        
+        trendElement.style.display = 'flex';
+    }
+
+    calculatePercentageChange(current, previous) {
+        if (previous === 0) {
+            return current > 0 ? 100 : 0; // If no previous data, show 100% if current > 0
+        }
+        return ((current - previous) / previous) * 100;
+    }
+
+    getTrendInfo(change, metricType) {
+        const absChange = Math.abs(change);
+        const changeText = `${change > 0 ? '+' : ''}${change.toFixed(0)}%`;
+        
+        switch (metricType) {
+            case 'threats':
+                // For threats: Up = Bad (more threats), Down = Good (fewer threats)
+                if (change > 5) {
+                    return { icon: 'fa-arrow-up', color: 'negative', text: `${changeText} vs previous` };
+                } else if (change < -5) {
+                    return { icon: 'fa-arrow-down', color: 'positive', text: `${changeText} vs previous` };
+                } else {
+                    return { icon: 'fa-minus', color: 'neutral', text: 'stable vs previous' };
+                }
+                
+            case 'resolved':
+                // For resolved cases: Up = Good (more resolved), Down = Bad (fewer resolved)
+                if (change > 5) {
+                    return { icon: 'fa-arrow-up', color: 'positive', text: `${changeText} vs previous` };
+                } else if (change < -5) {
+                    return { icon: 'fa-arrow-down', color: 'negative', text: `${changeText} vs previous` };
+                } else {
+                    return { icon: 'fa-minus', color: 'neutral', text: 'stable vs previous' };
+                }
+                
+            case 'resolution':
+                // For resolution time: Up = Bad (slower), Down = Good (faster)
+                if (change > 5) {
+                    return { icon: 'fa-arrow-up', color: 'negative', text: `${changeText} slower` };
+                } else if (change < -5) {
+                    return { icon: 'fa-arrow-down', color: 'positive', text: `${changeText} faster` };
+                } else {
+                    return { icon: 'fa-minus', color: 'neutral', text: 'stable performance' };
+                }
+                
+            default:
+                return { icon: 'fa-minus', color: 'neutral', text: 'no change' };
         }
     }
 
@@ -861,12 +992,20 @@ class ExecutiveDashboard {
             console.log('Timeline trends response type:', typeof trendsData);
             console.log('Timeline trends response length:', trendsData?.length);
             
-            if (trendsData && !trendsData.error && Array.isArray(trendsData)) {
-                this.renderAdvancedTimelineChart(trendsData, currentDateFilter);
+            if (trendsData && !trendsData.error) {
+                // Handle new data structure with daily_trends and total_resolved
+                const chartData = trendsData.daily_trends || trendsData; // Backward compatibility
+                const totalResolved = trendsData.total_resolved || 0;
+                
+                if (Array.isArray(chartData)) {
+                    this.renderAdvancedTimelineChart(chartData, currentDateFilter, totalResolved);
+                } else {
+                    this.renderAdvancedTimelineChart([], currentDateFilter, totalResolved);
+                }
             } else {
                 console.log('No timeline data available from database');
                 // Show empty chart instead of mock data
-                this.renderAdvancedTimelineChart([], currentDateFilter);
+                this.renderAdvancedTimelineChart([], currentDateFilter, 0);
             }
         } catch (error) {
             console.error('Error updating timeline chart:', error);
@@ -874,7 +1013,7 @@ class ExecutiveDashboard {
     }
 
 
-    renderAdvancedTimelineChart(data, filter = 'today') {
+    renderAdvancedTimelineChart(data, filter = 'today', totalResolved = null) {
         const ctx = document.getElementById('timelineTrendsChart');
         if (!ctx) return;
 
@@ -1109,7 +1248,8 @@ class ExecutiveDashboard {
         console.log('Timeline chart created successfully!');
 
         const totalCreated = createdData.reduce((sum, val) => sum + val, 0);
-        const totalClosed = closedData.reduce((sum, val) => sum + val, 0);
+        // Use the totalResolved from backend if provided, otherwise fall back to summing daily closed cases
+        const totalClosed = totalResolved !== null ? totalResolved : closedData.reduce((sum, val) => sum + val, 0);
         const resolutionRate = totalCreated > 0 ? Math.round((totalClosed / totalCreated) * 100) : 0;
 
         document.getElementById('timelineCreated').textContent = totalCreated;
@@ -1208,46 +1348,14 @@ class ExecutiveDashboard {
         });
     }
 
-    startTimelineAutoRefresh() {
-        if (this.timelineRefreshInterval) {
-            clearInterval(this.timelineRefreshInterval);
-        }
-        
-        console.log('<i class="fas fa-sync-alt"></i> Starting timeline auto-refresh...');
-        
-        // Refresh immediately
-        this.updateTimelineTrendsChart();
-        
-        // Set up interval to refresh every 30 seconds
-        this.timelineRefreshInterval = setInterval(() => {
-            console.log('<i class="fas fa-sync-alt"></i> Auto-refreshing timeline data...');
-            this.updateTimelineTrendsChart();
-        }, 30000); // 30 seconds
-    }
-    
-    stopTimelineAutoRefresh() {
-        if (this.timelineRefreshInterval) {
-            console.log('⏹️ Stopping timeline auto-refresh...');
-            clearInterval(this.timelineRefreshInterval);
-            this.timelineRefreshInterval = null;
-        }
-    }
-
     destroy() {
         if (this.threatLandscapeChart) this.threatLandscapeChart.destroy();
         if (this.geographicHeatmapChart) this.geographicHeatmapChart.destroy();
         if (this.timelineTrendsChart) this.timelineTrendsChart.destroy();
         if (this.miniTrendChart) this.miniTrendChart.destroy();
-        
-        // Clean up timeline auto-refresh interval
-        this.stopTimelineAutoRefresh();
     }
 
-    // ===== NEW EXECUTIVE SUMMARY CHART METHODS =====
-
-    /**
-     * Load and render Brand Distribution Chart
-     */
+    // Load and render Brand Distribution Chart
     async loadBrandDistributionChart() {
         try {
             const dateFilter = document.getElementById('dateFilter')?.value || 'all';
@@ -1669,8 +1777,10 @@ class OperationalDashboard {
             const performanceData = await fetchAPI(`/api/dashboard/performance-metrics?${params}`);
             
             if (performanceData && !performanceData.error) {
-                // Update average resolution hours
+                // Resolution hours - split layout with median and average
                 const avgHours = performanceData.avg_resolution_hours || 0;
+                const medianHours = performanceData.median_resolution_hours || 0;
+                updateElement('medianResolutionHoursEnhanced', `${medianHours}h`);
                 updateElement('avgResolutionHoursEnhanced', `${Math.round(avgHours)}h`);
                 
                 // Update case counts
@@ -1688,6 +1798,7 @@ class OperationalDashboard {
     }
 
     setFallbackMetrics() {
+        updateElement('medianResolutionHoursEnhanced', '--h');
         updateElement('avgResolutionHoursEnhanced', '--h');
         updateElement('totalCasesCountEnhanced', '--');
         updateElement('activeCasesCountEnhanced', '--');
@@ -1818,8 +1929,8 @@ class OperationalDashboard {
             if (typeData && !typeData.error) {
                 this.typeData = typeData;
                 
-                // Fetch resolution performance data as well
-                const resolutionData = await fetchAPI(`/api/dashboard/resolution-performance?${params}`);
+                // Fetch resolution performance data as well - use case type analysis for median data
+                const resolutionData = await fetchAPI(`/api/dashboard/case-type-analysis?${params}`);
                 this.resolutionData = resolutionData && !resolutionData.error ? resolutionData : null;
                 
                 // Render the current view
@@ -2113,11 +2224,10 @@ class OperationalDashboard {
             this.resolutionPerformanceChart.destroy();
         }
     
-        // Combine data from both sources
-        const allData = [
-            ...(this.resolutionData.cred_theft || []),
-            ...(this.resolutionData.social_media || [])
-        ].sort((a, b) => b.total_cases - a.total_cases).slice(0, 10);
+        // Use case type analysis data directly (it's already an array)
+        const allData = (this.resolutionData || [])
+            .sort((a, b) => b.total_cases - a.total_cases)
+            .slice(0, 10);
     
         if (allData.length === 0) {
             console.warn('No data to render in performance chart');
@@ -2125,16 +2235,27 @@ class OperationalDashboard {
         }
     
         const labels = allData.map(item => item.case_type || 'Unknown');
-        const avgHours = allData.map(item => Math.round(item.avg_resolution_hours || 0));
+        const medianHours = allData.map(item => Math.round((item.median_days_to_close || 0) * 24)); // Convert days to hours
         const totalCases = allData.map(item => item.total_cases || 0);
-    
+
+        // Debug logging
+        console.log('Chart data debug:', {
+            allData: allData.slice(0, 3), // First 3 items
+            labels: labels.slice(0, 3),
+            medianHours: medianHours.slice(0, 3),
+            totalCases: totalCases.slice(0, 3),
+            medianHoursFull: medianHours,
+            totalCasesFull: totalCases,
+            sampleMedianDays: allData.slice(0, 3).map(item => item.median_days_to_close)
+        });
+
         // Calculate insights
-        const overallAvg = avgHours.reduce((sum, val) => sum + val, 0) / avgHours.length;
-        const minIndex = avgHours.indexOf(Math.min(...avgHours));
+        const overallMedian = medianHours.reduce((sum, val) => sum + val, 0) / medianHours.length;
+        const minIndex = medianHours.indexOf(Math.min(...medianHours));
         const totalResolved = totalCases.reduce((sum, val) => sum + val, 0);
-    
+
         // UPDATE THE INSIGHT BOXES - THIS IS THE KEY PART
-        updateElement('avgResolutionOverall', `${Math.round(overallAvg)}h`);
+        updateElement('avgResolutionOverall', `${Math.round(overallMedian)}h`);
         updateElement('fastestResolution', labels[minIndex] || 'N/A');
         updateElement('totalResolved', totalResolved);
     
@@ -2144,13 +2265,15 @@ class OperationalDashboard {
             data: {
                 labels: labels,
                 datasets: [{
-                    label: 'Avg Resolution (hours)',
-                    data: avgHours,
+                    label: 'Median Resolution (hours)',
+                    data: medianHours,
                     backgroundColor: 'rgba(30, 64, 175, 0.8)',
                     borderColor: 'rgba(30, 64, 175, 1)',
                     borderWidth: 2,
                     borderRadius: 8,
-                    yAxisID: 'y'
+                    yAxisID: 'y',
+                    barThickness: 20, // Make bars more visible
+                    maxBarThickness: 30
                 }, {
                     label: 'Total Cases',
                     data: totalCases,
@@ -2206,7 +2329,7 @@ class OperationalDashboard {
                             font: { size: 11 },
                             maxRotation: 45,
                             minRotation: 0,
-                            maxTicksLimit: 8,
+                            maxTicksLimit: undefined, // Show all labels
                             padding: 12,
                             callback: function(value, index, values) {
                                 const label = this.getLabelForValue(value);
@@ -2227,7 +2350,12 @@ class OperationalDashboard {
                             font: { size: 12, weight: '600' }
                         },
                         grid: { color: '#f3f4f6' },
-                        ticks: { precision: 0 }
+                        ticks: { 
+                            precision: 0,
+                            stepSize: 1, // Ensure we see small increments
+                            min: 0
+                        },
+                        beginAtZero: true
                     },
                     y1: {
                         type: 'linear',
@@ -2245,7 +2373,7 @@ class OperationalDashboard {
         });
     
         console.log('Performance chart rendered with insights:', {
-            avgResolutionOverall: Math.round(overallAvg),
+            avgResolutionOverall: Math.round(overallMedian),
             fastestResolution: labels[minIndex],
             totalResolved: totalResolved
         });
@@ -4466,18 +4594,16 @@ class ThreatIntelligenceDashboard {
                 </td>
                 <td class="whois-families">
                     <div class="families-list">
-                        ${item.threat_families_used ? (() => {
-                            // Clean the threat families string - remove leading semicolons and empty entries
-                            const cleanedFamilies = item.threat_families_used
-                                .replace(/^[;,]+/, '') // Remove leading semicolons and commas
-                                .replace(/[;,]+$/, '') // Remove trailing semicolons and commas
-                                .split(/[;,]+/) // Split by semicolons or commas
-                                .map(family => family.trim()) // Trim whitespace
-                                .filter(family => family && family !== '') // Remove empty entries
-                                .slice(0, 5); // Show up to 5 families instead of 3
+                        ${item.threat_families_used && item.threat_families_used !== 'None' ? (() => {
+                            // Split by comma and clean up
+                            const families = item.threat_families_used
+                                .split(',')
+                                .map(family => family.trim())
+                                .filter(family => family && family !== '')
+                                .slice(0, 4); // Show up to 4 families
                             
-                            return cleanedFamilies.length > 0 
-                                ? cleanedFamilies.map(family => `<span class="family-tag">${family}</span>`).join(' ')
+                            return families.length > 0 
+                                ? families.map(family => `<span class="family-tag">${family}</span>`).join(' ')
                                 : '<span class="no-data">None</span>';
                         })() : '<span class="no-data">None</span>'}
                     </div>
@@ -4506,71 +4632,58 @@ class ThreatIntelligenceDashboard {
         console.log('<i class="fas fa-bullseye"></i> Rendering priority cases with data:', data);
 
         if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="no-data-cell">No high-priority cases found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="no-data-cell">No attributed cases found</td></tr>';
             return;
         }
 
         tbody.innerHTML = data.slice(0, 20).map((item, index) => {
-            // Determine priority level based on attribution score and threat actor
-            const priorityLevel = this.getPriorityLevel(item);
-            const riskIndicator = this.getRiskIndicator(item);
-            
             return `
-                <tr class="priority-case-row ${priorityLevel}" data-case="${item.case_number}">
+                <tr class="attributed-case-row" data-case="${item.case_number}">
                     <td class="case-number">
                         <div class="case-number-container">
                             <a href="#" class="case-link" title="View case details">${item.case_number}</a>
-                            <div class="case-priority-badge ${priorityLevel}">${priorityLevel.toUpperCase()}</div>
                         </div>
                     </td>
                     <td class="case-brand">
                         <div class="brand-container">
                             <span class="brand-name">${item.brand || 'Unknown'}</span>
-                            ${riskIndicator}
                         </div>
                     </td>
                     <td class="case-actor" title="${item.threat_actor || 'N/A'}">
                         ${item.threat_actor ? `
                             <div class="actor-container">
                                 <span class="actor-name">${this.truncateText(item.threat_actor, 20)}</span>
-                                <div class="actor-verification">
-                                    <i class="fas fa-check-circle verified" title="Verified Attribution"></i>
-                                </div>
                             </div>
-                        ` : '<span class="no-attribution">No Attribution</span>'}
+                        ` : '<span class="no-data">None</span>'}
                     </td>
                     <td class="case-kit">
                         ${item.threat_family ? `
-                            <span class="kit-tag ${this.getKitFamilyClass(item.threat_family)}">${item.threat_family}</span>
-                        ` : '<span class="no-kit">Unknown Kit</span>'}
+                            <span class="kit-tag">${item.threat_family}</span>
+                        ` : '<span class="no-data">None</span>'}
                     </td>
                     <td class="case-domain" title="${item.domain || 'N/A'}">
                         ${item.domain ? `
                             <div class="domain-container">
                                 <span class="domain-name">${this.truncateText(item.domain, 25)}</span>
-                                <div class="domain-actions">
-                                    <i class="fas fa-external-link-alt" title="Open domain"></i>
-                                </div>
                             </div>
-                        ` : '<span class="no-domain">No Domain</span>'}
+                        ` : '<span class="no-data">None</span>'}
                     </td>
                     <td class="case-country">
                         ${item.host_country ? `
                             <div class="country-container">
                                 <span class="country-code">${item.host_country}</span>
-                                <div class="country-risk ${this.getCountryRiskLevel(item.host_country)}"></div>
                             </div>
-                        ` : '<span class="no-country">Unknown</span>'}
+                        ` : '<span class="no-data">None</span>'}
                     </td>
-                    <td class="case-score">
-                        <div class="attribution-score-container">
-                            <div class="attribution-score score-${item.attribution_score}" title="Attribution Confidence Score">
-                                ${item.attribution_score}/4
-                            </div>
-                            <div class="score-breakdown">
-                                ${this.getScoreBreakdown(item)}
-                            </div>
-                        </div>
+                    <td class="case-whois-email" title="${item.flagged_whois_email || 'N/A'}">
+                        ${item.flagged_whois_email ? `
+                            <span class="whois-email">${this.truncateText(item.flagged_whois_email, 25)}</span>
+                        ` : '<span class="no-data">None</span>'}
+                    </td>
+                    <td class="case-whois-name" title="${item.flagged_whois_name || 'N/A'}">
+                        ${item.flagged_whois_name ? `
+                            <span class="whois-name">${this.truncateText(item.flagged_whois_name, 25)}</span>
+                        ` : '<span class="no-data">None</span>'}
                     </td>
                     <td class="case-date">
                         <div class="date-container">
@@ -5509,7 +5622,6 @@ class SocialExecutiveDashboard {
                 this.animateMetricUpdate('executiveTargets', metrics.executive_targets || 0);
                 this.animateMetricUpdate('brandProtection', metrics.brands_protected || 0);
                 this.animateMetricUpdate('socialIncidents', metrics.social_incidents || 0);
-                this.animateMetricUpdate('threatTrends', metrics.trend_score || 0);
             }
         } catch (error) {
             console.error('Error updating social executive metrics:', error);
@@ -5517,7 +5629,6 @@ class SocialExecutiveDashboard {
             this.animateMetricUpdate('executiveTargets', 0);
             this.animateMetricUpdate('brandProtection', 0);
             this.animateMetricUpdate('socialIncidents', 0);
-            this.animateMetricUpdate('threatTrends', 0);
         }
     }
 
@@ -6709,28 +6820,28 @@ class SocialExecutiveDashboard {
                 layout: {
                     padding: {
                         top: 20,
-                        bottom: 30,
+                        bottom: 20,
                         left: 20,
-                        right: 20
+                        right: 100
                     }
                 },
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'bottom',
+                        position: 'right',
                         align: 'center',
                         labels: {
                             usePointStyle: true,
                             pointStyle: 'circle',
-                            padding: 12,
+                            padding: 16,
                             font: {
-                                size: 11,
+                                size: 14,
                                 weight: '600',
                                 family: "system-ui, -apple-system, sans-serif"
                             },
-                            color: '#475569',
-                            boxWidth: 8,
-                            boxHeight: 8,
+                            color: '#1E293B',
+                            boxWidth: 12,
+                            boxHeight: 12,
                             generateLabels: (chart) => {
                                 const data = chart.data;
                                 if (!data.labels.length || !data.datasets.length) return [];
@@ -7654,32 +7765,6 @@ function getDateRangeParams(filter) {
     // Let the backend use its proper SQL date filtering logic
     
     return params;
-}
-
-function playTimelineAnimation() {
-    const btn = document.getElementById('timelinePlayBtn');
-    if (!btn) return;
-    
-    const icon = btn.querySelector('i');
-    if (icon.classList.contains('fa-play')) {
-        // Start auto-refresh
-        icon.classList.remove('fa-play');
-        icon.classList.add('fa-pause');
-        btn.title = 'Stop Auto-Refresh';
-        
-        if (executiveDashboard) {
-            executiveDashboard.startTimelineAutoRefresh();
-        }
-    } else {
-        // Stop auto-refresh
-        icon.classList.remove('fa-pause');
-        icon.classList.add('fa-play');
-        btn.title = 'Start Auto-Refresh';
-        
-        if (executiveDashboard) {
-            executiveDashboard.stopTimelineAutoRefresh();
-        }
-    }
 }
 
 function destroyChart(chartInstance, canvasId) {
@@ -13055,7 +13140,7 @@ window.copyOperationalDashboard = copyOperationalDashboard;
 window.copyThreatIntelligenceDashboard = copyThreatIntelligenceDashboard;
 window.copyCampaignDashboard = copyCampaignDashboard;
 window.copySocialExecutiveDashboard = copySocialExecutiveDashboard;
-window.playTimelineAnimation = playTimelineAnimation;
+// Play button functionality removed
 
 // Campaign Tab Functions are now inside the CampaignManagement class
 window.applyCustomRange = function() {
