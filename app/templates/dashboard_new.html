@@ -270,29 +270,29 @@
                             <div class="loading-spinner" id="detectionSourceLoading">
                                 <i class="fas fa-spinner fa-spin"></i>
                                 <span>Loading detection data...</span>
-                            </div>
+                                </div>
                             <div id="detectionSourceContainer" style="display: none;">
                                 <!-- Detection source cards -->
                                 <div class="detection-cards">
                                     <div class="detection-card phishlabs-card">
                                         <div class="detection-icon">
                                             <i class="fas fa-search"></i>
-                                        </div>
+                                </div>
                                         <div class="detection-content">
                                             <h4 class="detection-title">Phishlabs Detections</h4>
                                             <div class="detection-value" id="phishlabsCount">0</div>
                                             <div class="detection-percentage" id="phishlabsPercentage">0%</div>
-                                        </div>
-                                    </div>
+                                </div>
+                            </div>
                                     <div class="detection-card internal-card">
                                         <div class="detection-icon">
                                             <i class="fas fa-shield-alt"></i>
-                                        </div>
+                        </div>
                                         <div class="detection-content">
                                             <h4 class="detection-title">Internal Detections</h4>
                                             <div class="detection-value" id="internalCount">0</div>
                                             <div class="detection-percentage" id="internalPercentage">0%</div>
-                                        </div>
+                    </div>
                                     </div>
                                 </div>
                                 <!-- Detection distribution bar -->
@@ -364,13 +364,20 @@
                             </div>
                         </div>
                         <div class="metrics-grid-enhanced">
-                            <div class="metric-item-enhanced">
+                            <div class="metric-item-enhanced resolution-time-card">
                                 <div class="metric-icon-small">
                                     <i class="fas fa-clock"></i>
                                 </div>
-                                <div class="metric-content-small">
-                                    <div class="metric-value-enhanced" id="avgResolutionHoursEnhanced">--h</div>
-                                    <div class="metric-label-enhanced">Avg Resolution</div>
+                                <div class="metric-content-small resolution-split">
+                                    <div class="resolution-half">
+                                        <div class="metric-value-enhanced" id="medianResolutionHoursEnhanced">--h</div>
+                                        <div class="resolution-label">Median</div>
+                                    </div>
+                                    <div class="resolution-divider"></div>
+                                    <div class="resolution-half">
+                                        <div class="metric-value-enhanced" id="avgResolutionHoursEnhanced">--h</div>
+                                        <div class="resolution-label">Avg</div>
+                                    </div>
                                 </div>
                             </div>
                             <div class="metric-item-enhanced">
@@ -655,7 +662,7 @@
                             <div class="performance-insights">
                                 <div class="insight-card">
                                     <div class="insight-value" id="avgResolutionOverall">--h</div>
-                                    <div class="insight-label">Avg Resolution Time</div>
+                                    <div class="insight-label">Median Resolution Time</div>
                                 </div>
                                 <div class="insight-card">
                                     <div class="insight-value" id="fastestResolution">--</div>
@@ -1218,8 +1225,8 @@
                     <!-- High-Priority Cases -->
                     <div class="intel-card priority-cases-card full-width">
                         <div class="intel-header">
-                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'High-Priority Cases')" title="Click to copy chart for email">High-Priority Attribution Cases</h3>
-                            <p class="intel-subtitle">Active cases with strong attribution signals (score ≥ 2)</p>
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Attributed Cases')" title="Click to copy chart for email">Attributed Cases</h3>
+                            <p class="intel-subtitle">Cases with attribution data points</p>
                         </div>
                         <div class="intel-body">
                             <div class="priority-table-container">
@@ -1232,13 +1239,14 @@
                                             <th>Kit Family</th>
                                             <th>Domain</th>
                                             <th>Host Country</th>
-                                            <th>Attribution Score</th>
+                                            <th>WHOIS Email</th>
+                                            <th>WHOIS Name</th>
                                             <th>Created</th>
                                         </tr>
                                     </thead>
                                     <tbody id="priorityCasesTableBody">
                                         <tr>
-                                            <td colspan="8" class="loading-cell">Loading high-priority cases...</td>
+                                            <td colspan="9" class="loading-cell">Loading attributed cases...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1571,7 +1579,7 @@
                         <div class="metric-content">
                             <h3 class="metric-value" id="executiveTargets">-</h3>
                             <p class="metric-label">Executive Targets</p>
-                        </div>
+                            </div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-icon">
@@ -1591,16 +1599,7 @@
                             <p class="metric-label">Active Incidents</p>
                         </div>
                     </div>
-                    <div class="metric-card">
-                        <div class="metric-icon">
-                            <i class="fas fa-chart-line"></i>
-                        </div>
-                        <div class="metric-content">
-                            <h3 class="metric-value" id="threatTrends">-</h3>
-                            <p class="metric-label">Trend Score</p>
-                            </div>
-                        </div>
-                    </div>
+                </div>
                     
                 <!-- Executive Visualizations -->
                 <div class="executive-charts-grid">
