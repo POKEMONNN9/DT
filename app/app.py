@@ -3589,6 +3589,11 @@ def index():
     """Main dashboard page"""
     return render_template('dashboard_new.html')
 
+@app.route('/campaign-dashboard')
+def campaign_dashboard():
+    """Campaign Management Dashboard page"""
+    return render_template('campaign_dashboard.html')
+
 @app.route('/api/summary')
 def api_summary():
     """API endpoint for executive summary"""
@@ -4850,22 +4855,22 @@ def api_get_campaigns():
                         if not mapping.get('metadata_complete', True):
                             incomplete_count += 1
                         
-                        if mapping.get('identifier_type') and mapping.get('identifier_value'):
-                            identifiers.append({
-                                'type': mapping['identifier_type'],
-                                'value': mapping['identifier_value'],
-                                'description': mapping.get('description', ''),
+                if mapping.get('identifier_type') and mapping.get('identifier_value'):
+                    identifiers.append({
+                        'type': mapping['identifier_type'],
+                        'value': mapping['identifier_value'],
+                        'description': mapping.get('description', ''),
                                 'table': mapping.get('table', ''),
                                 'metadata_complete': mapping.get('metadata_complete', True)
                             })
-                        elif mapping.get('field') and mapping.get('value'):
-                            identifiers.append({
-                                'type': mapping['field'],
-                                'value': mapping['value'],
-                                'description': mapping.get('description', ''),
-                                'table': mapping.get('table', ''),
-                                'metadata_complete': mapping.get('metadata_complete', True)
-                            })
+                elif mapping.get('field') and mapping.get('value'):
+                    identifiers.append({
+                        'type': mapping['field'],
+                        'value': mapping['value'],
+                        'description': mapping.get('description', ''),
+                        'table': mapping.get('table', ''),
+                        'metadata_complete': mapping.get('metadata_complete', True)
+                    })
             elif isinstance(campaign_data, dict):
                 # New dictionary format with identifiers list
                 if 'identifiers' in campaign_data and isinstance(campaign_data['identifiers'], list):
