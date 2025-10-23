@@ -14,6 +14,7 @@ import sys
 import random
 import tempfile
 import shutil
+import traceback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -3594,6 +3595,11 @@ def campaign_dashboard():
     """Campaign Management Dashboard page"""
     return render_template('campaign_dashboard.html')
 
+@app.route('/data-quality')
+def data_quality_dashboard():
+    """Data Quality Issues Dashboard page"""
+    return render_template('data_quality.html')
+
 @app.route('/api/summary')
 def api_summary():
     """API endpoint for executive summary"""
@@ -4851,26 +4857,25 @@ def api_get_campaigns():
             if isinstance(campaign_data, list):
                 # Legacy list format
                 for mapping in campaign_data:
-                    if isinstance(mapping, dict):
-                        if not mapping.get('metadata_complete', True):
-                            incomplete_count += 1
-                        
-                if mapping.get('identifier_type') and mapping.get('identifier_value'):
-                    identifiers.append({
-                        'type': mapping['identifier_type'],
-                        'value': mapping['identifier_value'],
-                        'description': mapping.get('description', ''),
+                        if isinstance(mapping, dict):
+                            if not mapping.get('metadata_complete', True):
+                                incomplete_count += 1
+                        if mapping.get('identifier_type') and mapping.get('identifier_value'):
+                            identifiers.append({
+                                'type': mapping['identifier_type'],
+                                'value': mapping['identifier_value'],
+                                'description': mapping.get('description', ''),
+                                        'table': mapping.get('table', ''),
+                                        'metadata_complete': mapping.get('metadata_complete', True)
+                                    })
+                        elif mapping.get('field') and mapping.get('value'):
+                            identifiers.append({
+                                'type': mapping['field'],
+                                'value': mapping['value'],
+                                'description': mapping.get('description', ''),
                                 'table': mapping.get('table', ''),
                                 'metadata_complete': mapping.get('metadata_complete', True)
                             })
-                elif mapping.get('field') and mapping.get('value'):
-                    identifiers.append({
-                        'type': mapping['field'],
-                        'value': mapping['value'],
-                        'description': mapping.get('description', ''),
-                        'table': mapping.get('table', ''),
-                        'metadata_complete': mapping.get('metadata_complete', True)
-                    })
             elif isinstance(campaign_data, dict):
                 # New dictionary format with identifiers list
                 if 'identifiers' in campaign_data and isinstance(campaign_data['identifiers'], list):
@@ -5258,7 +5263,9 @@ def api_social_executive_metrics():
             executive_query = f"""
             SELECT 
                 COUNT(DISTINCT i.executive_name) as executive_targets,
-                COUNT(DISTINCT i.brand_name) as brands_protected,
+                COUNT(CASE WHEN i.threat_type = 'Brand Impersonation' 
+                           OR (i.threat_type LIKE '%Brand%' AND i.threat_type LIKE '%Impersonation%') 
+                           THEN i.incident_id END) as brands_protected,
                 COUNT(i.incident_id) as social_incidents,
                 0 as avg_resolution_hours
             FROM phishlabs_incident i
@@ -5268,7 +5275,9 @@ def api_social_executive_metrics():
             executive_query = f"""
             SELECT 
                 COUNT(DISTINCT i.executive_name) as executive_targets,
-                COUNT(DISTINCT i.brand_name) as brands_protected,
+                COUNT(CASE WHEN i.threat_type = 'Brand Impersonation' 
+                           OR (i.threat_type LIKE '%Brand%' AND i.threat_type LIKE '%Impersonation%') 
+                           THEN i.incident_id END) as brands_protected,
                 COUNT(i.incident_id) as social_incidents,
                 0 as avg_resolution_hours
             FROM phishlabs_incident i
@@ -6034,8 +6043,6 @@ def api_get_multiple_campaigns_data():
         if not campaign_names:
             return jsonify({"error": "No campaigns specified"}), 400
         
-        logger.info(f"Getting data for campaigns: {campaign_names}")
-        
         # Get date filtering parameters
         date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
@@ -6045,7 +6052,6 @@ def api_get_multiple_campaigns_data():
         
         for campaign_name in campaign_names:
             if campaign_name in dashboard.campaigns:
-                logger.info(f"Processing campaign: {campaign_name}")
                 # Get data for this campaign
                 campaign_data = {
                     'case_data_incidents': [],
@@ -6079,8 +6085,9 @@ def api_get_multiple_campaigns_data():
                     identifier_value = identifier.get('value')
                     
                     # Use cached metadata for main case data
-                    if table == 'phishlabs_case_data_incidents':
-                        campaign_data['case_data_incidents'].append({
+                    if table == 'phishlabs_case_data_incidents' or identifier.get('field') == 'case_number':
+                        # Start with cached metadata
+                        case_entry = {
                             'case_number': identifier_value,
                             'case_type': identifier.get('case_type'),
                             'title': identifier.get('title'),
@@ -6091,18 +6098,77 @@ def api_get_multiple_campaigns_data():
                             'brand': identifier.get('brand'),
                             'status': identifier.get('status'),
                             'resolution_status': identifier.get('resolution_status')
-                        })
+                        }
                         
-                        # Only query DB for associated URLs (not available in cached metadata)
+                        # Fetch registrar from case_data_incidents via iana_id
+                        try:
+                            registrar_query = f"""
+                                SELECT r.name AS registrar_name
+                                FROM phishlabs_case_data_incidents c
+                                LEFT JOIN phishlabs_iana_registry r
+                                    ON r.iana_id = c.iana_id
+                                WHERE c.case_number = '{identifier_value}'
+                            """
+                            registrar_result = dashboard.execute_query(registrar_query)
+                            if registrar_result and not isinstance(registrar_result, dict) and len(registrar_result) > 0:
+                                case_entry['registrar_name'] = registrar_result[0].get('registrar_name') or '-'
+                            else:
+                                case_entry['registrar_name'] = '-'
+                        except Exception as e:
+                            logger.error(f"Error fetching registrar for {identifier_value}: {e}")
+                            case_entry['registrar_name'] = '-'
+                        
+                        campaign_data['case_data_incidents'].append(case_entry)
+                        
+                        # Query associated URLs (Note: no iana_id in associated_urls table for registrar join)
                     url_query = f"""
-                    SELECT DISTINCT u.case_number, u.url, u.url_path, u.url_type, u.fqdn, 
-                           u.ip_address, u.tld, u.domain, u.host_isp, u.host_country, u.as_number
-                    FROM phishlabs_case_data_associated_urls u
-                        WHERE u.case_number = '{identifier_value}'
+                            SELECT DISTINCT 
+                                case_number,
+                                url,
+                                url_path,
+                                url_type,
+                                fqdn,
+                                ip_address,
+                                tld,
+                                domain,
+                                host_isp,
+                                host_country,
+                                as_number
+                            FROM phishlabs_case_data_associated_urls
+                            WHERE case_number = '{identifier_value}'
                     """
                     url_results = dashboard.execute_query(url_query)
+                        
                     if url_results and not isinstance(url_results, dict):
+                            # Add to associated_urls list
                         campaign_data['associated_urls'].extend(url_results)
+                    
+                        # Fetch the longest URL to enrich case_entry
+                        try:
+                            best_query = f"""
+                                SELECT TOP 1
+                                    url,
+                                    host_isp,
+                                    domain
+                                FROM phishlabs_case_data_associated_urls
+                                WHERE case_number = '{identifier_value}'
+                                ORDER BY LEN(COALESCE(url, '')) DESC
+                            """
+                            best_rows = dashboard.execute_query(best_query)
+                            
+                            if best_rows and not isinstance(best_rows, dict) and len(best_rows) > 0:
+                                best = best_rows[0]
+                                
+                                if best:
+                                    if best.get('url'):
+                                        case_entry['url'] = best.get('url')
+                                    if best.get('host_isp'):
+                                        case_entry['host_isp'] = best.get('host_isp')
+                                    if best.get('domain'):
+                                        case_entry['domain'] = best.get('domain')
+                        except Exception as e:
+                            logger.error(f"Error enriching case {identifier_value}: {e}")
+                            pass
                     
                     elif table == 'phishlabs_threat_intelligence_incident':
                         campaign_data['threat_intelligence_incidents'].append({
@@ -6155,6 +6221,43 @@ def api_get_multiple_campaigns_data():
         return jsonify(all_campaigns_data)
     except Exception as e:
         logger.error(f"Error getting multiple campaigns data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/test-url-enrichment/<case_number>')
+def api_test_url_enrichment(case_number):
+    """Test URL enrichment for a specific case"""
+    try:
+        # Query associated URLs
+        url_query = f"""
+            SELECT DISTINCT 
+                case_number,
+                url,
+                host_isp,
+                domain
+            FROM phishlabs_case_data_associated_urls
+            WHERE case_number = '{case_number}'
+        """
+        url_results = dashboard.execute_query(url_query)
+        
+        # Get best URL
+        best_query = f"""
+            SELECT TOP 1
+                url,
+                host_isp,
+                domain
+            FROM phishlabs_case_data_associated_urls
+            WHERE case_number = '{case_number}'
+            ORDER BY LEN(COALESCE(url, '')) DESC
+        """
+        best_rows = dashboard.execute_query(best_query)
+        
+        return jsonify({
+            'case_number': case_number,
+            'all_urls': url_results if url_results and not isinstance(url_results, dict) else [],
+            'best_url': best_rows[0] if best_rows and not isinstance(best_rows, dict) and len(best_rows) > 0 else None
+        })
+    except Exception as e:
+        logger.error(f"Error testing URL enrichment: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/connection-status')
@@ -8149,6 +8252,10 @@ def api_comprehensive_analysis():
         total_summary_cases = len(case_numbers) + len(infrids) + len(incident_ids)
         analysis_data['summary']['total_cases'] = total_summary_cases
         
+        # Calculate total active cases from all campaigns
+        total_active_cases = sum(c.get('active_cases', 0) for c in analysis_data['campaigns'])
+        analysis_data['summary']['active_cases'] = total_active_cases
+        
         # 2. THREAT DISTRIBUTION ANALYSIS - Count identifiers from campaigns.json, enrich with DB data
         threat_counts = {}
         
@@ -8512,14 +8619,21 @@ def api_comprehensive_analysis():
             case_infra_query = f"""
             SELECT 
                 u.domain,
+                u.url,
                 u.url_type as type,
                 u.host_country as country,
                 u.host_isp as isp,
+                u.ip_address,
                 i.case_number,
+                i.case_type,
                 i.date_created_local as date_created,
-                i.date_closed_local as date_closed
+                i.date_closed_local as date_closed,
+                i.resolution_status,
+                i.iana_id,
+                r.name as registrar_name
             FROM phishlabs_case_data_associated_urls u
             JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
             WHERE u.case_number IN ('{case_list}')
             AND u.domain IS NOT NULL AND u.domain != ''
             """
@@ -8529,14 +8643,39 @@ def api_comprehensive_analysis():
                 for row in case_infra_results:
                     case_number = row.get('case_number', '')
                     if case_number:
-                        db_domains_by_case[case_number] = {
+                        # Calculate age in days
+                        date_created = row.get('date_created')
+                        date_closed = row.get('date_closed')
+                        age_days = None
+                        if date_created:
+                            from datetime import datetime
+                            try:
+                                created_dt = datetime.strptime(str(date_created)[:10], '%Y-%m-%d') if isinstance(date_created, str) else date_created
+                                if date_closed:
+                                    closed_dt = datetime.strptime(str(date_closed)[:10], '%Y-%m-%d') if isinstance(date_closed, str) else date_closed
+                                    age_days = (closed_dt - created_dt).days
+                                else:
+                                    age_days = (datetime.now() - created_dt).days
+                            except:
+                                age_days = None
+                        
+                        # Store as list to handle multiple URLs per case
+                        if case_number not in db_domains_by_case:
+                            db_domains_by_case[case_number] = []
+                        
+                        db_domains_by_case[case_number].append({
                             'domain': row.get('domain', ''),
-                            'type': row.get('type', 'Unknown'),
+                            'url': row.get('url', ''),
+                            'type': row.get('case_type', row.get('type', 'Unknown')),
                             'country': row.get('country', 'Unknown'),
                             'isp': row.get('isp', 'Unknown'),
+                            'ip_address': row.get('ip_address', '-'),
                             'date_created': row.get('date_created', 'N/A'),
-                            'date_closed': row.get('date_closed', 'N/A')
-                        }
+                            'date_closed': row.get('date_closed', 'N/A'),
+                            'resolution_status': row.get('resolution_status', '-'),
+                            'registrar_name': row.get('registrar_name', '-'),
+                            'age_days': age_days
+                        })
             
             # Create entries for ALL case_numbers (including those without database domains)
             for case_number in case_numbers:
@@ -8554,157 +8693,69 @@ def api_comprehensive_analysis():
                 
                 if campaigns_for_case:
                     if case_number in db_domains_by_case:
-                        # Use database domain
-                        db_data = db_domains_by_case[case_number]
-                        domain = db_data['domain']
+                        # Use database domains - now a list of URLs for this case
+                        db_data_list = db_domains_by_case[case_number]
                         
-                        if domain not in infra_data:
-                            infra_data[domain] = {
-                                'domain': domain,
-                                'type': db_data['type'],
-                                'country': db_data['country'],
-                                'isp': db_data['isp'],
-                                'campaigns': campaigns_for_case,
-                                'date_created': db_data['date_created'],
-                                'date_closed': db_data['date_closed']
-                            }
-                        else:
-                            # Merge campaigns if domain already exists
-                            existing_campaigns = infra_data[domain]['campaigns']
-                            for campaign in campaigns_for_case:
-                                if campaign not in existing_campaigns:
-                                    existing_campaigns.append(campaign)
+                        # Create an entry for each URL/domain associated with this case
+                        for db_data in db_data_list:
+                            domain = db_data['domain']
+                            
+                            # Use unique key combining domain, url and case_number
+                            url_hash = hash(db_data.get('url', domain))
+                            unique_key = f"{domain}_{case_number}_{url_hash}"
+                            
+                            if unique_key not in infra_data:
+                                infra_data[unique_key] = {
+                                    'identifier': case_number,
+                                    'domain': domain,
+                                    'url': db_data.get('url', ''),
+                                    'type': db_data['type'],
+                                    'country': db_data['country'],
+                                    'isp': db_data['isp'],
+                                    'ip_address': db_data.get('ip_address', '-'),
+                                    'campaigns': campaigns_for_case.copy(),
+                                    'date_created': db_data['date_created'],
+                                    'date_closed': db_data['date_closed'],
+                                    'resolution_status': db_data.get('resolution_status', '-'),
+                                    'registrar_name': db_data.get('registrar_name', '-'),
+                                    'age_days': db_data.get('age_days')
+                                }
+                            else:
+                                # Merge campaigns if entry already exists
+                                existing_campaigns = infra_data[unique_key]['campaigns']
+                                for campaign in campaigns_for_case:
+                                    if campaign not in existing_campaigns:
+                                        existing_campaigns.append(campaign)
                     else:
                         # Create placeholder for case_number without database domain
                         placeholder_domain = f"cred-theft-{case_number}.example.com"
-                        if placeholder_domain not in infra_data:
-                            infra_data[placeholder_domain] = {
+                        unique_key = f"{placeholder_domain}_{case_number}"
+                        if unique_key not in infra_data:
+                            infra_data[unique_key] = {
+                                'identifier': case_number,
                                 'domain': placeholder_domain,
+                                'url': '',
                                 'type': 'Cred Theft',
                                 'country': 'Unknown',
                                 'isp': 'Unknown',
+                                'ip_address': '-',
                                 'campaigns': campaigns_for_case,
                                 'date_created': 'N/A',
-                                'date_closed': 'N/A'
+                                'date_closed': 'N/A',
+                                'resolution_status': '-',
+                                'registrar_name': '-',
+                                'age_days': None
                             }
                         else:
                             # Merge campaigns if placeholder already exists
-                            existing_campaigns = infra_data[placeholder_domain]['campaigns']
+                            existing_campaigns = infra_data[unique_key]['campaigns']
                             for campaign in campaigns_for_case:
                                 if campaign not in existing_campaigns:
                                     existing_campaigns.append(campaign)
         
-        # For infrids (Domain Monitoring) - get database data
-        if infrids:
-            infrid_list = "','".join(set(infrids))  # Remove duplicates for DB query
-            threat_infra_query = f"""
-            SELECT 
-                url as domain,
-                threat_type_cat_name as type,
-                infrid,
-                date_created
-            FROM phishlabs_threat_intelligence_incident
-            WHERE infrid IN ('{infrid_list}')
-            AND url IS NOT NULL AND url != ''
-            """
-            threat_infra_results = dashboard.execute_query(threat_infra_query)
-            db_urls_by_infrid = {}
-            if threat_infra_results and isinstance(threat_infra_results, list):
-                for row in threat_infra_results:
-                    infrid = row.get('infrid', '')
-                    if infrid:
-                        db_urls_by_infrid[infrid] = {
-                            'domain': row.get('domain', ''),
-                            'type': row.get('type', 'Unknown'),
-                            'date_created': row.get('date_created', 'N/A')
-                        }
-            
-            # Create entries for ALL infrids (including those without database URLs)
-            for infrid in infrids:
-                # Find which campaigns this infrid belongs to
-                campaigns_for_infrid = []
-                for campaign_name, campaign_data in dashboard.campaigns.items():
-                    if campaign_name in campaign_names:  # Only selected campaigns
-                        for identifier in campaign_data.get('identifiers', []):
-                            if (isinstance(identifier, dict) and 
-                                identifier.get('field') == 'infrid' and 
-                                identifier.get('value') == infrid):
-                                campaigns_for_infrid.append(campaign_name)
-                
-                if campaigns_for_infrid:
-                    if infrid in db_urls_by_infrid:
-                        # Use database URL
-                        db_data = db_urls_by_infrid[infrid]
-                        domain = db_data['domain']
-                        
-                        if domain not in infra_data:
-                            infra_data[domain] = {
-                                'domain': domain,
-                                'type': db_data['type'],
-                                'country': 'Unknown',
-                                'isp': 'Unknown',
-                                'campaigns': campaigns_for_infrid,
-                                'date_created': db_data['date_created'],
-                                'date_closed': 'N/A'
-                            }
-                        else:
-                            # Merge campaigns if domain already exists
-                            existing_campaigns = infra_data[domain]['campaigns']
-                            for campaign in campaigns_for_infrid:
-                                if campaign not in existing_campaigns:
-                                    existing_campaigns.append(campaign)
-                    else:
-                        # Create placeholder for infrid without database URL
-                        placeholder_domain = f"domain-monitoring-{infrid}.example.com"
-                        if placeholder_domain not in infra_data:
-                            infra_data[placeholder_domain] = {
-                                'domain': placeholder_domain,
-                                'type': 'Domain Monitoring',
-                                'country': 'Unknown',
-                                'isp': 'Unknown',
-                                'campaigns': campaigns_for_infrid,
-                                'date_created': 'N/A',
-                                'date_closed': 'N/A'
-                            }
-                        else:
-                            # Merge campaigns if placeholder already exists
-                            existing_campaigns = infra_data[placeholder_domain]['campaigns']
-                            for campaign in campaigns_for_infrid:
-                                if campaign not in existing_campaigns:
-                                    existing_campaigns.append(campaign)
-        
-        # For incident_ids (Social Media) - create placeholders
-        if incident_ids:
-            for incident_id in incident_ids:
-                # Find which campaigns this incident_id belongs to
-                campaigns_for_incident = []
-                for campaign_name, campaign_data in dashboard.campaigns.items():
-                    if campaign_name in campaign_names:  # Only selected campaigns
-                        for identifier in campaign_data.get('identifiers', []):
-                            if (isinstance(identifier, dict) and 
-                                identifier.get('field') == 'incident_id' and 
-                                identifier.get('value') == incident_id):
-                                campaigns_for_incident.append(campaign_name)
-                
-                if campaigns_for_incident:
-                    # Create placeholder domain
-                    placeholder_domain = f"social-media-{incident_id}.example.com"
-                    if placeholder_domain not in infra_data:
-                        infra_data[placeholder_domain] = {
-                            'domain': placeholder_domain,
-                            'type': 'Social Media',
-                            'country': 'Unknown',
-                            'isp': 'Unknown',
-                            'campaigns': campaigns_for_incident,
-                            'date_created': 'N/A',
-                            'date_closed': 'N/A'
-                        }
-                    else:
-                        # Merge campaigns if domain already exists
-                        existing_campaigns = infra_data[placeholder_domain]['campaigns']
-                        for campaign in campaigns_for_incident:
-                            if campaign not in existing_campaigns:
-                                existing_campaigns.append(campaign)
+        # NOTE: Infrastructure analysis is ONLY for Cred Theft cases
+        # Domain Monitoring (infrids) and Social Media (incident_ids) don't have 
+        # infrastructure data (no IP, ISP, registrar, etc.) so we skip them
         
         # Convert to list and sort by domain name
         for domain_data in infra_data.values():
@@ -9082,6 +9133,460 @@ def api_case_type_analysis():
     except Exception as e:
         logger.error(f"Error in case type analysis API: {str(e)}")
         return jsonify({"error": "Failed to fetch case type analysis data"}), 500
+
+# ============================================================================
+# DATA QUALITY ISSUES API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/data-quality/false-closures')
+def api_false_closures():
+    """Detect potential false closures - cases closed too quickly without proper investigation (all data in this table is Cred Theft)"""
+    try:
+        # Get date filter parameters
+        date_filter = request.args.get('date_filter', 'month')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build date conditions
+        date_conditions = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # ========================================================================
+        # POTENTIAL FALSE CLOSURES CRITERIA:
+        # 1. Cases closed within 6 hours of creation (likely insufficient investigation)
+        # 2. Cases with specific resolution_status values (add them below)
+        # ========================================================================
+        
+        # Add specific resolution_status values that indicate potential false closures
+        # Example: suspicious_resolution_statuses = ['Auto-Closed', 'Duplicate', 'False Positive']
+        suspicious_resolution_statuses = []  # TODO: Add specific resolution_status values here
+        
+        # Build the WHERE clause for resolution status
+        if suspicious_resolution_statuses:
+            status_list = "', '".join(suspicious_resolution_statuses)
+            resolution_status_condition = f"OR i.resolution_status IN ('{status_list}')"
+        else:
+            resolution_status_condition = ""
+        
+        # Cases closed within 6 hours OR with suspicious resolution status
+        query = f"""
+        SELECT 
+            i.case_number,
+            u.url,
+            i.title,
+            u.url_type,
+            i.brand,
+            i.source_name,
+            i.date_created_local,
+            i.date_closed_local,
+            i.resolution_status,
+            r.name as registrar_name,
+            u.host_isp,
+            DATEDIFF(hour, i.date_created_local, i.date_closed_local) as hours_to_close,
+            DATEDIFF(minute, i.date_created_local, i.date_closed_local) as minutes_to_close
+        FROM phishlabs_case_data_incidents i
+        JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+        LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+        WHERE {date_conditions}
+        AND i.date_closed_local IS NOT NULL
+        AND (
+            DATEDIFF(hour, i.date_created_local, i.date_closed_local) < 6
+            {resolution_status_condition}
+        )
+        ORDER BY hours_to_close ASC, i.case_number
+        """
+        
+        results = dashboard.execute_query(query)
+        
+        # Check if results is an error dict
+        if isinstance(results, dict) and 'error' in results:
+            logger.error(f"False closures query error: {results}")
+            return jsonify([])
+        
+        if not results or not isinstance(results, list):
+            return jsonify([])
+        
+        # Add reason for each false closure
+        for result in results:
+            hours = result.get('hours_to_close', 0)
+            resolution_status = result.get('resolution_status', '')
+            
+            # Check if flagged by resolution status
+            if suspicious_resolution_statuses and resolution_status in suspicious_resolution_statuses:
+                result['reason'] = f'Suspicious resolution status: {resolution_status}'
+            elif hours < 1:
+                result['reason'] = 'Closed in less than 1 hour - likely automated closure'
+            elif hours < 3:
+                result['reason'] = f'Closed in {hours} hours - insufficient investigation time'
+            elif hours < 6:
+                result['reason'] = f'Closed in {hours} hours - potentially rushed closure'
+            else:
+                result['reason'] = f'Flagged by resolution status or other criteria'
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Error detecting false closures: {str(e)}")
+        return jsonify({"error": f"Failed to detect false closures: {str(e)}"}), 500
+
+@app.route('/api/data-quality/duplicates')
+def api_duplicates():
+    """Detect potential duplicate cases based on URL, domain, or title similarity (all data in this table is Cred Theft)"""
+    try:
+        # Get date filter parameters
+        date_filter = request.args.get('date_filter', 'month')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build date conditions
+        date_conditions = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # Find duplicates by URL, domain, or extracted URL from title
+        query = f"""
+        WITH ExtractedUrls AS (
+            SELECT 
+                i.case_number,
+                u.url,
+                u.domain,
+                i.title,
+                i.date_created_local,
+                i.date_closed_local,
+                i.case_type,
+                i.resolution_status,
+                i.source_name,
+                -- Extract URL from title (text between http:// or https:// and space)
+                CASE 
+                    WHEN i.title LIKE '%http://%' THEN 
+                        SUBSTRING(i.title, 
+                            CHARINDEX('http://', i.title), 
+                            CASE 
+                                WHEN CHARINDEX(' ', i.title, CHARINDEX('http://', i.title)) > 0 
+                                THEN CHARINDEX(' ', i.title, CHARINDEX('http://', i.title)) - CHARINDEX('http://', i.title)
+                                ELSE LEN(i.title)
+                            END
+                        )
+                    WHEN i.title LIKE '%https://%' THEN 
+                        SUBSTRING(i.title, 
+                            CHARINDEX('https://', i.title), 
+                            CASE 
+                                WHEN CHARINDEX(' ', i.title, CHARINDEX('https://', i.title)) > 0 
+                                THEN CHARINDEX(' ', i.title, CHARINDEX('https://', i.title)) - CHARINDEX('https://', i.title)
+                                ELSE LEN(i.title)
+                            END
+                        )
+                    ELSE NULL
+                END as extracted_url_from_title
+            FROM phishlabs_case_data_incidents i
+            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            WHERE {date_conditions}
+        ),
+        UrlMatches AS (
+            SELECT 
+                e1.case_number as case_number_1,
+                e2.case_number as case_number_2,
+                'url' as match_field,
+                e1.url as match_value,
+                e1.url as url_1,
+                e2.url as url_2,
+                e1.title as title_1,
+                e2.title as title_2,
+                e1.date_created_local as date_created_1,
+                e2.date_created_local as date_created_2,
+                e1.date_closed_local as date_closed_1,
+                e2.date_closed_local as date_closed_2,
+                e1.case_type as case_type_1,
+                e2.case_type as case_type_2,
+                e1.resolution_status as resolution_status_1,
+                e2.resolution_status as resolution_status_2,
+                e1.source_name as source_name_1,
+                e2.source_name as source_name_2,
+                DATEDIFF(day, e1.date_created_local, e2.date_created_local) as days_apart
+            FROM ExtractedUrls e1
+            JOIN ExtractedUrls e2 ON e1.url = e2.url AND e1.case_number < e2.case_number
+            WHERE e1.url IS NOT NULL AND e1.url != ''
+        ),
+        DomainMatches AS (
+            SELECT 
+                e1.case_number as case_number_1,
+                e2.case_number as case_number_2,
+                'domain' as match_field,
+                e1.domain as match_value,
+                e1.url as url_1,
+                e2.url as url_2,
+                e1.title as title_1,
+                e2.title as title_2,
+                e1.date_created_local as date_created_1,
+                e2.date_created_local as date_created_2,
+                e1.date_closed_local as date_closed_1,
+                e2.date_closed_local as date_closed_2,
+                e1.case_type as case_type_1,
+                e2.case_type as case_type_2,
+                e1.resolution_status as resolution_status_1,
+                e2.resolution_status as resolution_status_2,
+                e1.source_name as source_name_1,
+                e2.source_name as source_name_2,
+                DATEDIFF(day, e1.date_created_local, e2.date_created_local) as days_apart
+            FROM ExtractedUrls e1
+            JOIN ExtractedUrls e2 ON e1.domain = e2.domain AND e1.case_number < e2.case_number
+            WHERE e1.domain IS NOT NULL AND e1.domain != ''
+            AND NOT EXISTS (
+                SELECT 1 FROM UrlMatches u 
+                WHERE u.case_number_1 = e1.case_number AND u.case_number_2 = e2.case_number
+            )
+        ),
+        TitleUrlMatches AS (
+            SELECT 
+                e1.case_number as case_number_1,
+                e2.case_number as case_number_2,
+                'title' as match_field,
+                e1.extracted_url_from_title as match_value,
+                e1.url as url_1,
+                e2.url as url_2,
+                e1.title as title_1,
+                e2.title as title_2,
+                e1.date_created_local as date_created_1,
+                e2.date_created_local as date_created_2,
+                e1.date_closed_local as date_closed_1,
+                e2.date_closed_local as date_closed_2,
+                e1.case_type as case_type_1,
+                e2.case_type as case_type_2,
+                e1.resolution_status as resolution_status_1,
+                e2.resolution_status as resolution_status_2,
+                e1.source_name as source_name_1,
+                e2.source_name as source_name_2,
+                DATEDIFF(day, e1.date_created_local, e2.date_created_local) as days_apart
+            FROM ExtractedUrls e1
+            JOIN ExtractedUrls e2 ON e1.extracted_url_from_title = e2.extracted_url_from_title 
+                AND e1.case_number < e2.case_number
+            WHERE e1.extracted_url_from_title IS NOT NULL AND e1.extracted_url_from_title != ''
+            AND NOT EXISTS (
+                SELECT 1 FROM UrlMatches u 
+                WHERE u.case_number_1 = e1.case_number AND u.case_number_2 = e2.case_number
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM DomainMatches d 
+                WHERE d.case_number_1 = e1.case_number AND d.case_number_2 = e2.case_number
+            )
+        )
+        SELECT 
+            case_number_1,
+            case_number_2,
+            match_field,
+            match_value,
+            url_1,
+            url_2,
+            title_1,
+            title_2,
+            date_created_1,
+            date_created_2,
+            date_closed_1,
+            date_closed_2,
+            case_type_1,
+            case_type_2,
+            resolution_status_1,
+            resolution_status_2,
+            source_name_1,
+            source_name_2,
+            days_apart
+        FROM (
+            SELECT * FROM UrlMatches
+            UNION ALL
+            SELECT * FROM DomainMatches
+            UNION ALL
+            SELECT * FROM TitleUrlMatches
+        ) AS AllMatches
+        ORDER BY ABS(days_apart) ASC, match_field
+        """
+        
+        results = dashboard.execute_query(query)
+        
+        # Check if results is an error dict
+        if isinstance(results, dict) and 'error' in results:
+            logger.error(f"Duplicates query error: {results}")
+            return jsonify([])
+        
+        if not results or not isinstance(results, list):
+            return jsonify([])
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Error detecting duplicates: {str(e)}")
+        return jsonify({"error": "Failed to detect duplicates"}), 500
+
+@app.route('/api/data-quality/vendor-skewing')
+def api_vendor_skewing():
+    """Detect vendor skewing - disproportionate case distribution between vendors"""
+    try:
+        # Get case counts by vendor (based on case_type pattern or other vendor identifier)
+        query = """
+        SELECT 
+            CASE 
+                WHEN case_number LIKE 'TI%' THEN 'Vendor A'
+                WHEN case_number LIKE 'PL%' THEN 'Vendor B'
+                ELSE 'Other'
+            END as vendor,
+            COUNT(*) as case_count
+        FROM phishlabs_case_data_incidents
+        WHERE date_created_local >= DATEADD(month, -3, GETDATE())
+        GROUP BY CASE 
+            WHEN case_number LIKE 'TI%' THEN 'Vendor A'
+            WHEN case_number LIKE 'PL%' THEN 'Vendor B'
+            ELSE 'Other'
+        END
+        """
+        
+        results = dashboard.execute_query(query)
+        
+        if not results:
+            return jsonify([])
+        
+        # Calculate total and percentages
+        total_cases = sum(r['case_count'] for r in results)
+        expected_percentage = 50.0  # Expected even distribution
+        
+        vendor_skew = []
+        for result in results:
+            percentage = (result['case_count'] / total_cases * 100) if total_cases > 0 else 0
+            deviation = abs(percentage - expected_percentage)
+            
+            vendor_skew.append({
+                'vendor': result['vendor'],
+                'case_count': result['case_count'],
+                'percentage': f"{percentage:.1f}%",
+                'expected_percentage': f"{expected_percentage:.1f}%",
+                'deviation': round(deviation, 1),
+                'status': 'error' if deviation > 20 else 'warning' if deviation > 10 else 'success'
+            })
+        
+        return jsonify(vendor_skew)
+        
+    except Exception as e:
+        logger.error(f"Error detecting vendor skewing: {str(e)}")
+        return jsonify({"error": "Failed to detect vendor skewing"}), 500
+
+@app.route('/api/data-quality/missing-parameters')
+def api_missing_parameters():
+    """Detect cases with missing parameters - url, url_path, fqdn, tld, ip_address, host_isp, as_number (all data in this table is Cred Theft)"""
+    try:
+        # Get date filter parameters
+        date_filter = request.args.get('date_filter', 'month')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build date conditions
+        date_conditions = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        
+        # Find cases with missing parameters in associated_urls
+        query = f"""
+        SELECT * FROM (
+            SELECT 
+                i.case_number,
+                i.case_type,
+                i.date_created_local,
+                u.url,
+                u.url_path,
+                u.fqdn,
+                u.tld,
+                u.ip_address,
+                u.host_isp,
+                u.as_number,
+                (CASE WHEN u.url IS NULL OR u.url = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.url_path IS NULL OR u.url_path = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.fqdn IS NULL OR u.fqdn = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.tld IS NULL OR u.tld = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.ip_address IS NULL OR u.ip_address = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.host_isp IS NULL OR u.host_isp = '' THEN 1 ELSE 0 END +
+                 CASE WHEN u.as_number IS NULL OR u.as_number = '' THEN 1 ELSE 0 END
+                ) as missing_count
+            FROM phishlabs_case_data_incidents i
+            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
+            WHERE {date_conditions}
+        ) AS subquery
+        WHERE missing_count > 0
+        ORDER BY missing_count DESC, date_created_local DESC
+        """
+        
+        results = dashboard.execute_query(query)
+        
+        # Check if results is an error dict
+        if isinstance(results, dict) and 'error' in results:
+            logger.error(f"Missing parameters query error: {results}")
+            return jsonify([])
+        
+        if not results or not isinstance(results, list):
+            return jsonify([])
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        logger.error(f"Error detecting missing parameters: {str(e)}")
+        return jsonify({"error": f"Failed to detect missing parameters: {str(e)}"}), 500
+
+@app.route('/api/data-quality/misalignment')
+def api_misalignment():
+    """Detect data misalignments - missing required fields, inconsistent data (LEGACY)"""
+    try:
+        # Find cases with missing critical fields
+        query = """
+        SELECT 
+            i.case_number,
+            CASE 
+                WHEN i.iana_id IS NULL OR i.iana_id = '' THEN 'Missing IANA ID'
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM phishlabs_case_data_associated_urls u 
+                    WHERE u.case_number = i.case_number
+                ) THEN 'Missing Associated URLs'
+                WHEN i.date_closed_local IS NOT NULL AND i.resolution_status IS NULL THEN 'Closed without resolution status'
+                ELSE 'Other'
+            END as issue_type,
+            CASE 
+                WHEN i.iana_id IS NULL OR i.iana_id = '' THEN 'iana_id'
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM phishlabs_case_data_associated_urls u 
+                    WHERE u.case_number = i.case_number
+                ) THEN 'associated_urls'
+                WHEN i.date_closed_local IS NOT NULL AND i.resolution_status IS NULL THEN 'resolution_status'
+                ELSE 'unknown'
+            END as field,
+            i.date_created_local
+        FROM phishlabs_case_data_incidents i
+        WHERE (
+            i.iana_id IS NULL OR i.iana_id = ''
+            OR NOT EXISTS (
+                SELECT 1 FROM phishlabs_case_data_associated_urls u 
+                WHERE u.case_number = i.case_number
+            )
+            OR (i.date_closed_local IS NOT NULL AND i.resolution_status IS NULL)
+        )
+        ORDER BY i.date_created_local DESC
+        """
+        
+        results = dashboard.execute_query(query)
+        
+        if not results:
+            return jsonify([])
+        
+        # Add expected values
+        for result in results:
+            field = result.get('field', '')
+            if field == 'iana_id':
+                result['current_value'] = 'NULL'
+                result['expected_value'] = 'Valid IANA ID'
+            elif field == 'associated_urls':
+                result['current_value'] = 'No URLs'
+                result['expected_value'] = 'At least one URL'
+            elif field == 'resolution_status':
+                result['current_value'] = 'NULL'
+                result['expected_value'] = 'Valid status'
+            else:
+                result['current_value'] = 'N/A'
+                result['expected_value'] = 'N/A'
+        
+        return jsonify(results[:100])  # Limit to 100 records
+        
+    except Exception as e:
+        logger.error(f"Error detecting misalignment: {str(e)}")
+        return jsonify({"error": "Failed to detect data misalignment"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
