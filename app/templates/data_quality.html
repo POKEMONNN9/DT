@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Quality Issues Insights</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard-new.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <i class="fas fa-shield-alt brand-icon"></i>
+                <span class="brand-text">Data Quality Issues</span>
+            </div>
+            <div class="nav-controls">
+                <div class="connection-status" id="connectionStatus">
+                    <i class="fas fa-circle status-indicator"></i>
+                    <span class="status-text">Connected</span>
+                </div>
+                <button class="nav-btn" onclick="window.location.href='/'" title="Back to Main Dashboard">
+                    <i class="fas fa-home"></i>
+                </button>
+                <button id="refreshData" class="nav-btn refresh-btn refresh-btn-primary" onclick="dataQuality.initialize()" title="Refresh Data">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Filter Toolbar -->
+    <div class="filter-toolbar">
+        <div class="filter-container">
+            <div class="filter-group">
+                <label for="dateFilter">Time Window:</label>
+                <select id="dateFilter" class="filter-select" onchange="dataQuality.handleDateChange()">
+                    <option value="all">All Time</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month" selected>Last 30 Days</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            
+            <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate" class="filter-input">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate" class="filter-input">
+                <button class="nav-btn" onclick="dataQuality.applyCustomDate()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="/" class="nav-link">
+                            <i class="fas fa-arrow-left nav-icon"></i>
+                            <span class="nav-text">Back to Main Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/data-quality" class="nav-link active">
+                            <i class="fas fa-exclamation-triangle nav-icon"></i>
+                            <span class="nav-text">Data Quality Issues</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Content Area -->
+        <main class="content-area">
+            <section class="content-section active">
+                <div class="section-header">
+                    <div>
+                        <h1 class="section-title">Data Quality Analysis</h1>
+                        <p class="section-subtitle">Identify false closures, duplicates, and missing parameters</p>
+                    </div>
+                </div>
+
+                <!-- Tabs for different quality checks -->
+                <div class="quality-tabs">
+                    <button class="quality-tab active" onclick="dataQuality.switchTab('false-closures')">
+                        <i class="fas fa-times-circle"></i> 
+                        <span>Potential False Closures</span>
+                        <span class="tab-badge" id="falseClosuresBadge">0</span>
+                    </button>
+                    <button class="quality-tab" onclick="dataQuality.switchTab('duplicates')">
+                        <i class="fas fa-clone"></i> 
+                        <span>Duplicate Cases</span>
+                        <span class="tab-badge" id="duplicatesBadge">0</span>
+                    </button>
+                    <button class="quality-tab" onclick="dataQuality.switchTab('missing-params')">
+                        <i class="fas fa-exclamation-triangle"></i> 
+                        <span>Missing Parameters</span>
+                        <span class="tab-badge" id="missingParamsBadge">0</span>
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="quality-tab-content active" id="falseClosuresTab">
+                    <div class="tab-content-header">
+                        <h3><i class="fas fa-times-circle"></i> Potential False Closures</h3>
+                        <p>Cred Theft cases with very close date_created and date_closed indicating improper analysis</p>
+                        <button class="export-btn" onclick="dataQuality.exportTable('false-closures')">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                    <div id="falseClosuresContent" class="tab-data-content">
+                        <div class="loading-message">
+                            <i class="fas fa-spinner fa-spin"></i> Loading data...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quality-tab-content" id="duplicatesTab">
+                    <div class="tab-content-header">
+                        <h3><i class="fas fa-clone"></i> Duplicate Cases</h3>
+                        <p>Different case numbers with matching URL, domain, or title</p>
+                        <button class="export-btn" onclick="dataQuality.exportTable('duplicates')">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                    <div id="duplicatesContent" class="tab-data-content">
+                        <div class="loading-message">
+                            <i class="fas fa-spinner fa-spin"></i> Loading data...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quality-tab-content" id="missingParamsTab">
+                    <div class="tab-content-header">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Missing Parameters</h3>
+                        <p>Cases with incomplete data (missing URL, IP, ISP, etc.)</p>
+                        <button class="export-btn" onclick="dataQuality.exportTable('missing-params')">
+                            <i class="fas fa-download"></i> Export CSV
+                        </button>
+                    </div>
+                    <div id="missingParamsContent" class="tab-data-content">
+                        <div class="loading-message">
+                            <i class="fas fa-spinner fa-spin"></i> Loading data...
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading data quality analysis...</div>
+    </div>
+
+    <!-- Notification Container -->
+    <div class="notification-container" id="notificationContainer"></div>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+        <div class="footer-content">
+            <span class="footer-text">CCB</span>
+            <span class="footer-divider">|</span>
+            <span class="footer-text">FCO</span>
+            <span class="footer-divider">|</span>
+            <span class="footer-text">TBG</span>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='data-quality.js') }}"></script>
+    <script>
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Data Quality Dashboard initialized');
+            if (window.dataQuality) {
+                dataQuality.initialize();
+            }
+        });
+    </script>
+</body>
+</html>
