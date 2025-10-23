@@ -1788,14 +1788,21 @@ body.focus-mode .dashboard-footer {
 }
 
 .section-header {
-	padding: var(--space-md);
-	border-bottom: 1px solid var(--border-light);
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	justify-content: space-between;
-	position: relative;
-	margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    position: relative;
+    margin-bottom: var(--space-lg);
+}
+
+.section-header .section-title-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex: 1;
 }
 
 .section-header i {
@@ -6152,6 +6159,8 @@ canvas {
 	display: flex;
 	flex-direction: column;
 	gap: 4px;
+	flex: 1;
+	min-width: 0; /* Allow flex item to shrink below content size */
 }
 
 .path-text {
@@ -6159,6 +6168,10 @@ canvas {
 	color: #111827;
 	font-family: 'Courier New', monospace;
 	font-size: 0.875rem;
+	word-wrap: break-word;
+	word-break: break-all;
+	overflow-wrap: break-word;
+	max-width: 100%;
 }
 
 .path-cases {
@@ -6170,6 +6183,9 @@ canvas {
 	font-size: 0.75rem;
 	color: #6b7280;
 	font-weight: 600;
+	flex-shrink: 0;
+	min-width: 80px;
+	text-align: right;
 }
 
 .more-paths {
@@ -6285,13 +6301,20 @@ canvas {
 }
 
 .table-header {
-	padding: var(--space-md);
-	border-bottom: 1px solid var(--border-light);
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	justify-content: space-between;
-	position: relative;
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    position: relative;
+}
+
+.table-header .table-title-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex: 1;
 }
 
 .table-title {
