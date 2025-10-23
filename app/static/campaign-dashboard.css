@@ -2444,6 +2444,7 @@ body.focus-mode #toggleFocusMode {
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--transition-fast);
+    gap: var(--spacing-sm);
 }
 
 .overlapping-item:hover {
@@ -2456,11 +2457,20 @@ body.focus-mode #toggleFocusMode {
     font-size: 13px;
     font-weight: 600;
     font-family: 'Courier New', monospace;
+    flex: 1;
+    min-width: 0;
+    word-wrap: break-word;
+    word-break: break-all;
+    overflow-wrap: break-word;
+    max-width: 100%;
 }
 
 .item-count {
     font-size: 12px;
     color: var(--text-secondary);
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: right;
 }
 
 .overlapping-item:hover .item-count {
