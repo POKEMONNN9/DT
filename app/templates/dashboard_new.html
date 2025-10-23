@@ -87,15 +87,15 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="#" class="nav-link" onclick="showSection('campaign-management')">
-                            <i class="fas fa-project-diagram nav-icon"></i>
-                            <span class="nav-text">Campaign Management</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a href="#" class="nav-link" onclick="showSection('social-executive')">
                             <i class="fas fa-users nav-icon"></i>
                             <span class="nav-text">Social & Executive Targeting</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/data-quality" class="nav-link">
+                            <i class="fas fa-exclamation-triangle nav-icon"></i>
+                            <span class="nav-text">Data Quality Issues</span>
                         </a>
                     </li>
                 </ul>
@@ -417,8 +417,8 @@
                                 <i class="fas fa-shield-alt"></i>
                             </div>
                             <div class="header-content">
-                                <h3 class="card-title-enhanced clickable-title" onclick="copyChartAsHTML(this.closest('.overview-card-large'), 'Threat Intelligence Metrics Chart')" title="Click to copy chart for email">Threat Intelligence</h3>
-                                <p class="card-subtitle-enhanced">Infrastructure & attack pattern analysis</p>
+                                <h3 class="card-title-enhanced clickable-title" onclick="copyChartAsHTML(this.closest('.overview-card-large'), 'Abuse Pattern Analysis')" title="Click to copy chart for email">Abuse Pattern Analysis</h3>
+                                <p class="card-subtitle-enhanced">Analysis of abuse patterns and infrastructure</p>
                             </div>
                         </div>
                         <div class="metrics-grid-enhanced">
@@ -731,8 +731,10 @@
             <!-- Threat Intelligence Dashboard -->
             <section class="content-section" id="threat-intelligence-section">
                 <div class="section-header">
-                    <h1 class="section-title">Threat Intelligence Dashboard</h1>
-                    <p class="section-subtitle">Attribution intelligence, threat actor profiling, and campaign tracking</p>
+                    <div>
+                        <h1 class="section-title">Threat Intelligence Dashboard</h1>
+                        <p class="section-subtitle">Attribution intelligence, threat actor profiling, and campaign tracking</p>
+                    </div>
                     <button class="copy-btn" onclick="copyThreatIntelligenceDashboard()" title="Copy Entire Dashboard Section">
                         <i class="fas fa-copy"></i>
                     </button>
@@ -1256,317 +1258,15 @@
                 </div>
             </section>
 
-            <!-- Campaign Management Dashboard -->
-        <section class="content-section" id="campaign-management-section">
-            <div class="section-header">
-                <h1 class="section-title">Campaign Management</h1>
-                <p class="section-subtitle">Create, manage, and track threat campaigns and their associated cases and domains</p>
-                <button class="copy-btn" onclick="copyDashboardSection('campaign-management-section', 'Campaign Management Dashboard')" title="Copy Entire Dashboard Section">
-                    <i class="fas fa-copy"></i>
-                </button>
-            </div>
-            
-            <!-- Campaign Management Tabs -->
-            <div class="campaign-tabs">
-                <button class="campaign-tab active" onclick="showCampaignTab('manage')" id="manage-tab">
-                    <i class="fas fa-cogs"></i> Manage
-                </button>
-                <button class="campaign-tab" onclick="showCampaignTab('data-viewer')" id="data-viewer-tab">
-                    <i class="fas fa-database"></i> Data Viewer
-                </button>
-                <button class="campaign-tab" onclick="showCampaignTab('analysis')" id="analysis-tab">
-                    <i class="fas fa-chart-line"></i> Analysis
-                </button>
-            </div>
-            
-            <!-- Tab Content -->
-            <div class="campaign-tab-content">
-                <!-- Manage Tab -->
-                <div class="tab-pane active" id="manage-tab-content">
-                    <div class="campaign-management-container">
-                    <!-- Campaign List -->
-                    <div class="campaign-list-container">
-                        <div class="campaign-list-header">
-                            <h3>Campaigns</h3>
-                            <button class="btn btn-primary" onclick="campaignManagement.showCreateCampaignModal()">
-                                <i class="fas fa-plus"></i> Create Campaign
-                            </button>
-                        </div>
-                        <div class="campaign-list" id="campaignList">
-                            <div class="loading-placeholder">Loading campaigns...</div>
-                        </div>
-                    </div>
-
-                    <!-- Campaign Details -->
-                    <div class="campaign-details-container">
-                        <div class="campaign-details-header">
-                            <h3 id="selectedCampaignName">Select a Campaign</h3>
-                            <div class="campaign-actions" id="campaignActions" style="display: none;">
-                                <button class="btn btn-secondary" onclick="campaignManagement.showEditCampaignModal()">
-                                    <i class="fas fa-edit"></i> Edit
-                                </button>
-                                <button class="btn btn-danger" onclick="campaignManagement.deleteCampaign()">
-                                    <i class="fas fa-trash"></i> Delete
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="campaign-details-content" id="campaignDetailsContent">
-                            <div class="no-selection-placeholder">
-                                <i class="fas fa-mouse-pointer"></i>
-                                <p>Select a campaign from the list to view and manage its details</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Campaign Cases Management -->
-                <div class="campaign-cases-container" id="campaignCasesContainer" style="display: none;">
-                    <div class="cases-header">
-                        <h4>Cases</h4>
-                        <button class="btn btn-primary" onclick="campaignManagement.showAddCaseModal()">
-                            <i class="fas fa-plus"></i> Add Case
-                        </button>
-                    </div>
-                    <div class="cases-list" id="campaignCasesList">
-                        <!-- Cases will be populated here -->
-                    </div>
-                </div>
-
-                <!-- Campaign Domains Management -->
-                <div class="campaign-domains-container" id="campaignDomainsContainer" style="display: none;">
-                    <div class="domains-header">
-                        <h4>Domains</h4>
-                        <button class="btn btn-primary" onclick="campaignManagement.showAddDomainModal()">
-                            <i class="fas fa-plus"></i> Add Domain
-                        </button>
-                    </div>
-                    <div class="domains-list" id="campaignDomainsList">
-                        <!-- Domains will be populated here -->
-                    </div>
-                </div>
-
-                </div>
-                
-                <!-- Data Viewer Tab -->
-                <div class="tab-pane" id="data-viewer-tab-content">
-                    <div class="data-viewer-container">
-                        <!-- Campaign Selection and Date Filters -->
-                        <div class="data-viewer-controls">
-                            <!-- Compact Single Row Layout -->
-                            <div class="controls-row">
-                                <!-- Campaign Selection -->
-                                <div class="control-item campaign-selector-item">
-                                    <label class="control-label">Campaigns</label>
-                                    <div class="campaign-controls">
-                                        <select id="campaignDropdown" onchange="campaignManagement.toggleCampaignSelection()" class="control-select">
-                                            <option value="">Select Campaigns...</option>
-                                        </select>
-                                        <div class="quick-actions">
-                                            <button class="btn-icon" onclick="campaignManagement.selectAllCampaignsForViewer()" title="Select All">
-                                                <i class="fas fa-check-square"></i>
-                                            </button>
-                                            <button class="btn-icon" onclick="campaignManagement.deselectAllCampaignsForViewer()" title="Deselect All">
-                                                <i class="fas fa-square"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Date Filter -->
-                                <div class="control-item">
-                                    <label class="control-label">Date Range</label>
-                                    <select id="campaignDateFilter" onchange="campaignManagement.handleCampaignDateFilterChange()" class="control-select">
-                                        <option value="today">Today</option>
-                                        <option value="yesterday">Yesterday</option>
-                                            <option value="week">Last 7 Days</option>
-                                            <option value="month">Last 30 Days</option>
-                                            <option value="this_month">This Month</option>
-                                            <option value="last_month">Last Month</option>
-                                        <option value="custom">Custom Range</option>
-                                        <option value="all">All Time</option>
-                                    </select>
-                                </div>
-                                
-                                
-                                <!-- Age Filter -->
-                                <div class="control-item">
-                                    <label class="control-label">Age</label>
-                                    <select id="age-filter" class="control-select">
-                                        <option value="">All Ages</option>
-                                        <option value="0-7">0-7 days</option>
-                                        <option value="8-30">8-30 days</option>
-                                        <option value="31-90">31-90 days</option>
-                                        <option value="90+">90+ days</option>
-                                    </select>
-                                </div>
-                                
-                                <!-- Case Number Filter -->
-                                <div class="control-item">
-                                    <label class="control-label">Case Number</label>
-                                    <input type="text" id="case-number-filter" class="control-input" placeholder="Case number">
-                                </div>
-                                
-                                <!-- Load Data Button -->
-                                <div class="control-item control-actions">
-                                    <button class="btn-load-data" onclick="campaignManagement.loadCampaignData()">
-                                        <i class="fas fa-search"></i>
-                                        Load Data
-                                    </button>
-                                    <button class="btn-clear-filters" onclick="clearFilters()">
-                                        <i class="fas fa-times"></i>
-                                        Clear
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- Selected Campaigns Display Below Controls -->
-                            <div class="selected-campaigns-display" id="selectedCampaignsTags">
-                                <!-- Selected campaigns will be shown as tags here -->
-                            </div>
-                            
-                            <!-- Custom Date Ranges (Hidden by default) -->
-                            <div class="custom-date-panels">
-                                <!-- Custom Range -->
-                                <div class="custom-range" id="customRangeSection" style="display: none;">
-                                    <div class="date-range-inputs">
-                                        <label>Start Date:</label>
-                                            <input type="date" id="campaignStartDate" placeholder="Start Date">
-                                        <label>End Date:</label>
-                                            <input type="date" id="campaignEndDate" placeholder="End Date">
-                                        <button class="btn btn-primary" onclick="applyCustomRange()">Apply</button>
-                                    </div>
-                                </div>
-                                
-                            </div>
-                        </div>
-                        
-                        <!-- Campaign Updates Section -->
-                        <div class="campaign-updates-section" id="campaignUpdatesSection" style="display: none;">
-                            <!-- Campaign Data Header -->
-                            <div class="campaign-data-header">
-                                <div class="header-content">
-                                    <div>
-                                        <h3 class="header-title clickable-title" onclick="copyChartAsHTML(this.closest('.campaign-updates-section'), 'Campaign Updates')" title="Click to copy entire section for email">
-                                            <i class="fas fa-database"></i>
-                                            Campaign Updates
-                                        </h3>
-                                        <p class="header-subtitle">Campaign progress and case information</p>
-                                    </div>
-                                    <div style="display: flex; gap: 10px; align-items: center;">
-                                        <button class="copy-btn" onclick="campaignManagement.refreshCampaignMetadata()" title="Refresh metadata from database">
-                                            <i class="fas fa-sync-alt"></i>
-                                        </button>
-                                        <span id="metadataStatusIndicator" style="font-size: 12px; color: #6b7280;">
-                                            <!-- Metadata status will be shown here -->
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Data Results -->
-                            <div class="campaign-data-results" id="campaignDataResults">
-                                <!-- Campaign data will be displayed here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Analysis Tab -->
-                <div class="tab-pane" id="analysis-tab-content">
-                    <div class="analysis-container">
-                            <!-- Analysis Results -->
-                            <div class="analysis-results">
-                                <div class="loading-analysis">
-                                    <i class="fas fa-chart-line"></i>
-                                    <p>Loading analysis overview...</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Analysis Controls - Reusing Data Viewer Structure -->
-                        <div class="data-viewer-controls">
-                            <div class="data-viewer-controls-header">
-                                <div class="controls-row">
-                                    <!-- Campaign Selection -->
-                                    <div class="control-item campaign-selector-item">
-                                        <label class="control-label">Campaigns</label>
-                                        <div class="campaign-controls">
-                                            <select id="analysisCampaignDropdown" onchange="campaignManagement.toggleAnalysisCampaignSelection()" class="control-select">
-                                                <option value="">Select Campaigns...</option>
-                                            </select>
-                                            <div class="quick-actions">
-                                                <button class="btn-icon" onclick="campaignManagement.selectAllCampaignsForAnalysis()" title="Select All">
-                                                    <i class="fas fa-check-square"></i>
-                                                </button>
-                                                <button class="btn-icon" onclick="campaignManagement.deselectAllCampaignsForAnalysis()" title="Deselect All">
-                                                    <i class="fas fa-square"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Date Filter -->
-                                    <div class="control-item">
-                                        <label class="control-label">Date Range</label>
-                                        <select id="analysisDateFilter" class="control-select">
-                                            <option value="today">Today</option>
-                                            <option value="yesterday">Yesterday</option>
-                                            <option value="week">Last 7 Days</option>
-                                            <option value="month">Last 30 Days</option>
-                                            <option value="this_month">This Month</option>
-                                            <option value="custom">Custom Range</option>
-                                            <option value="all">All Time</option>
-                                        </select>
-                                    </div>
-                                    
-                                    <!-- Generate Filtered Analysis Button -->
-                                    <div class="control-item control-actions">
-                                        <button class="btn-load-data" onclick="campaignManagement.generateFilteredAnalysis()">
-                                            <i class="fas fa-chart-bar"></i>
-                                            Generate Filtered Analysis
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <!-- Selected Campaigns Display -->
-                                <div class="selected-campaigns-display" id="selectedAnalysisCampaignsTags">
-                                    <!-- Selected campaigns will be shown as tags here -->
-                                </div>
-                                
-                                <!-- Custom Date Ranges (Hidden by default) -->
-                                <div class="custom-date-panels">
-                                    <!-- Custom Range -->
-                                    <div class="custom-range" id="analysisCustomRangeSection" style="display: none;">
-                                        <div class="date-range-inputs">
-                                            <label>From:</label>
-                                            <input type="date" id="analysisStartDate" class="control-input">
-                                            <label>To:</label>
-                                            <input type="date" id="analysisEndDate" class="control-input">
-                                            <button class="btn btn-primary" onclick="campaignManagement.applyAnalysisCustomRange()">Apply</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Filtered Analysis Results Container -->
-                        <div id="filtered-analysis-container" class="filtered-analysis-container" style="display: none;">
-                            <!-- Filtered analysis results will be dynamically inserted here -->
-                    </div>
-                </div>
-            </div>
-            </section>
-
             <!-- Social Media & Executive Targeting Dashboard -->
             <section class="content-section" id="social-executive-section">
                 <div class="section-header">
                     <div>
-                    <h1 class="section-title">Social Media & Executive Targeting</h1>
+                        <h1 class="section-title">Social Media & Executive Targeting</h1>
                         <p class="section-subtitle">Real-time threat intelligence, executive protection, and social platform monitoring</p>
                     </div>
                     <button class="copy-btn" onclick="copySocialExecutiveDashboard()" title="Export Dashboard Data">
-                        <i class="fas fa-download"></i>
+                        <i class="fas fa-copy"></i>
                     </button>
                 </div>
                 
@@ -1579,15 +1279,15 @@
                         <div class="metric-content">
                             <h3 class="metric-value" id="executiveTargets">-</h3>
                             <p class="metric-label">Executive Targets</p>
-                            </div>
+                        </div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-icon">
-                            <i class="fas fa-shield-check"></i>
+                            <i class="fas fa-shield-alt"></i>
                         </div>
                         <div class="metric-content">
                             <h3 class="metric-value" id="brandProtection">-</h3>
-                            <p class="metric-label">Brands Protected</p>
+                            <p class="metric-label">Brands Impersonations</p>
                         </div>
                     </div>
                     <div class="metric-card">
@@ -1596,7 +1296,7 @@
                         </div>
                         <div class="metric-content">
                             <h3 class="metric-value" id="socialIncidents">-</h3>
-                            <p class="metric-label">Active Incidents</p>
+                            <p class="metric-label">Active Cases</p>
                         </div>
                     </div>
                 </div>
@@ -1731,132 +1431,12 @@
         <div class="loading-text">Refreshing dashboard data...</div>
     </div>
 
-    <!-- Campaign Management Modals -->
-    
-    <!-- Create/Edit Campaign Modal -->
-    <div class="modal" id="campaignModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="campaignModalTitle">Create Campaign</h3>
-                <button class="modal-close" onclick="campaignManagement.closeCampaignModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="campaignForm">
-                    <div class="form-group">
-                        <label for="campaignName">Campaign Name *</label>
-                        <input type="text" id="campaignName" name="name" required placeholder="Enter campaign name">
-                    </div>
-                    <div class="form-group">
-                        <label for="campaignDescription">Description</label>
-                        <textarea id="campaignDescription" name="description" placeholder="Enter campaign description"></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="campaignManagement.closeCampaignModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="campaignManagement.saveCampaign()">
-                    <i class="fas fa-save"></i> Save Campaign
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Case Modal -->
-    <div class="modal" id="addCaseModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Add Case to Campaign</h3>
-                <button class="modal-close" onclick="campaignManagement.closeAddCaseModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="addCaseForm">
-                    <div class="form-group">
-                        <label for="caseNumber">Case Number *</label>
-                        <input type="text" id="caseNumber" name="case_number" required placeholder="e.g., CASE-2025-001">
-                    </div>
-                    <div class="form-group">
-                        <label for="caseDescription">Description</label>
-                        <textarea id="caseDescription" name="description" placeholder="Enter case description"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="caseTable">Table</label>
-                        <select id="caseTable" name="table">
-                            <option value="phishlabs_case_data_incidents">phishlabs_case_data_incidents</option>
-                            <option value="phishlabs_threat_intelligence_incident">phishlabs_threat_intelligence_incident</option>
-                        </select>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="campaignManagement.closeAddCaseModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="campaignManagement.saveCase()">
-                    <i class="fas fa-plus"></i> Add Case
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Domain Modal -->
-    <div class="modal" id="addDomainModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Add Domain to Campaign</h3>
-                <button class="modal-close" onclick="campaignManagement.closeAddDomainModal()">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="addDomainForm">
-                    <div class="form-group">
-                        <label for="domainName">Domain *</label>
-                        <input type="text" id="domainName" name="domain" required placeholder="e.g., example.com">
-                    </div>
-                    <div class="form-group">
-                        <label for="domainDescription">Description</label>
-                        <textarea id="domainDescription" name="description" placeholder="Enter domain description"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="domainTable">Table</label>
-                        <select id="domainTable" name="table">
-                            <option value="phishlabs_case_data_associated_urls">phishlabs_case_data_associated_urls</option>
-                            <option value="phishlabs_threat_intelligence_incident">phishlabs_threat_intelligence_incident</option>
-                        </select>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="campaignManagement.closeAddDomainModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="campaignManagement.saveDomain()">
-                    <i class="fas fa-plus"></i> Add Domain
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Notification Container -->
     <div class="notification-container" id="notificationContainer"></div>
     
 
     <!-- JavaScript -->
     <script src="{{ url_for('static', filename='dashboard-new.js') }}"></script>
-    <script>
-        // Test CampaignManagement class accessibility
-        function testCampaignManagement() {
-            console.log('Testing CampaignManagement class accessibility...');
-            if (window.campaignManagement) {
-                console.log('CampaignManagement class is accessible');
-                if (typeof window.campaignManagement.testCampaignManagement === 'function') {
-                window.campaignManagement.testCampaignManagement();
-                }
-            } else {
-                console.log('CampaignManagement class is NOT accessible');
-                // Retry after a short delay
-                setTimeout(testCampaignManagement, 100);
-            }
-        }
-        
-        // Test immediately and also on load
-        testCampaignManagement();
-        window.addEventListener('load', testCampaignManagement);
-    </script>
 
     <!-- Footer -->
     <footer class="dashboard-footer">
