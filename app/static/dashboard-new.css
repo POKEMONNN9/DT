@@ -8785,12 +8785,11 @@ canvas {
 	color: #64748b;
 	font-weight: 400;
 }
-
 /* ============================================================================
-   DATA QUALITY ISSUES SECTION
+   DATA QUALITY ISSUES SECTION - COMPLETE REPLACEMENT
    ============================================================================ */
 
-.tab-content-header {
+   .tab-content-header {
 	display: flex;
 	flex-direction: column;
 	gap: 0.5rem;
@@ -9314,7 +9313,7 @@ canvas {
 .loading-message {
 	display: flex;
 	align-items: center;
-		justify-content: center;
+	justify-content: center;
 	gap: var(--space-md, 16px);
 	padding: var(--space-xl, 32px);
 	color: var(--text-secondary, #6b7280);
@@ -9331,6 +9330,375 @@ canvas {
 	border-radius: var(--radius-md, 8px);
 	border: 1px solid var(--border-light, #e5e7eb);
 }
+
+/* ============================================================================
+   FILTERABLE HEADERS - IMPROVED
+   ============================================================================ */
+
+.filterable-header {
+	position: relative;
+	user-select: none;
+}
+
+.filterable-header .header-content {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	padding: 4px 0;
+}
+
+.filterable-header .header-text {
+	flex: 1;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	font-size: var(--font-size-sm, 12px);
+}
+
+.filterable-header .header-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.filterable-header .sort-icon,
+.filterable-header .filter-icon {
+	cursor: pointer;
+	opacity: 0.4;
+	transition: all 0.2s ease;
+	padding: 6px;
+	border-radius: 6px;
+	font-size: 12px;
+	color: white;
+}
+
+.filterable-header .sort-icon:hover,
+.filterable-header .filter-icon:hover {
+	opacity: 1;
+	background-color: rgba(255, 255, 255, 0.1);
+}
+
+.filterable-header .filter-icon.active {
+	opacity: 1;
+	background-color: rgba(255, 255, 255, 0.2);
+	color: #fbbf24;
+}
+
+/* ============================================================================
+   FILTER DROPDOWN - COMPLETELY REDESIGNED
+   ============================================================================ */
+
+.column-filter-dropdown {
+	position: fixed;
+	background: white;
+	border: 1px solid #e5e7eb;
+	border-radius: 12px;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+	z-index: 9999;
+	min-width: 280px;
+	max-width: 350px;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	animation: filterDropdownFadeIn 0.2s ease-out;
+}
+
+@keyframes filterDropdownFadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* Filter Header with Search */
+.filter-header {
+	padding: 16px;
+	border-bottom: 1px solid #e5e7eb;
+	background: #f9fafb;
+}
+
+.filter-search {
+	width: 100%;
+	padding: 10px 14px;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	font-size: 14px;
+	font-family: inherit;
+	outline: none;
+	transition: all 0.2s ease;
+	background: white;
+}
+
+.filter-search:focus {
+	border-color: #3b82f6;
+	box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.filter-search::placeholder {
+	color: #9ca3af;
+}
+
+/* Filter Options Container */
+.filter-options {
+	padding: 8px;
+	max-height: 300px;
+	overflow-y: auto;
+	flex: 1;
+	background: white;
+}
+
+/* Custom Scrollbar */
+.filter-options::-webkit-scrollbar {
+	width: 8px;
+}
+
+.filter-options::-webkit-scrollbar-track {
+	background: #f9fafb;
+	border-radius: 4px;
+}
+
+.filter-options::-webkit-scrollbar-thumb {
+	background: #e5e7eb;
+	border-radius: 4px;
+}
+
+.filter-options::-webkit-scrollbar-thumb:hover {
+	background: #d1d5db;
+}
+
+/* Individual Filter Option */
+.filter-option-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	cursor: pointer;
+	border-radius: 8px;
+	transition: all 0.2s ease;
+	user-select: none;
+	margin-bottom: 2px;
+}
+
+.filter-option-item:hover {
+	background-color: #f9fafb;
+}
+
+.filter-option-item:active {
+	background-color: #e5e7eb;
+}
+
+/* Checkbox Styling */
+.filter-option-item input[type="checkbox"] {
+	cursor: pointer;
+	width: 18px;
+	height: 18px;
+	margin: 0;
+	accent-color: #3b82f6;
+	flex-shrink: 0;
+}
+
+/* Option Text */
+.filter-option-item span {
+	flex: 1;
+	font-size: 14px;
+	color: #374151;
+	line-height: 1.4;
+	word-break: break-word;
+}
+
+/* Empty State */
+.filter-option-item:only-child {
+	color: #6b7280;
+	font-style: italic;
+	justify-content: center;
+	cursor: default;
+}
+
+.filter-option-item:only-child:hover {
+	background-color: transparent;
+}
+
+/* Filter Actions (Footer) */
+.filter-actions {
+	display: flex;
+	gap: 10px;
+	padding: 14px 16px;
+	border-top: 1px solid #e5e7eb;
+	justify-content: flex-end;
+	background: #f9fafb;
+}
+
+/* Action Buttons */
+.btn-filter-clear,
+.btn-filter-apply {
+	padding: 9px 18px;
+	border: none;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	font-family: inherit;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.btn-filter-clear {
+	background-color: white;
+	color: #6b7280;
+	border: 1px solid #e5e7eb;
+}
+
+.btn-filter-clear:hover {
+	background-color: #f9fafb;
+	border-color: #d1d5db;
+	color: #374151;
+}
+
+.btn-filter-clear:active {
+	background-color: #e5e7eb;
+}
+
+.btn-filter-apply {
+	background-color: #3b82f6;
+	color: white;
+}
+
+.btn-filter-apply:hover {
+	background-color: #2563eb;
+	transform: translateY(-1px);
+	box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+}
+
+.btn-filter-apply:active {
+	transform: translateY(0);
+	box-shadow: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+	.column-filter-dropdown {
+		min-width: 260px;
+		max-width: calc(100vw - 32px);
+		left: 16px !important;
+		right: 16px;
+	}
+	
+	.filter-options {
+		max-height: 250px;
+	}
+}
+
+/* ============================================================================
+   LEGACY STYLES (KEPT FOR COMPATIBILITY)
+   ============================================================================ */
+
+.header-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-xs, 4px);
+}
+
+.header-text {
+	flex: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.sort-icon {
+	font-size: 10px;
+	color: var(--text-tertiary, #9ca3af);
+	opacity: 0.6;
+}
+
+.filter-icon {
+	font-size: 11px;
+	color: var(--text-tertiary, #9ca3af);
+	cursor: pointer;
+	padding: 4px;
+	transition: all 0.2s ease;
+	opacity: 0.6;
+}
+
+.filter-icon:hover {
+	color: var(--primary, #3b82f6);
+	opacity: 1;
+}
+
+.filter-icon.active {
+	color: var(--primary, #3b82f6);
+	opacity: 1;
+}
+
+.filter-dropdown-content {
+	padding: var(--space-sm, 8px);
+}
+
+.filter-option {
+	display: flex;
+	align-items: center;
+	gap: var(--space-xs, 4px);
+	padding: var(--space-xs, 4px);
+	cursor: pointer;
+	border-radius: var(--radius-sm, 4px);
+	transition: background-color 0.2s ease;
+	color: var(--text-primary, #111827);
+}
+
+.filter-option:hover {
+	background-color: var(--bg-secondary, #f9fafb);
+}
+
+.filter-option span {
+	color: var(--text-primary, #111827);
+	font-size: var(--font-size-sm, 12px);
+}
+
+.filter-option input[type="checkbox"] {
+	margin: 0;
+}
+
+.filter-btn {
+	padding: var(--space-xs, 4px) var(--space-sm, 8px);
+	border: none;
+	border-radius: var(--radius-sm, 4px);
+	cursor: pointer;
+	font-size: 12px;
+	transition: all 0.2s ease;
+}
+
+.apply-btn {
+	background-color: var(--success, #10b981);
+	color: white;
+}
+
+.apply-btn:hover {
+	background-color: var(--success-dark, #059669);
+}
+
+.clear-btn {
+	background-color: var(--danger, #ef4444);
+	color: white;
+}
+
+.clear-btn:hover {
+	background-color: var(--danger-dark, #dc2626);
+}
+
+/* ============================================================================
+   MISSING FIELDS BADGES
+   ============================================================================ */
 
 .missing-field {
 	color: var(--error, #ef4444);
