@@ -9501,6 +9501,7 @@ def api_missing_parameters():
             FROM phishlabs_case_data_incidents i
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             WHERE {date_conditions}
+            AND i.case_type IN ('Phishing', 'Phishing Redirect')
         ) AS subquery
         WHERE missing_count > 0
         ORDER BY missing_count DESC, date_created_local DESC
