@@ -723,6 +723,11 @@ class ThreatDashboard:
                 COUNT(DISTINCT u.domain) as total_domains,
                 MIN(i.date_created_local) as active_since,
                 MAX(i.date_created_local) as last_case,
+                -- Count total cases for this actor including those without associated URLs
+                (SELECT COUNT(DISTINCT i2.case_number)
+                 FROM phishlabs_case_data_incidents i2
+                 JOIN phishlabs_case_data_note_threatactor_handles th2 ON i2.case_number = th2.case_number
+                 WHERE th2.name = th.name AND {date_condition.replace('i.', 'i2.')}) as actual_total_cases,
                 -- Get most common TLD for this actor
                 (SELECT TOP 1 u2.tld 
                  FROM phishlabs_case_data_associated_urls u2 
@@ -969,17 +974,18 @@ class ThreatDashboard:
             """
             
             # Get all registrar values for each actor
+            # Join with phishlabs_iana_registry to get registrar name from iana_id
             registrar_query = f"""
             SELECT 
                 th.name as threat_actor,
-                u.registrar_name,
+                r.name as registrar_name,
                 COUNT(DISTINCT i.case_number) as case_count
             FROM phishlabs_case_data_incidents i
-            JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition}            AND u.registrar_name IS NOT NULL AND u.registrar_name != ''
+            LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
+            WHERE {date_condition}            AND r.name IS NOT NULL AND r.name != ''
             AND th.name IS NOT NULL AND th.name != ''
-            GROUP BY th.name, u.registrar_name
+            GROUP BY th.name, r.name
             ORDER BY th.name, COUNT(DISTINCT i.case_number) DESC
             """
             
@@ -1203,8 +1209,51 @@ class ThreatDashboard:
             country_data = self.execute_query(country_query, (infra_value,))
             url_paths_data = self.execute_query(url_paths_query, (infra_value,))
             
+            # Get associated entities (actors or families) based on selection type
+            associated_query = None
+            if infra_type == 'actor':
+                # Get associated threat families for this actor
+                associated_query = """
+                SELECT 
+                    n.threat_family,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                WHERE th.name = ?
+                AND n.threat_family IS NOT NULL AND n.threat_family != ''
+                GROUP BY n.threat_family
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+            else:  # family
+                # Get associated threat actors for this family
+                associated_query = """
+                SELECT 
+                    th.name as threat_actor,
+                    COUNT(DISTINCT i.case_number) as case_count
+                FROM phishlabs_case_data_incidents i
+                JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
+                LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+                WHERE n.threat_family = ?
+                AND th.name IS NOT NULL AND th.name != ''
+                GROUP BY th.name
+                ORDER BY COUNT(DISTINCT i.case_number) DESC
+                """
+            
+            associated_data = self.execute_query(associated_query, (infra_value,))
+            
             # Format the response
             actor_info = actor_info[0] if actor_info and not isinstance(actor_info, dict) and len(actor_info) > 0 else {}
+            
+            # Format associated entities
+            associated_threat_families = []
+            associated_threat_actors = []
+            
+            if associated_data and not isinstance(associated_data, dict):
+                if infra_type == 'actor':
+                    associated_threat_families = [{"value": item['threat_family'], "count": item['case_count']} for item in associated_data if item.get('threat_family')]
+                else:  # family
+                    associated_threat_actors = [{"value": item['threat_actor'], "count": item['case_count']} for item in associated_data if item.get('threat_actor')]
             
             return {
                 "success": True,
@@ -1215,7 +1264,9 @@ class ThreatDashboard:
                 "registrars": [{"value": item['registrar_name'], "count": item['case_count']} for item in (registrar_data if registrar_data and not isinstance(registrar_data, dict) else [])],
                 "isps": [{"value": item['host_isp'], "count": item['case_count']} for item in (isp_data if isp_data and not isinstance(isp_data, dict) else [])],
                 "countries": [{"value": item['host_country'], "count": item['case_count']} for item in (country_data if country_data and not isinstance(country_data, dict) else [])],
-                "url_paths": [{"url_path": item['url_path'], "case_count": item['case_count']} for item in (url_paths_data if url_paths_data and not isinstance(url_paths_data, dict) else [])]
+                "url_paths": [{"url_path": item['url_path'], "case_count": item['case_count']} for item in (url_paths_data if url_paths_data and not isinstance(url_paths_data, dict) else [])],
+                "associated_threat_families": associated_threat_families,
+                "associated_threat_actors": associated_threat_actors
             }
             
         except Exception as e:
@@ -1230,7 +1281,9 @@ class ThreatDashboard:
                 "registrars": [],
                 "isps": [],
                 "countries": [],
-                "url_paths": []
+                "url_paths": [],
+                "associated_threat_families": [],
+                "associated_threat_actors": []
             }
     
     def get_url_path_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
@@ -1854,24 +1907,27 @@ class ThreatDashboard:
             previous_condition = self.get_previous_period_condition(date_filter, start_date, end_date, "i.date_created_local")
             previous_closed_condition = self.get_previous_period_condition(date_filter, start_date, end_date, "i.date_closed_local")
             
-            # Get active cred theft cases created in the selected time window
-            # Only counting cases from phishlabs_case_data_incidents (cred theft)
-            active_cases_query = f"""
+            # Get active cred theft cases - ALL active cases (not filtered by time window)
+            # Active cases should not follow time window - show ALL active cases
+            # Exclude cases with status 'Duplicate', 'Rejected', and 'Closed'
+            # Everything else is considered active
+            active_cases_query = """
             SELECT COUNT(DISTINCT i.case_number) as active_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition}
-            AND (i.case_status = 'Active' OR i.date_closed_local IS NULL)
+            WHERE i.date_closed_local IS NULL
+            AND (i.case_status != 'Duplicate' AND i.case_status != 'Rejected' AND i.case_status != 'Closed')
             """
             
             active_cases = self.execute_query(active_cases_query)
             active_count = active_cases[0]['active_cases'] if active_cases and not isinstance(active_cases, dict) else 0
             
             # Get previous period active cases for trend comparison
-            previous_active_query = f"""
+            # Note: For consistency, we're showing ALL active cases, so previous period is the same
+            previous_active_query = """
             SELECT COUNT(DISTINCT i.case_number) as previous_active_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {previous_condition}
-            AND (i.case_status = 'Active' OR i.date_closed_local IS NULL)
+            WHERE i.date_closed_local IS NULL
+            AND (i.case_status != 'Duplicate' AND i.case_status != 'Rejected' AND i.case_status != 'Closed')
             """
             
             previous_active_cases = self.execute_query(previous_active_query)
@@ -2152,19 +2208,33 @@ class ThreatDashboard:
             WHERE {date_condition}
             """
             
+            # Query for closed cases in the selected time window (based on date_closed_local, not date_created_local)
+            closed_cases_query = f"""
+            SELECT COUNT(DISTINCT i.case_number) as closed_cases_in_timewindow
+            FROM phishlabs_case_data_incidents i
+            WHERE {closed_condition}
+            AND i.date_closed_local IS NOT NULL
+            """
+            
             # Query 2: ALL active cases (not filtered by date)
+            # Active cases should not follow time window - show ALL active cases
+            # Exclude cases with status 'Duplicate', 'Rejected', and 'Closed'
+            # Everything else is considered active
             active_cases_query = """
             SELECT COUNT(DISTINCT case_number) as total_active_cases
             FROM phishlabs_case_data_incidents
             WHERE date_closed_local IS NULL
+            AND (case_status != 'Duplicate' AND case_status != 'Rejected' AND case_status != 'Closed')
             """
             
             logger.info(f"Date range query: {date_range_query}")
             logger.info(f"Active cases query: {active_cases_query}")
+            logger.info(f"Closed cases query: {closed_cases_query}")
             
-            # Execute both queries
+            # Execute all three queries
             date_range_data = self.execute_query(date_range_query)
             active_cases_data = self.execute_query(active_cases_query)
+            closed_cases_data = self.execute_query(closed_cases_query)
             
             if isinstance(date_range_data, dict) and 'error' in date_range_data:
                 logger.error(f"Date range query error: {date_range_data['error']}")
@@ -2174,13 +2244,18 @@ class ThreatDashboard:
                 logger.error(f"Active cases query error: {active_cases_data['error']}")
                 return {"error": active_cases_data['error']}
             
+            if isinstance(closed_cases_data, dict) and 'error' in closed_cases_data:
+                logger.error(f"Closed cases query error: {closed_cases_data['error']}")
+                return {"error": closed_cases_data['error']}
+            
             # Combine results
             date_result = date_range_data[0] if date_range_data else {}
             active_result = active_cases_data[0] if active_cases_data else {}
+            closed_result = closed_cases_data[0] if closed_cases_data else {}
             
             result = {
                 'total_cases': date_result.get('total_cases_in_range', 0),
-                'closed_cases': date_result.get('closed_cases_in_range', 0),
+                'closed_cases': closed_result.get('closed_cases_in_timewindow', 0),
                 'active_cases': active_result.get('total_active_cases', 0),
                 'avg_resolution_hours': date_result.get('avg_resolution_hours', 0),
                 'earliest_case': date_result.get('earliest_case'),
@@ -2268,6 +2343,10 @@ class ThreatDashboard:
                 domain_monitoring = []
             
             # Social Media Cases (from phishlabs_incident)
+            # Filter by created_local for total cases (cases opened in time window)
+            # This ensures we count cases that were opened within the selected timeframe
+            created_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "s.created_local")
+            
             social_media_query = f"""
             SELECT 
                 CASE 
@@ -2277,7 +2356,7 @@ class ThreatDashboard:
                 END as status,
                 COUNT(*) as count
             FROM phishlabs_incident s
-            WHERE {self.get_date_filter_condition(date_filter, start_date, end_date, "s.created_local")}
+            WHERE {created_condition}
             GROUP BY CASE 
                 WHEN s.closed_local IS NULL THEN 'Active'
                 WHEN s.closed_local IS NOT NULL THEN 'Closed'
@@ -2285,9 +2364,20 @@ class ThreatDashboard:
             END
             """
             
+            # Log the query for debugging
+            logger.info(f"Social Media Case Status Query: {social_media_query}")
+            
             social_media = self.execute_query(social_media_query)
             if isinstance(social_media, dict) and 'error' in social_media:
+                logger.error(f"Social Media query error: {social_media.get('error', 'Unknown error')}")
                 social_media = []
+            else:
+                logger.info(f"Social Media query results: {social_media}")
+                if isinstance(social_media, list):
+                    total_count = sum(row.get('count', 0) for row in social_media)
+                else:
+                    total_count = 0
+                logger.info(f"Total Social Media cases counted: {total_count}")
             
             return {
                 'cred_theft': cred_theft or [],
@@ -2344,6 +2434,7 @@ class ThreatDashboard:
                 domain_monitoring = []
             
             # Social Media Cases (from phishlabs_incident)
+            # Filter by created_local for total cases (cases opened in time window)
             social_media_query = f"""
             SELECT 
                 s.threat_type as case_type,
@@ -2964,90 +3055,87 @@ class ThreatDashboard:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             
             
-            # Simplified WHOIS attribution query that aggregates data properly
-            # Proper WHOIS attribution query with aggregation
-            whois_query = """
+            # Proper WHOIS attribution query that joins with incidents for date filtering
+            # Query for WHOIS names only
+            whois_name_query = f"""
             SELECT 
-                n.flagged_whois_email,
                 n.flagged_whois_name,
-                n.threat_family,
-                COUNT(*) as total_cases
+                CAST(NULL AS VARCHAR(MAX)) as flagged_whois_email,
+                COUNT(DISTINCT i.case_number) as total_cases,
+                STRING_AGG(CAST(n.threat_family AS VARCHAR(MAX)), ', ') as threat_families,
+                STRING_AGG(CAST(th.name AS VARCHAR(MAX)), ', ') as threat_actors
             FROM phishlabs_case_data_notes n
-            WHERE ((n.flagged_whois_email IS NOT NULL AND n.flagged_whois_email != '') 
-                   OR (n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''))
-            GROUP BY n.flagged_whois_email, n.flagged_whois_name, n.threat_family
-            HAVING COUNT(*) >= 1
-            ORDER BY total_cases DESC
+            JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
+            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}
+            AND n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''
+            GROUP BY n.flagged_whois_name
+            HAVING COUNT(DISTINCT i.case_number) >= 1
             """
             
-            logger.info(f"WHOIS Attribution Query: {whois_query}")
-            whois_data = self.execute_query(whois_query)
+            # Query for WHOIS emails only
+            whois_email_query = f"""
+            SELECT 
+                CAST(NULL AS VARCHAR(MAX)) as flagged_whois_name,
+                n.flagged_whois_email,
+                COUNT(DISTINCT i.case_number) as total_cases,
+                STRING_AGG(CAST(n.threat_family AS VARCHAR(MAX)), ', ') as threat_families,
+                STRING_AGG(CAST(th.name AS VARCHAR(MAX)), ', ') as threat_actors
+            FROM phishlabs_case_data_notes n
+            JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
+            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}
+            AND n.flagged_whois_email IS NOT NULL AND n.flagged_whois_email != ''
+            GROUP BY n.flagged_whois_email
+            HAVING COUNT(DISTINCT i.case_number) >= 1
+            """
+            
+            # Execute both queries and combine
+            logger.info(f"WHOIS Attribution queries with date condition: {date_condition}")
+            logger.info(f"WHOIS name query: {whois_name_query}")
+            whois_name_data = self.execute_query(whois_name_query)
+            logger.info(f"WHOIS name data: {len(whois_name_data) if whois_name_data and not isinstance(whois_name_data, dict) else 0} records")
+            
+            logger.info(f"WHOIS email query: {whois_email_query}")
+            whois_email_data = self.execute_query(whois_email_query)
+            logger.info(f"WHOIS email data: {len(whois_email_data) if whois_email_data and not isinstance(whois_email_data, dict) else 0} records")
+            
+            # Combine results
+            whois_data = []
+            if whois_name_data and not isinstance(whois_name_data, dict):
+                whois_data.extend(whois_name_data)
+            if whois_email_data and not isinstance(whois_email_data, dict):
+                whois_data.extend(whois_email_data)
+            
             logger.info(f"WHOIS Attribution returned {len(whois_data) if whois_data and not isinstance(whois_data, dict) else 0} records")
             
-            # Transform and aggregate the data properly
+            # Transform the data to match expected format
             if whois_data and not isinstance(whois_data, dict) and len(whois_data) > 0:
-                # Group by registrant to aggregate threat families
-                registrant_map = {}
-                for row in whois_data:
-                    registrant = row.get('flagged_whois_email') or row.get('flagged_whois_name') or 'Unknown'
-                    threat_family = row.get('threat_family', '').strip()
-                    total_cases = row.get('total_cases', 0)
-                    
-                    if registrant not in registrant_map:
-                        registrant_map[registrant] = {
-                            'registrant': registrant,
-                            'flagged_whois_email': row.get('flagged_whois_email'),
-                            'flagged_whois_name': row.get('flagged_whois_name'),
-                            'total_cases': 0,
-                            'threat_families': set(),
-                            'domains_registered': 0,
-                            'tlds_used': '',
-                            'first_registration': None,
-                            'last_registration': None
-                        }
-                    
-                    registrant_map[registrant]['total_cases'] += total_cases
-                    if threat_family:
-                        registrant_map[registrant]['threat_families'].add(threat_family)
-                
-                # Convert to final format
                 transformed_data = []
-                for registrant_data in registrant_map.values():
-                    threat_families_list = sorted(list(registrant_data['threat_families']))
+                for row in whois_data:
                     transformed_row = {
-                        'registrant': registrant_data['registrant'],
-                        'flagged_whois_email': registrant_data['flagged_whois_email'],
-                        'flagged_whois_name': registrant_data['flagged_whois_name'],
-                        'total_cases': registrant_data['total_cases'],
-                        'threat_families_used': ', '.join(threat_families_list) if threat_families_list else 'None',
-                        'domains_registered': registrant_data['domains_registered'],
-                        'tlds_used': registrant_data['tlds_used'],
-                        'first_registration': registrant_data['first_registration'],
-                        'last_registration': registrant_data['last_registration'],
-                        'risk_level': 'Low' if registrant_data['total_cases'] < 5 else ('Medium' if registrant_data['total_cases'] < 10 else 'High')
+                        'registrant': row.get('flagged_whois_email') or row.get('flagged_whois_name') or 'Unknown',
+                        'flagged_whois_email': row.get('flagged_whois_email'),
+                        'flagged_whois_name': row.get('flagged_whois_name'),
+                        'total_cases': row.get('total_cases', 0),
+                        'threat_families_used': row.get('threat_families', 'None'),
+                        'threat_actors': row.get('threat_actors', 'None'),
+                        'domains_registered': 0,
+                        'tlds_used': '',
+                        'first_registration': None,
+                        'last_registration': None,
+                        'risk_level': 'Low' if row.get('total_cases', 0) < 5 else ('Medium' if row.get('total_cases', 0) < 10 else 'High')
                     }
                     transformed_data.append(transformed_row)
                 
                 # Sort by total cases descending
                 whois_data = sorted(transformed_data, key=lambda x: x['total_cases'], reverse=True)
-            
-            if isinstance(whois_data, dict) and 'error' in whois_data:
-                logger.error(f"WHOIS Attribution query error: {whois_data.get('error')}")
+                logger.info(f"WHOIS Attribution transformed data: {len(whois_data)} records")
+            else:
                 whois_data = []
-            
-            # Clean the threat families data to remove any leading semicolons or formatting issues
-            if whois_data and not isinstance(whois_data, dict):
-                for item in whois_data:
-                    if item.get('threat_families_used'):
-                        # Clean the threat families string
-                        cleaned = item['threat_families_used'].strip()
-                        # Remove leading/trailing semicolons and commas
-                        cleaned = cleaned.strip(';,')
-                        # Split by common delimiters and rejoin with commas
-                        families = [f.strip() for f in cleaned.replace(';', ',').split(',') if f.strip()]
-                        item['threat_families_used'] = ', '.join(families)
+                logger.info("No WHOIS data found - either no data exists or date filter is too restrictive")
                 
-            return whois_data or []
+            return whois_data
             
         except Exception as e:
             logger.error(f"Error in get_whois_attribution: {e}")
@@ -3250,30 +3338,58 @@ class ThreatDashboard:
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             
-            timeline_query = f"""
+            # Simplified query - just get all cases grouped by date to test if data returns
+            threat_family_query = f"""
             SELECT 
                 CAST(i.date_created_local AS DATE) as week,
-                th.name as threat_actor,
-                n.threat_family,
+                'All Cases' as attribution_name,
                 COUNT(DISTINCT i.case_number) as cases,
-                COUNT(DISTINCT u.domain) as domains,
-                STRING_AGG(u.host_country, ', ') as target_countries
+                COUNT(DISTINCT i.case_number) as unique_domains,
+                '' as target_countries,
+                'threat_family' as attribution_type
             FROM phishlabs_case_data_incidents i
-            INNER JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             WHERE {date_condition}
-            GROUP BY CAST(i.date_created_local AS DATE), th.name, n.threat_family
-            ORDER BY week DESC, cases DESC
+            GROUP BY CAST(i.date_created_local AS DATE)
+            ORDER BY week DESC
             """
             
-            logger.info(f"Attribution Timeline Query: Fetching data with date_filter={date_filter}")
-            timeline = self.execute_query(timeline_query)
-            logger.info(f"Attribution Timeline returned {len(timeline) if timeline and not isinstance(timeline, dict) else 0} records")
+            # Empty query for threat actor for now
+            threat_actor_query = f"""
+            SELECT 
+                CAST(i.date_created_local AS DATE) as week,
+                'Threat Actors' as attribution_name,
+                COUNT(DISTINCT i.case_number) as cases,
+                COUNT(DISTINCT i.case_number) as unique_domains,
+                '' as target_countries,
+                'threat_actor' as attribution_type
+            FROM phishlabs_case_data_incidents i
+            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
+            WHERE {date_condition}
+            AND th.name IS NOT NULL
+            GROUP BY CAST(i.date_created_local AS DATE)
+            ORDER BY week DESC
+            """
             
-            if isinstance(timeline, dict) and 'error' in timeline:
-                logger.error(f"Attribution Timeline query error: {timeline.get('error')}")
-                timeline = []
+            logger.info(f"Attribution Timeline Query: Fetching threat_family data with date_filter={date_filter}")
+            logger.info(f"Threat Family Query: {threat_family_query}")
+            threat_family_timeline = self.execute_query(threat_family_query)
+            logger.info(f"Threat Family Timeline returned {len(threat_family_timeline) if threat_family_timeline and not isinstance(threat_family_timeline, dict) else 0} records")
+            
+            logger.info(f"Attribution Timeline Query: Fetching threat_actor data with date_filter={date_filter}")
+            threat_actor_timeline = self.execute_query(threat_actor_query)
+            logger.info(f"Threat Actor Timeline returned {len(threat_actor_timeline) if threat_actor_timeline and not isinstance(threat_actor_timeline, dict) else 0} records")
+            
+            if isinstance(threat_family_timeline, dict) and 'error' in threat_family_timeline:
+                logger.error(f"Threat Family Timeline query error: {threat_family_timeline.get('error')}")
+                threat_family_timeline = []
+            
+            if isinstance(threat_actor_timeline, dict) and 'error' in threat_actor_timeline:
+                logger.error(f"Threat Actor Timeline query error: {threat_actor_timeline.get('error')}")
+                threat_actor_timeline = []
+            
+            # Combine both timelines
+            timeline = (threat_family_timeline if isinstance(threat_family_timeline, list) else []) + \
+                      (threat_actor_timeline if isinstance(threat_actor_timeline, list) else [])
             
             # Calculate insights
             insights = {
@@ -3285,8 +3401,8 @@ class ThreatDashboard:
             if timeline:
                 unique_actors = set()
                 for entry in timeline:
-                    if entry.get('threat_actor'):
-                        unique_actors.add(entry.get('threat_actor'))
+                    if entry.get('attribution_name'):
+                        unique_actors.add(entry.get('attribution_name'))
                 
                 insights["active_actors"] = len(unique_actors)
                 # Additional calculations would go here
@@ -4857,17 +4973,17 @@ def api_get_campaigns():
             if isinstance(campaign_data, list):
                 # Legacy list format
                 for mapping in campaign_data:
-                        if isinstance(mapping, dict):
-                            if not mapping.get('metadata_complete', True):
-                                incomplete_count += 1
+                    if isinstance(mapping, dict):
+                        if not mapping.get('metadata_complete', True):
+                            incomplete_count += 1
                         if mapping.get('identifier_type') and mapping.get('identifier_value'):
                             identifiers.append({
                                 'type': mapping['identifier_type'],
                                 'value': mapping['identifier_value'],
                                 'description': mapping.get('description', ''),
-                                        'table': mapping.get('table', ''),
-                                        'metadata_complete': mapping.get('metadata_complete', True)
-                                    })
+                                'table': mapping.get('table', ''),
+                                'metadata_complete': mapping.get('metadata_complete', True)
+                            })
                         elif mapping.get('field') and mapping.get('value'):
                             identifiers.append({
                                 'type': mapping['field'],
@@ -7200,9 +7316,10 @@ def api_bulk_validate_identifiers():
         domain_monitoring_query = f"""
         SELECT 
             t.infrid,
-            t.date_created,
-            t.threat_type_cat_name,
+            t.create_date as date_created,
+            t.cat_name as threat_type,
             t.url,
+            t.date_resolved,
             'phishlabs_threat_intelligence_incident' as source_table,
             'infrid' as field_type
         FROM phishlabs_threat_intelligence_incident t
@@ -7220,7 +7337,7 @@ def api_bulk_validate_identifiers():
                         'field': 'infrid',
                         'table': 'phishlabs_threat_intelligence_incident',
                         'date_created': str(row.get('date_created', 'N/A')),
-                        'threat_type': row.get('threat_type_cat_name', 'N/A'),
+                        'threat_type': row.get('threat_type', 'N/A'),
                         'url': row.get('url', 'N/A'),
                         'type': 'Domain Monitoring',
                         'metadata_complete': True
@@ -7530,12 +7647,12 @@ def api_threat_intelligence_metrics():
         """
         
         # Registrar Abuse Analysis
+        # Join through incidents table to get the correct iana_id
         registrar_query = f"""
         SELECT TOP 10 
             r.name as registrar_name,
-            COUNT(u.case_number) as abuse_count
-        FROM phishlabs_case_data_associated_urls u
-        INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+            COUNT(DISTINCT i.case_number) as abuse_count
+        FROM phishlabs_case_data_incidents i
         LEFT JOIN phishlabs_iana_registry r ON i.iana_id = r.iana_id
         WHERE r.name IS NOT NULL AND {date_condition}
         GROUP BY r.name
@@ -7576,13 +7693,18 @@ def api_threat_intelligence_metrics():
         if isinstance(url_path_data, dict) and 'error' in url_path_data:
             url_path_data = []
         
+        # Calculate summary for IP reuse
+        total_reused_ips = len(ip_reuse) if ip_reuse else 0
+        total_cases_with_reused_ips = sum(item.get('case_count', 0) for item in (ip_reuse or []))
+        
         return jsonify({
             'ip_reuse': ip_reuse or [],
             'isp_distribution': isp_data or [],
             'registrar_abuse': registrar_data or [],
             'url_path_analysis': url_path_data or [],
             'summary': {
-                'total_reused_ips': len(ip_reuse) if ip_reuse else 0,
+                'total_reused_ips': total_reused_ips,
+                'total_cases_with_reused_ips': total_cases_with_reused_ips,
                 'top_isp': isp_data[0].get('host_isp', 'N/A') if isp_data and len(isp_data) > 0 else 'N/A',
                 'top_registrar': registrar_data[0].get('registrar_name', 'N/A') if registrar_data and len(registrar_data) > 0 else 'N/A',
                 'top_url_path': url_path_data[0].get('url_path', 'N/A') if url_path_data and len(url_path_data) > 0 else 'N/A',
@@ -9028,23 +9150,24 @@ def api_case_type_analysis():
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
-        # Get date condition
+        # Get date conditions
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+        closed_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
         
-        # Query for case type analysis
+        # Query for case type analysis - ONLY Cred Theft cases
+        # Total cases: Cases opened in time window (date_created_local)
+        # Active cases: ALL time cases where date_closed_local IS NULL (not closed yet)
+        # Closed cases: Cases closed in time window (date_closed_local)
+        # Note: Using separate conditions for active vs closed
+        active_condition = "i.date_closed_local IS NULL"
         case_type_query = f"""
         SELECT 
             i.case_type,
             COUNT(DISTINCT i.case_number) as total_cases,
-            COUNT(DISTINCT CASE WHEN i.case_status = 'Active' THEN i.case_number END) as active_cases,
-            COUNT(DISTINCT CASE WHEN i.case_status = 'Closed' THEN i.case_number END) as closed_cases,
-            AVG(CASE 
-                WHEN i.case_status = 'Closed' AND i.date_closed_local IS NOT NULL AND i.date_created_local IS NOT NULL
-                THEN DATEDIFF(day, i.date_created_local, i.date_closed_local)
-                ELSE NULL 
-            END) as avg_days_to_close
+            COUNT(DISTINCT CASE WHEN {active_condition} THEN i.case_number END) as active_cases,
+            COUNT(DISTINCT CASE WHEN {closed_condition} THEN i.case_number END) as closed_cases
         FROM phishlabs_case_data_incidents i
-        WHERE i.case_type IS NOT NULL AND i.case_type != '' AND {date_condition}
+        WHERE i.case_type IS NOT NULL AND i.case_type != ''
         GROUP BY i.case_type
         HAVING COUNT(DISTINCT i.case_number) > 0
         ORDER BY total_cases DESC
@@ -9065,10 +9188,8 @@ def api_case_type_analysis():
             total_cases = row.get('total_cases', 0)
             active_cases = row.get('active_cases', 0)
             closed_cases = row.get('closed_cases', 0)
-            avg_days = row.get('avg_days_to_close', 0)
-            
-            # Get median days to close for this case type using a simpler approach
-            # Calculate median using ROW_NUMBER
+            # Calculate avg and median days to close for closed cases only
+            # These calculations are done separately for cases closed within the selected time window
             median_query = f"""
             WITH OrderedDays AS (
                 SELECT 
@@ -9076,11 +9197,10 @@ def api_case_type_analysis():
                     ROW_NUMBER() OVER (ORDER BY DATEDIFF(day, i.date_created_local, i.date_closed_local)) as row_num,
                     COUNT(*) OVER () as total_count
                 FROM phishlabs_case_data_incidents i
-                WHERE i.case_type = '{case_type}' 
-                AND i.case_status = 'Closed' 
+                WHERE i.case_type = '{case_type.replace("'", "''")}'
                 AND i.date_closed_local IS NOT NULL 
                 AND i.date_created_local IS NOT NULL 
-                AND {date_condition}
+                AND {closed_condition}
             )
             SELECT AVG(CAST(days_to_close AS FLOAT)) as median_days
             FROM OrderedDays
@@ -9092,6 +9212,21 @@ def api_case_type_analysis():
             if median_result and isinstance(median_result, list) and len(median_result) > 0:
                 median_days = median_result[0].get('median_days', 0) or 0
                 logger.info(f"Median days for {case_type}: {median_days}")
+            
+            # Get average days to close for consistency
+            avg_query = f"""
+            SELECT AVG(DATEDIFF(day, i.date_created_local, i.date_closed_local)) as avg_days
+            FROM phishlabs_case_data_incidents i
+            WHERE i.case_type = '{case_type.replace("'", "''")}'
+            AND i.date_closed_local IS NOT NULL 
+            AND i.date_created_local IS NOT NULL 
+            AND {closed_condition}
+            """
+            
+            avg_result = dashboard.execute_query(avg_query)
+            avg_days = 0
+            if avg_result and isinstance(avg_result, list) and len(avg_result) > 0:
+                avg_days = avg_result[0].get('avg_days', 0) or 0
             
             # Get resolution status breakdown for this case type
             resolution_query = f"""
