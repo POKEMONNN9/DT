@@ -669,6 +669,10 @@
                                     <div class="insight-label">Fastest Category</div>
                                 </div>
                                 <div class="insight-card">
+                                    <div class="insight-value" id="slowestResolution">--</div>
+                                    <div class="insight-label">Slowest Category</div>
+                                </div>
+                                <div class="insight-card">
                                     <div class="insight-value" id="totalResolved">--</div>
                                     <div class="insight-label">Cases Resolved</div>
                                 </div>
@@ -885,7 +889,7 @@
                                         </div>
                                         <div class="summary-metrics">
                                             <div class="metric-card critical">
-                                                <div class="metric-icon">🌐</div>
+                                                <div class="metric-icon"><i class="fas fa-globe"></i></div>
                                                 <div class="metric-content">
                                                     <div class="metric-value" id="totalInfrastructure">0</div>
                                                     <div class="metric-label">Infrastructure Points</div>
@@ -893,7 +897,7 @@
                                                 </div>
                                             </div>
                                             <div class="metric-card warning">
-                                                <div class="metric-icon">🎯</div>
+                                                <div class="metric-icon"><i class="fas fa-crosshairs"></i></div>
                                                 <div class="metric-content">
                                                     <div class="metric-value" id="topThreatCountries">0</div>
                                                     <div class="metric-label">Primary Threat Countries</div>
@@ -901,7 +905,7 @@
                                                 </div>
                                             </div>
                                             <div class="metric-card info">
-                                                <div class="metric-icon">☁️</div>
+                                                <div class="metric-icon"><i class="fas fa-cloud"></i></div>
                                                 <div class="metric-content">
                                                     <div class="metric-value" id="majorProviders">0</div>
                                                     <div class="metric-label">Major Hosting Providers</div>
@@ -909,7 +913,7 @@
                                                 </div>
                                             </div>
                                             <div class="metric-card success">
-                                                <div class="metric-icon">🏢</div>
+                                                <div class="metric-icon"><i class="fas fa-building"></i></div>
                                                 <div class="metric-content">
                                                     <div class="metric-value" id="activeRegistrars">0</div>
                                                     <div class="metric-label">Registrars</div>
@@ -993,28 +997,9 @@
                                             <div class="tld-chart-container">
                                                 <canvas id="tldIntelligenceChart"></canvas>
                                             </div>
-                                            <div class="tld-threat-indicators">
-                                                <div class="threat-indicator high-risk">
-                                                    <div class="indicator-icon">⚠️</div>
-                                                    <div class="indicator-content">
-                                                        <div class="indicator-title">High-Risk TLDs</div>
-                                                        <div class="indicator-list" id="highRiskTLDs">Loading...</div>
-                                                    </div>
-                                                </div>
-                                                <div class="threat-indicator emerging">
-                                                    <div class="indicator-icon">📈</div>
-                                                    <div class="indicator-content">
-                                                        <div class="indicator-title">Emerging Threats</div>
-                                                        <div class="indicator-list" id="emergingTLDs">Loading...</div>
-                                                    </div>
-                                                </div>
-                                                <div class="threat-indicator stable">
-                                                    <div class="indicator-icon">📊</div>
-                                                    <div class="indicator-content">
-                                                        <div class="indicator-title">Stable Patterns</div>
-                                                        <div class="indicator-list" id="stableTLDs">Loading...</div>
-                                                    </div>
-                                                </div>
+                                            <div class="tld-legend-container">
+                                                <h5 class="legend-title">Observed TLDs (Selected Time Period)</h5>
+                                                <div class="tld-legend-list" id="tldLegendList">Loading...</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1103,10 +1088,10 @@
                     </div>
 
                     <!-- WHOIS Attribution -->
-                    <div class="intel-card whois-card">
+                    <div class="intel-card whois-card full-width">
                         <div class="intel-header">
                             <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'WHOIS Attribution')" title="Click to copy chart for email">WHOIS Attribution</h3>
-                            <p class="intel-subtitle">Repeat offender registrants</p>
+                            <p class="intel-subtitle">Repeat offender registrants with associated threat intelligence</p>
                         </div>
                         <div class="intel-body">
                             <div class="whois-table-container">
@@ -1116,11 +1101,44 @@
                                             <th>Email/Name</th>
                                             <th>Cases</th>
                                             <th>Threat Families</th>
+                                            <th>Threat Actors</th>
                                         </tr>
                                     </thead>
                                     <tbody id="whoisTableBody">
                                         <tr>
-                                            <td colspan="3" class="loading-cell">Loading WHOIS attribution data...</td>
+                                            <td colspan="4" class="loading-cell">Loading WHOIS attribution data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- High-Priority Cases -->
+                    <div class="intel-card priority-cases-card full-width">
+                        <div class="intel-header">
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Attributed Cases')" title="Click to copy chart for email">Attributed Cases</h3>
+                            <p class="intel-subtitle">Cases with attribution data points</p>
+                        </div>
+                        <div class="intel-body">
+                            <div class="priority-table-container">
+                                <table class="priority-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Case #</th>
+                                            <th>Brand</th>
+                                            <th>Threat Actor</th>
+                                            <th>Kit Family</th>
+                                            <th>Domain</th>
+                                            <th>Host Country</th>
+                                            <th>WHOIS Email</th>
+                                            <th>WHOIS Name</th>
+                                            <th>Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="priorityCasesTableBody">
+                                        <tr>
+                                            <td colspan="9" class="loading-cell">Loading attributed cases...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1129,9 +1147,9 @@
                     </div>
 
                     <!-- Detailed Infrastructure Analysis -->
-                    <div class="intel-card detailed-infrastructure-card">
+                    <div class="intel-card priority-cases-card full-width">
                         <div class="intel-header">
-                            <h3 class="intel-title">Detailed Infrastructure Analysis</h3>
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Detailed Infrastructure Analysis')" title="Click to copy chart for email">Detailed Infrastructure Analysis</h3>
                             <p class="intel-subtitle">Select a threat actor or family to view complete infrastructure details</p>
                         </div>
                         <div class="intel-body">
@@ -1219,39 +1237,17 @@
                                             <!-- URL Paths will be populated here -->
                                         </div>
                                     </div>
+                                    
+                                    <div class="detailed-section-sidebar" id="associatedSection" style="display: none;">
+                                        <h6 class="section-header-sidebar" id="associatedSectionHeader">
+                                            <i class="fas fa-users"></i>
+                                            Associated Threat Families / Actors
+                                        </h6>
+                                        <div id="associatedEntities" class="detailed-list-sidebar">
+                                            <!-- Associated entities will be populated here -->
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- High-Priority Cases -->
-                    <div class="intel-card priority-cases-card full-width">
-                        <div class="intel-header">
-                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Attributed Cases')" title="Click to copy chart for email">Attributed Cases</h3>
-                            <p class="intel-subtitle">Cases with attribution data points</p>
-                        </div>
-                        <div class="intel-body">
-                            <div class="priority-table-container">
-                                <table class="priority-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Case #</th>
-                                            <th>Brand</th>
-                                            <th>Threat Actor</th>
-                                            <th>Kit Family</th>
-                                            <th>Domain</th>
-                                            <th>Host Country</th>
-                                            <th>WHOIS Email</th>
-                                            <th>WHOIS Name</th>
-                                            <th>Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="priorityCasesTableBody">
-                                        <tr>
-                                            <td colspan="9" class="loading-cell">Loading attributed cases...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
                             </div>
                         </div>
                     </div>
