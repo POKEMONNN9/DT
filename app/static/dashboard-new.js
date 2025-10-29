@@ -2252,11 +2252,13 @@ class OperationalDashboard {
         // Calculate insights
         const overallMedian = medianHours.reduce((sum, val) => sum + val, 0) / medianHours.length;
         const minIndex = medianHours.indexOf(Math.min(...medianHours));
+        const maxIndex = medianHours.indexOf(Math.max(...medianHours));
         const totalResolved = totalCases.reduce((sum, val) => sum + val, 0);
     
         // UPDATE THE INSIGHT BOXES - THIS IS THE KEY PART
         updateElement('avgResolutionOverall', `${Math.round(overallMedian)}h`);
         updateElement('fastestResolution', labels[minIndex] || 'N/A');
+        updateElement('slowestResolution', labels[maxIndex] || 'N/A');
         updateElement('totalResolved', totalResolved);
     
         // Create the chart
@@ -2792,7 +2794,13 @@ class OperationalDashboard {
             
             if (intelData && !intelData.error) {
                 // Update summary metrics
-                updateElement('ipReuseCount', intelData.summary.total_reused_ips || 0);
+                // IP Reuse: Show "X IPs reused across Y cases"
+                const totalReusedIPs = intelData.summary.total_reused_ips || 0;
+                const totalCasesWithReusedIPs = intelData.summary.total_cases_with_reused_ips || 0;
+                const ipReuseText = totalReusedIPs > 0 
+                    ? `${totalReusedIPs} IP${totalReusedIPs !== 1 ? 's' : ''} reused across ${totalCasesWithReusedIPs} case${totalCasesWithReusedIPs !== 1 ? 's' : ''}`
+                    : '0 IPs reused';
+                updateElement('ipReuseCount', ipReuseText);
                 updateElement('topISP', intelData.summary.top_isp || 'N/A');
                 
                 // Update top registrar with compact top 3 format (inline)
@@ -3152,14 +3160,10 @@ class ThreatIntelligenceDashboard {
                         </div>
                         <div class="actor-metrics">
                             <div class="metric-group">
-                                <div class="metric-value">${threatScore}</div>
-                                <div class="metric-label">Score</div>
-                            </div>
-                            <div class="metric-group">
                                 <div class="metric-value">${totalAttacks}</div>
                                 <div class="metric-label">Cases</div>
-                    </div>
-                    </div>
+                            </div>
+                        </div>
                     </div>
                     <ul class="actor-details">
                         <li>${countriesCount} countries</li>
@@ -3361,9 +3365,15 @@ class ThreatIntelligenceDashboard {
             const params = getFilterParams();
             const data = await fetchAPI(`/api/dashboard/attribution-timeline?${params}`);
             
+            console.log('Attribution Timeline API Response:', data);
+            
             if (data && !data.error) {
+                console.log('Timeline data:', data.timeline);
+                console.log('Insights:', data.insights);
                 this.renderAttributionTimeline(data);
                 this.updateTimelineInsights(data);
+            } else {
+                console.error('Attribution Timeline API returned error:', data);
             }
         } catch (error) {
             console.error('Error updating attribution timeline:', error);
@@ -3403,9 +3413,13 @@ class ThreatIntelligenceDashboard {
                 binFormat = 'MMM yyyy';
             }
     
-            // Bin the data
-            const dateMap = {};
-            data.timeline.forEach(item => {
+            // Separate data by attribution_type
+            const threatFamilyData = data.timeline.filter(item => item.attribution_type === 'threat_family');
+            const threatActorData = data.timeline.filter(item => item.attribution_type === 'threat_actor');
+            
+            // Bin the data for threat families
+            const familyDateMap = {};
+            threatFamilyData.forEach(item => {
                 const date = new Date(item.week);
                 let binKey;
                 
@@ -3422,26 +3436,55 @@ class ThreatIntelligenceDashboard {
                     binKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
                 }
                 
-                if (!dateMap[binKey]) dateMap[binKey] = {};
-                const actor = item.threat_actor || 'Unknown';
-                dateMap[binKey][actor] = (dateMap[binKey][actor] || 0) + (item.cases || 0);
+                if (!familyDateMap[binKey]) familyDateMap[binKey] = {};
+                const attributionName = item.attribution_name || 'Unknown';
+                familyDateMap[binKey][attributionName] = (familyDateMap[binKey][attributionName] || 0) + (item.cases || 0);
+            });
+            
+            // Bin the data for threat actors
+            const actorDateMap = {};
+            threatActorData.forEach(item => {
+                const date = new Date(item.week);
+                let binKey;
+                
+                if (binUnit === 'day') {
+                    binKey = date.toISOString().split('T')[0];
+                } else if (binUnit === 'week') {
+                    // Get start of week (Monday)
+                    const dayOfWeek = date.getDay();
+                    const diff = date.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+                    const monday = new Date(date.setDate(diff));
+                    binKey = monday.toISOString().split('T')[0];
+                } else {
+                    // Month
+                    binKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+                }
+                
+                if (!actorDateMap[binKey]) actorDateMap[binKey] = {};
+                const attributionName = item.attribution_name || 'Unknown';
+                actorDateMap[binKey][attributionName] = (actorDateMap[binKey][attributionName] || 0) + (item.cases || 0);
             });
     
-            // Get top 5 actors
-            const actorTotals = {};
-            Object.values(dateMap).forEach(actors => {
-                Object.entries(actors).forEach(([actor, count]) => {
-                    actorTotals[actor] = (actorTotals[actor] || 0) + count;
+            // Get top 5 from combined data
+            const allTotals = {};
+            Object.values(familyDateMap).forEach(items => {
+                Object.entries(items).forEach(([name, count]) => {
+                    allTotals[name] = (allTotals[name] || 0) + count;
+                });
+            });
+            Object.values(actorDateMap).forEach(items => {
+                Object.entries(items).forEach(([name, count]) => {
+                    allTotals[name] = (allTotals[name] || 0) + count;
                 });
             });
     
-            const topActors = Object.entries(actorTotals)
+            const top5 = Object.entries(allTotals)
                 .sort(([,a], [,b]) => b - a)
                 .slice(0, 5)
-                .map(([actor]) => actor);
+                .map(([name]) => name);
     
-            const sortedDates = Object.keys(dateMap).sort();
-    
+            const sortedDates = Object.keys({...familyDateMap, ...actorDateMap}).sort();
+            
             // Color palette
             const colors = [
                 '#FF6B6B',  // Red
@@ -3451,23 +3494,45 @@ class ThreatIntelligenceDashboard {
                 '#98D8C8'   // Mint
             ];
     
-            const datasets = topActors.map((actor, idx) => ({
-                label: actor,
-                data: sortedDates.map(date => ({
-                    x: new Date(date),
-                    y: dateMap[date][actor] || 0
-                })),
-                backgroundColor: colors[idx] + '60',
-                borderColor: colors[idx],
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 6,
-                pointHoverBackgroundColor: colors[idx],
-                pointHoverBorderColor: '#fff',
-                pointHoverBorderWidth: 2
-            }));
+            const datasets = top5.map((name, idx) => {
+                // Check if this name exists in families or actors
+                const isFamily = threatFamilyData.some(item => item.attribution_name === name);
+                const isActor = threatActorData.some(item => item.attribution_name === name);
+                
+                const data = sortedDates.map(date => {
+                    const familyCount = familyDateMap[date]?.[name] || 0;
+                    const actorCount = actorDateMap[date]?.[name] || 0;
+                    return {
+                        x: new Date(date),
+                        y: familyCount + actorCount
+                    };
+                });
+                
+                // Create proper label for legend
+                let displayLabel = name;
+                if (name === 'All Cases') {
+                    displayLabel = 'Threat Families';
+                } else if (name === 'Threat Actors') {
+                    displayLabel = 'Threat Actors';
+                } else {
+                    displayLabel = name + (isFamily && isActor ? ' (Family & Actor)' : isFamily ? ' (Family)' : ' (Actor)');
+                }
+                
+                return {
+                    label: displayLabel,
+                    data: data,
+                    backgroundColor: colors[idx] + '60',
+                    borderColor: colors[idx],
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: colors[idx],
+                    pointHoverBorderColor: '#fff',
+                    pointHoverBorderWidth: 2
+                };
+            });
     
             this.charts.attributionTimeline = new Chart(ctx, {
                 type: 'line',
@@ -3487,14 +3552,17 @@ class ThreatIntelligenceDashboard {
                                 padding: 15,
                                 font: { size: 12, weight: '600' },
                                 generateLabels: (chart) => {
-                                    return chart.data.datasets.map((dataset, i) => ({
-                                        text: `${dataset.label} (${actorTotals[dataset.label]} attacks)`,
-                                        fillStyle: colors[i],
-                                        strokeStyle: colors[i],
-                                        lineWidth: 2,
-                                        hidden: false,
-                                        index: i
-                                    }));
+                                    return chart.data.datasets.map((dataset, i) => {
+                                        const totalAttacks = allTotals[dataset.label] || 0;
+                                        return {
+                                            text: `${dataset.label} (${totalAttacks} attacks)`,
+                                            fillStyle: colors[i],
+                                            strokeStyle: colors[i],
+                                            lineWidth: 2,
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
                                 }
                             }
                         },
@@ -4312,7 +4380,7 @@ class ThreatIntelligenceDashboard {
                         ${renderCompactList(countries)}
                     </td>
                     <td class="metrics-cell">
-                        <strong>${actor.total_cases}</strong>
+                        <strong>${actor.actual_total_cases || actor.total_cases}</strong>
                     </td>
                     <td class="date-cell">
                         ${this.formatDate(actor.active_since)}
@@ -4580,7 +4648,7 @@ class ThreatIntelligenceDashboard {
 
         if (!data || data.length === 0) {
             console.log('<i class="fas fa-times-circle"></i> No WHOIS data to render');
-            tbody.innerHTML = '<tr><td colspan="3" class="no-data-cell">No WHOIS attribution data available</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="no-data-cell">No WHOIS attribution data available</td></tr>';
             return;
         }
 
@@ -4604,6 +4672,22 @@ class ThreatIntelligenceDashboard {
                             
                             return families.length > 0 
                                 ? families.map(family => `<span class="family-tag">${family}</span>`).join(' ')
+                                : '<span class="no-data">None</span>';
+                        })() : '<span class="no-data">None</span>'}
+                    </div>
+                </td>
+                <td class="whois-actors">
+                    <div class="actors-list">
+                        ${item.threat_actors && item.threat_actors !== 'None' ? (() => {
+                            // Split by comma and clean up
+                            const actors = item.threat_actors
+                                .split(',')
+                                .map(actor => actor.trim())
+                                .filter(actor => actor && actor !== '')
+                                .slice(0, 4); // Show up to 4 actors
+                            
+                            return actors.length > 0 
+                                ? actors.map(actor => `<span class="actor-tag">${actor}</span>`).join(' ')
                                 : '<span class="no-data">None</span>';
                         })() : '<span class="no-data">None</span>'}
                     </div>
@@ -5077,29 +5161,18 @@ class ThreatIntelligenceDashboard {
             this.charts['tldIntelligenceChart'].destroy();
         }
 
-        // Update TLD categories
+        // Render TLD legend with all observed TLDs and case counts
+        const tldLegendList = document.getElementById('tldLegendList');
         if (data.tlds && data.tlds.length > 0) {
-            // Categorize TLDs by threat level
-            const highRiskTLDs = data.tlds.filter(tld => tld.count > 5).slice(0, 3);
-            const emergingTLDs = data.tlds.filter(tld => tld.count >= 2 && tld.count <= 5).slice(0, 3);
-            const stableTLDs = data.tlds.filter(tld => tld.count === 1).slice(0, 3);
-
-            const highRiskElement = document.getElementById('highRiskTLDs');
-            const emergingElement = document.getElementById('emergingTLDs');
-            const stableElement = document.getElementById('stableTLDs');
-
-            if (highRiskElement) highRiskElement.innerHTML = highRiskTLDs.map(tld => `.${tld.tld} (${tld.count})`).join(', ') || 'None detected';
-            if (emergingElement) emergingElement.innerHTML = emergingTLDs.map(tld => `.${tld.tld} (${tld.count})`).join(', ') || 'None detected';
-            if (stableElement) stableElement.innerHTML = stableTLDs.map(tld => `.${tld.tld} (${tld.count})`).join(', ') || 'None detected';
+            if (tldLegendList) {
+                tldLegendList.innerHTML = data.tlds.map(tld => 
+                    `<span class="tld-legend-item">.${tld.tld} <span class="tld-count">(${tld.count} cases)</span></span>`
+                ).join(' ');
+            }
         } else {
-            // No TLD data
-            const highRiskElement = document.getElementById('highRiskTLDs');
-            const emergingElement = document.getElementById('emergingTLDs');
-            const stableElement = document.getElementById('stableTLDs');
-
-            if (highRiskElement) highRiskElement.innerHTML = 'No data available';
-            if (emergingElement) emergingElement.innerHTML = 'No data available';
-            if (stableElement) stableElement.innerHTML = 'No data available';
+            if (tldLegendList) {
+                tldLegendList.innerHTML = '<span class="no-data">No TLD data available for selected time period</span>';
+            }
             return;
         }
 
@@ -5300,6 +5373,211 @@ class ThreatIntelligenceDashboard {
                 }
             }
         });
+    }
+
+    // Detailed Infrastructure Analysis methods
+    async loadDetailedInfrastructure(type) {
+        try {
+            const actorSelect = document.getElementById('infrastructureActorSelect');
+            const familySelect = document.getElementById('infrastructureFamilySelect');
+            const contentDiv = document.getElementById('detailedInfrastructureContent');
+            
+            let selectedValue = '';
+            let selectedName = '';
+            
+            if (type === 'actor') {
+                selectedValue = actorSelect.value;
+                selectedName = actorSelect.options[actorSelect.selectedIndex].text;
+                familySelect.value = ''; // Clear family selection
+            } else if (type === 'family') {
+                selectedValue = familySelect.value;
+                selectedName = familySelect.options[familySelect.selectedIndex].text;
+                actorSelect.value = ''; // Clear actor selection
+            }
+            
+            if (!selectedValue) {
+                contentDiv.style.display = 'none';
+                return;
+            }
+
+            console.log(`Loading detailed infrastructure for ${type}: ${selectedValue}`);
+            
+            // Show loading state
+            contentDiv.style.display = 'block';
+            document.getElementById('detailedActorName').textContent = selectedName;
+            document.getElementById('detailedTotalCases').textContent = 'Loading...';
+            document.getElementById('detailedActiveSince').textContent = 'Loading...';
+            document.getElementById('detailedLastCase').textContent = 'Loading...';
+            
+            // Clear existing content
+            ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
+                const elem = document.getElementById(id);
+                if (elem) elem.innerHTML = '<div class="no-detailed-data-sidebar">Loading...</div>';
+            });
+            
+            // Fetch detailed data
+            const response = await fetch(`/api/dashboard/detailed-infrastructure?type=${type}&value=${encodeURIComponent(selectedValue)}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            console.log('Detailed infrastructure data received:', data);
+            
+            if (data.success) {
+                // Update header info
+                document.getElementById('detailedTotalCases').textContent = data.total_cases || 0;
+                document.getElementById('detailedActiveSince').textContent = data.active_since || '-';
+                document.getElementById('detailedLastCase').textContent = data.last_case || '-';
+                
+                // Populate detailed sections
+                this.populateDetailedSection('detailedTLDs', data.tlds, 'TLD');
+                this.populateDetailedSection('detailedRegistrars', data.registrars, 'Registrar');
+                this.populateDetailedSection('detailedISPs', data.isps, 'ISP');
+                this.populateDetailedSection('detailedCountries', data.countries, 'Country');
+                this.populateDetailedURLPaths('detailedURLPaths', data.url_paths);
+                
+                // Populate associated entities
+                const associatedSection = document.getElementById('associatedSection');
+                const associatedHeader = document.getElementById('associatedSectionHeader');
+                const associatedEntities = document.getElementById('associatedEntities');
+                
+                // Show or hide the associated section based on data
+                if (type === 'actor' && data.associated_threat_families && data.associated_threat_families.length > 0) {
+                    associatedSection.style.display = 'block';
+                    associatedHeader.innerHTML = '<i class="fas fa-users"></i> Associated Threat Families';
+                    this.populateAssociatedEntities('associatedEntities', data.associated_threat_families);
+                } else if (type === 'family' && data.associated_threat_actors && data.associated_threat_actors.length > 0) {
+                    associatedSection.style.display = 'block';
+                    associatedHeader.innerHTML = '<i class="fas fa-users"></i> Associated Threat Actors';
+                    this.populateAssociatedEntities('associatedEntities', data.associated_threat_actors);
+                } else {
+                    associatedSection.style.display = 'none';
+                }
+                
+                console.log('Detailed infrastructure populated successfully');
+                
+            } else {
+                throw new Error(data.message || 'Failed to load detailed infrastructure data');
+            }
+            
+            } catch (error) {
+            console.error('Error loading detailed infrastructure:', error);
+            showNotification('Failed to load detailed infrastructure data', 'error');
+            
+            // Show error state
+            document.getElementById('detailedActorName').textContent = 'Error';
+            document.getElementById('detailedTotalCases').textContent = 'Error';
+            document.getElementById('detailedActiveSince').textContent = 'Error';
+            document.getElementById('detailedLastCase').textContent = 'Error';
+            
+            ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
+                const elem = document.getElementById(id);
+                if (elem) elem.innerHTML = '<div class="no-detailed-data-sidebar">Failed to load data</div>';
+            });
+        }
+    }
+
+    populateDetailedSection(containerId, data, type) {
+        const container = document.getElementById(containerId);
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="no-detailed-data-sidebar">No ' + type.toLowerCase() + ' data available</div>';
+            return;
+        }
+        
+        const html = data.map(item => {
+            const countClass = this.getCountClass(item.count);
+            return `
+                <div class="detailed-item-sidebar">
+                    <span class="detailed-item-value-sidebar" title="${item.value}">${item.value}</span>
+                    <span class="detailed-item-count-sidebar ${countClass}">${item.count}</span>
+                    </div>
+                `;
+        }).join('');
+        
+        container.innerHTML = html;
+    }
+
+    populateDetailedURLPaths(containerId, data) {
+        const container = document.getElementById(containerId);
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="no-detailed-data-sidebar">No URL paths available</div>';
+            return;
+        }
+        
+        const html = data.map(item => {
+            const countClass = this.getCountClass(item.case_count);
+            return `
+                <div class="detailed-item-sidebar">
+                    <span class="detailed-item-value-sidebar" title="${item.url_path}">${item.url_path}</span>
+                    <span class="detailed-item-count-sidebar ${countClass}">${item.case_count}</span>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = html;
+    }
+
+    populateAssociatedEntities(containerId, data) {
+        const container = document.getElementById(containerId);
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="no-detailed-data-sidebar">No associated entities available</div>';
+            return;
+        }
+        
+        const html = data.map(item => {
+            const countClass = this.getCountClass(item.count);
+            return `
+                <div class="detailed-item-sidebar">
+                    <span class="detailed-item-value-sidebar" title="${item.value}">${item.value}</span>
+                    <span class="detailed-item-count-sidebar ${countClass}">${item.count}</span>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = html;
+    }
+
+    getCountClass(count) {
+        if (count >= 10) return 'high';
+        if (count >= 5) return 'medium';
+        return 'low';
+    }
+
+    populateInfrastructureDropdowns(actorData, familyData) {
+        const actorSelect = document.getElementById('infrastructureActorSelect');
+        const familySelect = document.getElementById('infrastructureFamilySelect');
+        
+        // Clear existing options (except the first one)
+        actorSelect.innerHTML = '<option value="">Select a threat actor...</option>';
+        familySelect.innerHTML = '<option value="">Select a threat family...</option>';
+        
+        // Populate actor dropdown
+        if (actorData && actorData.length > 0) {
+            actorData.forEach(actor => {
+                const option = document.createElement('option');
+                option.value = actor.threat_actor || actor.actor;
+                option.textContent = actor.threat_actor || actor.actor;
+                actorSelect.appendChild(option);
+            });
+        }
+        
+        // Populate family dropdown
+        if (familyData && familyData.length > 0) {
+            familyData.forEach(family => {
+                const option = document.createElement('option');
+                option.value = family.family || family.name;
+                option.textContent = family.family || family.name;
+                familySelect.appendChild(option);
+            });
+        }
+        
+        console.log(`Populated dropdowns: ${actorSelect.options.length - 1} actors, ${familySelect.options.length - 1} families`);
     }
 }
 
@@ -9308,171 +9586,6 @@ function copyDashboardSection(sectionId, sectionTitle) {
     }
 }
 
-// Detailed Infrastructure Analysis Functions
-window.loadDetailedInfrastructure = async function(type) {
-    try {
-        const actorSelect = document.getElementById('infrastructureActorSelect');
-        const familySelect = document.getElementById('infrastructureFamilySelect');
-        const contentDiv = document.getElementById('detailedInfrastructureContent');
-        
-        let selectedValue = '';
-        let selectedName = '';
-        
-        if (type === 'actor') {
-            selectedValue = actorSelect.value;
-            selectedName = actorSelect.options[actorSelect.selectedIndex].text;
-            familySelect.value = ''; // Clear family selection
-        } else if (type === 'family') {
-            selectedValue = familySelect.value;
-            selectedName = familySelect.options[familySelect.selectedIndex].text;
-            actorSelect.value = ''; // Clear actor selection
-        }
-        
-        if (!selectedValue) {
-            contentDiv.style.display = 'none';
-            return;
-        }
-
-        console.log(`Loading detailed infrastructure for ${type}: ${selectedValue}`);
-        
-        // Show loading state
-        contentDiv.style.display = 'block';
-        document.getElementById('detailedActorName').textContent = selectedName;
-        document.getElementById('detailedTotalCases').textContent = 'Loading...';
-        document.getElementById('detailedActiveSince').textContent = 'Loading...';
-        document.getElementById('detailedLastCase').textContent = 'Loading...';
-        
-        // Clear existing content
-        ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
-            const elem = document.getElementById(id);
-            if (elem) elem.innerHTML = '<div class="no-detailed-data-sidebar">Loading...</div>';
-        });
-        
-        // Fetch detailed data
-        const response = await fetch(`/api/dashboard/detailed-infrastructure?type=${type}&value=${encodeURIComponent(selectedValue)}`);
-
-            if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        console.log('Detailed infrastructure data received:', data);
-        
-        if (data.success) {
-            // Update header info
-            document.getElementById('detailedTotalCases').textContent = data.total_cases || 0;
-            document.getElementById('detailedActiveSince').textContent = data.active_since || '-';
-            document.getElementById('detailedLastCase').textContent = data.last_case || '-';
-            
-            // Populate detailed sections
-            populateDetailedSection('detailedTLDs', data.tlds, 'TLD');
-            populateDetailedSection('detailedRegistrars', data.registrars, 'Registrar');
-            populateDetailedSection('detailedISPs', data.isps, 'ISP');
-            populateDetailedSection('detailedCountries', data.countries, 'Country');
-            populateDetailedURLPaths('detailedURLPaths', data.url_paths);
-            
-            console.log('Detailed infrastructure populated successfully');
-            
-        } else {
-            throw new Error(data.message || 'Failed to load detailed infrastructure data');
-        }
-        
-        } catch (error) {
-        console.error('Error loading detailed infrastructure:', error);
-        showNotification('Failed to load detailed infrastructure data', 'error');
-        
-        // Show error state
-        document.getElementById('detailedActorName').textContent = 'Error';
-        document.getElementById('detailedTotalCases').textContent = 'Error';
-        document.getElementById('detailedActiveSince').textContent = 'Error';
-        document.getElementById('detailedLastCase').textContent = 'Error';
-        
-        ['detailedTLDs', 'detailedRegistrars', 'detailedISPs', 'detailedCountries', 'detailedURLPaths'].forEach(id => {
-            const elem = document.getElementById(id);
-            if (elem) elem.innerHTML = '<div class="no-detailed-data-sidebar">Failed to load data</div>';
-        });
-    }
-};
-
-function populateDetailedSection(containerId, data, type) {
-    const container = document.getElementById(containerId);
-    
-    if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-detailed-data-sidebar">No ' + type.toLowerCase() + ' data available</div>';
-        return;
-    }
-    
-    const html = data.map(item => {
-        const countClass = getCountClass(item.count);
-        return `
-            <div class="detailed-item-sidebar">
-                <span class="detailed-item-value-sidebar" title="${item.value}">${item.value}</span>
-                <span class="detailed-item-count-sidebar ${countClass}">${item.count}</span>
-                </div>
-            `;
-    }).join('');
-    
-    container.innerHTML = html;
-}
-
-function populateDetailedURLPaths(containerId, data) {
-    const container = document.getElementById(containerId);
-    
-    if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-detailed-data-sidebar">No URL paths available</div>';
-        return;
-    }
-    
-    const html = data.map(item => {
-        const countClass = getCountClass(item.case_count);
-        return `
-            <div class="detailed-item-sidebar">
-                <span class="detailed-item-value-sidebar" title="${item.url_path}">${item.url_path}</span>
-                <span class="detailed-item-count-sidebar ${countClass}">${item.case_count}</span>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML = html;
-}
-
-function getCountClass(count) {
-    if (count >= 10) return 'high';
-    if (count >= 5) return 'medium';
-    return 'low';
-}
-
-// Populate dropdowns when threat actor infrastructure data is loaded
-window.populateInfrastructureDropdowns = function(actorData, familyData) {
-    const actorSelect = document.getElementById('infrastructureActorSelect');
-    const familySelect = document.getElementById('infrastructureFamilySelect');
-    
-    // Clear existing options (except the first one)
-    actorSelect.innerHTML = '<option value="">Select a threat actor...</option>';
-    familySelect.innerHTML = '<option value="">Select a threat family...</option>';
-    
-    // Populate actor dropdown
-    if (actorData && actorData.length > 0) {
-        actorData.forEach(actor => {
-            const option = document.createElement('option');
-            option.value = actor.threat_actor;
-            option.textContent = `${actor.threat_actor} (${actor.total_cases} cases)`;
-            actorSelect.appendChild(option);
-        });
-    }
-    
-    // Populate family dropdown (if we have family data)
-    if (familyData && familyData.length > 0) {
-        familyData.forEach(family => {
-            const option = document.createElement('option');
-            option.value = family.threat_family;
-            option.textContent = `${family.threat_family} (${family.total_cases} cases)`;
-            familySelect.appendChild(option);
-        });
-    }
-};
-
 // Make standalone functions globally available (not part of any class)
 window.showSection = showSection;
 window.refreshData = refreshData;
@@ -9480,3 +9593,18 @@ window.handleDateFilterChange = handleDateFilterChange;
 window.updateTimelineTrends = updateTimelineTrends;
 window.copyCompleteDashboard = copyCompleteDashboard;
 window.copyDashboardSection = copyDashboardSection;
+
+// Global wrappers for ThreatIntelligenceDashboard infrastructure methods
+window.loadDetailedInfrastructure = async function(type) {
+    if (typeof threatIntelligenceDashboard !== 'undefined' && threatIntelligenceDashboard) {
+        return await threatIntelligenceDashboard.loadDetailedInfrastructure(type);
+    }
+    console.error('ThreatIntelligenceDashboard not available');
+};
+
+window.populateInfrastructureDropdowns = function(actorData, familyData) {
+    if (typeof threatIntelligenceDashboard !== 'undefined' && threatIntelligenceDashboard) {
+        return threatIntelligenceDashboard.populateInfrastructureDropdowns(actorData, familyData);
+    }
+    console.error('ThreatIntelligenceDashboard not available');
+};
