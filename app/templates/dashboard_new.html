@@ -54,9 +54,12 @@
             
             <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
                 <label for="startDate">Start Date:</label>
-                <input type="date" id="startDate" class="filter-input" onchange="refreshData()">
+                <input type="date" id="startDate" class="filter-input">
                 <label for="endDate">End Date:</label>
-                <input type="date" id="endDate" class="filter-input" onchange="refreshData()">
+                <input type="date" id="endDate" class="filter-input">
+                <button id="applyDateRange" class="btn btn-primary" onclick="applyCustomDateRange()" style="margin-left: 10px; padding: 6px 16px;">
+                    <i class="fas fa-check"></i> Apply
+                </button>
             </div>
             
         </div>
@@ -1003,28 +1006,6 @@
                                             </div>
                                         </div>
                                     </div>
-
-                                    <!-- Infrastructure Timeline -->
-                                    <div class="infrastructure-timeline-section">
-                                        <div class="section-header">
-                                            <h4 class="section-title">Infrastructure Evolution Timeline</h4>
-                                            <p class="section-description">How threat infrastructure has evolved over the selected time period</p>
-                                        </div>
-                                        <div class="timeline-container">
-                                            <canvas id="infrastructureTimelineChart"></canvas>
-                                        </div>
-                                        <div class="timeline-insights">
-                                            <div class="timeline-insight">
-                                                <span class="insight-label">Peak Infrastructure Activity:</span>
-                                                <span class="insight-value" id="peakInfrastructureDate">Loading...</span>
-                                            </div>
-                                            <div class="timeline-insight">
-                                                <span class="insight-label">Infrastructure Growth Rate:</span>
-                                                <span class="insight-value" id="infrastructureGrowthRate">Loading...</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
                                 </div>
                             </div>
 
@@ -1073,6 +1054,10 @@
                                     <div class="intelligence-header">
                                         <h3 class="intelligence-title">Threat Family Intelligence & Infrastructure Fingerprinting</h3>
                                         <p class="intelligence-subtitle">Comprehensive analysis of threat actor behavior, infrastructure patterns, and targeting strategies</p>
+                                        <div class="all-time-indicator" style="margin-top: 10px; padding: 8px 12px; background-color: #EFF6FF; border-left: 3px solid #3B82F6; border-radius: 4px; font-size: 13px; color: #1E40AF;">
+                                            <i class="fas fa-info-circle" style="margin-right: 6px;"></i>
+                                            <strong>Note:</strong> This section displays <strong>all-time historical data</strong> and is not filtered by the selected date range above. This provides comprehensive intelligence insights across all recorded threat activity.
+                                        </div>
                                     </div>
                                     
                                     <!-- Intelligence Cards Container -->
@@ -1377,15 +1362,15 @@
                         <div class="sla-summary">
                             <div class="sla-metric red">
                                 <div class="sla-count" id="socialSlaRedCount">--</div>
-                                <div class="sla-label">Breached (>48hr)</div>
+                                <div class="sla-label">Breached (>28 days)</div>
                             </div>
                             <div class="sla-metric amber">
                                 <div class="sla-count" id="socialSlaAmberCount">--</div>
-                                <div class="sla-label">At Risk (24-48hr)</div>
+                                <div class="sla-label">At Risk (15-28 days)</div>
                             </div>
                             <div class="sla-metric green">
                                 <div class="sla-count" id="socialSlaGreenCount">--</div>
-                                <div class="sla-label">Within SLA (≤24hr)</div>
+                                <div class="sla-label">Within SLA (1-14 days)</div>
                             </div>
                         </div>
                     </div>
