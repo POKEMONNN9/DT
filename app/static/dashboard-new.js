@@ -109,18 +109,39 @@ function handleDateFilterChange() {
         const selectedFilter = dateFilter.value;
         console.log('Date filter changed to:', selectedFilter);
         
-        // Show/hide custom date range section
+        // Show/hide custom date range section and Apply button
         if (customDateRange) {
             if (selectedFilter === 'custom') {
                 customDateRange.style.display = 'block';
             } else {
                 customDateRange.style.display = 'none';
+                // If switching away from custom, refresh immediately
+                refreshData();
             }
+        } else {
+            // For non-custom filters, refresh immediately
+            refreshData();
         }
-        
-        // Update all dashboards with new date filter
-        refreshData();
     }
+}
+
+function applyCustomDateRange() {
+    // Validate dates
+    const startDate = document.getElementById('startDate')?.value;
+    const endDate = document.getElementById('endDate')?.value;
+    
+    if (!startDate || !endDate) {
+        showNotification('Please select both start and end dates', 'error');
+        return;
+    }
+    
+    if (startDate > endDate) {
+        showNotification('Start date must be before end date', 'error');
+        return;
+    }
+    
+    // Apply the custom date range
+    refreshData();
 }
 
 // Infrastructure Analysis Tab Switching
@@ -277,7 +298,6 @@ function configureChartDefaults() {
 // ============================================================================
 // EXECUTIVE DASHBOARD CLASS
 // ============================================================================
-
 class ExecutiveDashboard {
     constructor() {
         this.threatLandscapeChart = null;
@@ -1011,8 +1031,6 @@ class ExecutiveDashboard {
             console.error('Error updating timeline chart:', error);
         }
     }
-
-
     renderAdvancedTimelineChart(data, filter = 'today', totalResolved = null) {
         const ctx = document.getElementById('timelineTrendsChart');
         if (!ctx) return;
@@ -1586,14 +1604,13 @@ class ExecutiveDashboard {
      */
     async loadCaseTypeAnalysisChart() {
         try {
-            const dateFilter = document.getElementById('dateFilter')?.value || 'all';
-            const startDate = document.getElementById('startDate')?.value || '';
-            const endDate = document.getElementById('endDate')?.value || '';
+            // Use helper functions to get current date filter and params
+            const currentDateFilter = getCurrentDateFilter();
+            const dateRangeParams = getDateRangeParams(currentDateFilter);
             
             const params = new URLSearchParams({
-                date_filter: dateFilter,
-                start_date: startDate,
-                end_date: endDate
+                date_filter: currentDateFilter,
+                ...dateRangeParams
             });
             
             const response = await fetch(`/api/dashboard/case-type-analysis?${params}`);
@@ -1723,7 +1740,6 @@ class ExecutiveDashboard {
         console.log('All new Executive Summary charts loaded successfully');
     }
 }
-
 // ============================================================================
 // OPERATIONAL DASHBOARD CLASS - PRODUCTION VERSION
 // ============================================================================
@@ -2237,6 +2253,7 @@ class OperationalDashboard {
         const labels = allData.map(item => item.case_type || 'Unknown');
         const medianHours = allData.map(item => Math.round((item.median_days_to_close || 0) * 24)); // Convert days to hours
         const totalCases = allData.map(item => item.total_cases || 0);
+        const closedCases = allData.map(item => item.closed_cases || 0);
 
         // Debug logging
         console.log('Chart data debug:', {
@@ -2244,6 +2261,7 @@ class OperationalDashboard {
             labels: labels.slice(0, 3),
             medianHours: medianHours.slice(0, 3),
             totalCases: totalCases.slice(0, 3),
+            closedCases: closedCases.slice(0, 3),
             medianHoursFull: medianHours,
             totalCasesFull: totalCases,
             sampleMedianDays: allData.slice(0, 3).map(item => item.median_days_to_close)
@@ -2253,7 +2271,8 @@ class OperationalDashboard {
         const overallMedian = medianHours.reduce((sum, val) => sum + val, 0) / medianHours.length;
         const minIndex = medianHours.indexOf(Math.min(...medianHours));
         const maxIndex = medianHours.indexOf(Math.max(...medianHours));
-        const totalResolved = totalCases.reduce((sum, val) => sum + val, 0);
+        // Use closed_cases (cases closed in time window) instead of total_cases for consistency with Performance Metrics
+        const totalResolved = closedCases.reduce((sum, val) => sum + val, 0);
     
         // UPDATE THE INSIGHT BOXES - THIS IS THE KEY PART
         updateElement('avgResolutionOverall', `${Math.round(overallMedian)}h`);
@@ -2501,7 +2520,6 @@ class OperationalDashboard {
         updateElement('slaAmberCount', totals.Amber || 0);
         updateElement('slaRedCount', totals.Red || 0);
     }
-
     renderSLAComplianceChart(totals) {
         const ctx = document.getElementById('slaComplianceChart');
         if (!ctx) return;
@@ -2997,7 +3015,6 @@ class OperationalDashboard {
         });
     }
 }
-
 // ============================================================================
 // THREAT INTELLIGENCE DASHBOARD CLASS
 // ============================================================================
@@ -3790,7 +3807,6 @@ class ThreatIntelligenceDashboard {
             return { direction: 'stable', description: 'Stable activity' };
         }
     }
-
     generateTimelineStory(data) {
         const { totalCases, uniqueActors, mostActiveActor, recentTrend } = data;
         
@@ -3890,7 +3906,6 @@ class ThreatIntelligenceDashboard {
         this.renderGeographicThreatHeatmap(data);
         this.renderInfrastructureProviderAnalysis(data);
         this.renderTLDAnalysis(data);
-        this.renderInfrastructureTimeline(data);
     }
 
     renderInfrastructureCharts(data) {
@@ -4081,9 +4096,6 @@ class ThreatIntelligenceDashboard {
         
         // Calculate intelligence metrics
         const sophisticationLevel = this.calculateSophisticationLevel(family, urlPaths, brands);
-        const infrastructureSignature = this.generateInfrastructureSignature(family);
-        const brandTargetingStrategy = this.analyzeBrandTargetingStrategy(brands);
-        const operationalPatterns = this.analyzeOperationalPatterns(urlPaths);
         
         return `
             <div class="threat-family-intelligence-card">
@@ -4140,19 +4152,13 @@ class ThreatIntelligenceDashboard {
                             </div>
                             ` : ''}
                         </div>
-                        <div class="intelligence-insight">
-                            <strong><i class="fas fa-search"></i> Signature Analysis:</strong> ${infrastructureSignature.analysis}
-                        </div>
-                        <div class="threat-indicator">
-                            <strong><i class="fas fa-bullseye"></i> If you see:</strong> ${infrastructureSignature.indicator}
-                        </div>
                     </div>
 
                     <!-- URL Path Intelligence -->
                     <div class="intelligence-section">
                         <h4 class="section-title">🔗 URL Path Intelligence (Kit Usage)</h4>
                         <div class="url-paths-grid">
-                            ${urlPaths.slice(0, 5).map(path => `
+                            ${urlPaths.map(path => `
                                 <div class="url-path-item ${path.url_path === 'No URL Path Recorded' ? 'no-path' : ''}">
                                     <div class="path-info">
                                         <span class="path-text">${path.url_path}</span>
@@ -4161,10 +4167,6 @@ class ThreatIntelligenceDashboard {
                                     <div class="path-domains">${path.domain_count} domains</div>
                                 </div>
                             `).join('')}
-                            ${urlPaths.length > 5 ? `<div class="more-paths">+${urlPaths.length - 5} more patterns</div>` : ''}
-                        </div>
-                        <div class="intelligence-insight">
-                            <strong><i class="fas fa-chart-bar"></i> Pattern Analysis:</strong> ${operationalPatterns.analysis}
                         </div>
                     </div>
 
@@ -4172,16 +4174,12 @@ class ThreatIntelligenceDashboard {
                     <div class="intelligence-section">
                         <h4 class="section-title"><i class="fas fa-bullseye"></i> Brand Targeting Strategy</h4>
                         <div class="brands-grid">
-                            ${brands.slice(0, 6).map(brand => `
+                            ${brands.map(brand => `
                                 <div class="brand-item">
                                     <span class="brand-name">${brand.brand}</span>
                                     <span class="brand-cases">${brand.case_count} attacks</span>
                                 </div>
                             `).join('')}
-                            ${brands.length > 6 ? `<div class="more-brands">+${brands.length - 6} more targets</div>` : ''}
-                        </div>
-                        <div class="intelligence-insight">
-                            <strong><i class="fas fa-bullseye"></i> Targeting Strategy:</strong> ${brandTargetingStrategy.analysis}
                         </div>
                     </div>
 
@@ -4198,9 +4196,6 @@ class ThreatIntelligenceDashboard {
                             <div class="reuse-metric">
                                 <strong>Geographic Focus:</strong> ${this.calculateConsistency(family.top_country)}%
                             </div>
-                        </div>
-                        <div class="intelligence-insight">
-                            <strong><i class="fas fa-sync-alt"></i> Reuse Pattern:</strong> ${this.analyzeInfrastructureReuse(family)}
                         </div>
                     </div>
                 </div>
@@ -4233,63 +4228,9 @@ class ThreatIntelligenceDashboard {
         return { level: 'LOW', description: 'Basic threat actor capabilities' };
     }
 
-    generateInfrastructureSignature(family) {
-        const components = [];
-        if (family.top_tld) components.push(`${family.top_tld} domains`);
-        if (family.top_registrar) components.push(`${family.top_registrar} registration`);
-        if (family.top_country) components.push(`${family.top_country} hosting`);
-        
-        const signature = components.join(' + ');
-        const analysis = `This family shows consistent infrastructure preferences with ${family.top_tld || 'unknown'} domains, ${family.top_registrar || 'unknown'} registrar, and ${family.top_country || 'unknown'} hosting.`;
-        const indicator = `${signature} → likely ${family.threat_family}`;
-        
-        return { signature, analysis, indicator };
-    }
-
-    analyzeBrandTargetingStrategy(brands) {
-        if (brands.length === 0) {
-            return { analysis: 'No specific brand targeting patterns identified.' };
-        }
-        
-        const techBrands = brands.filter(b => ['Google', 'Microsoft', 'Apple', 'Amazon'].includes(b.brand));
-        const financialBrands = brands.filter(b => ['PayPal', 'Bank', 'Chase', 'Wells Fargo'].includes(b.brand));
-        
-        if (techBrands.length > 0 && financialBrands.length > 0) {
-            return { analysis: 'Multi-sector targeting strategy focusing on both technology and financial services.' };
-        } else if (techBrands.length > 0) {
-            return { analysis: 'Technology-focused targeting strategy, likely credential harvesting.' };
-        } else if (financialBrands.length > 0) {
-            return { analysis: 'Financial services targeting strategy, likely banking fraud.' };
-        } else {
-            return { analysis: `Diverse targeting strategy across ${brands.length} different brands.` };
-        }
-    }
-
-    analyzeOperationalPatterns(urlPaths) {
-        const hasUrlPaths = urlPaths.filter(p => p.url_path !== 'No URL Path Recorded').length > 0;
-        const noUrlPaths = urlPaths.filter(p => p.url_path === 'No URL Path Recorded').length;
-        
-        if (!hasUrlPaths) {
-            return { analysis: 'No specific URL path patterns detected - likely using custom or varied attack methods.' };
-        } else if (noUrlPaths > 0) {
-            return { analysis: `Mixed operational approach: ${hasUrlPaths} structured URL patterns + ${noUrlPaths} cases without recorded paths.` };
-        } else {
-            return { analysis: `Structured operational approach with ${hasUrlPaths} distinct URL path patterns indicating organized attack methods.` };
-        }
-    }
-
     calculateConsistency(value) {
         // Mock calculation - in real implementation, this would analyze historical data
         return value ? Math.floor(Math.random() * 40) + 60 : 0;
-    }
-
-    analyzeInfrastructureReuse(family) {
-        const components = [];
-        if (family.top_registrar) components.push('registrar');
-        if (family.top_isp) components.push('ISP');
-        if (family.top_country) components.push('geographic location');
-        
-        return `High infrastructure reuse across ${components.join(', ')} suggesting consistent operational security practices.`;
     }
 
     formatDate(dateString) {
@@ -4407,7 +4348,6 @@ class ThreatIntelligenceDashboard {
         const actorPaths = urlPathsData
             .filter(item => item.threat_actor === actorName)
             .sort((a, b) => b.case_count - a.case_count) // Sort by case count descending
-            // Remove .slice(0, 3) to show ALL URL paths for each actor
             .map(item => ({
                 url_path: item.url_path,
                 case_count: item.case_count,
@@ -4512,7 +4452,7 @@ class ThreatIntelligenceDashboard {
             return;
         }
 
-        container.innerHTML = brands.slice(0, 10).map(brand => `
+        container.innerHTML = brands.map(brand => `
             <div class="brand-item">
                 <span class="brand-text">${brand.brand || 'Unknown Brand'}</span>
                 <span class="brand-count">${brand.count}</span>
@@ -4636,7 +4576,6 @@ class ThreatIntelligenceDashboard {
             console.error('<i class="fas fa-times-circle"></i> Error updating WHOIS attribution:', error);
         }
     }
-
     renderWHOISTable(data) {
         const tbody = document.getElementById('whoisTableBody');
         if (!tbody) {
@@ -4652,7 +4591,7 @@ class ThreatIntelligenceDashboard {
             return;
         }
 
-        tbody.innerHTML = data.slice(0, 15).map(item => `
+        tbody.innerHTML = data.map(item => `
             <tr class="whois-row">
                 <td class="whois-identifier" title="${item.registrant || 'N/A'}">
                     ${this.truncateText(item.registrant || 'N/A', 40)}
@@ -4663,12 +4602,13 @@ class ThreatIntelligenceDashboard {
                 <td class="whois-families">
                     <div class="families-list">
                         ${item.threat_families_used && item.threat_families_used !== 'None' ? (() => {
-                            // Split by comma and clean up
-                            const families = item.threat_families_used
-                                .split(',')
-                                .map(family => family.trim())
-                                .filter(family => family && family !== '')
-                                .slice(0, 4); // Show up to 4 families
+                            // Split by comma, clean up, and deduplicate
+                            const families = [...new Set(
+                                item.threat_families_used
+                                    .split(',')
+                                    .map(family => family.trim())
+                                    .filter(family => family && family !== '')
+                            )]; // Show all unique families
                             
                             return families.length > 0 
                                 ? families.map(family => `<span class="family-tag">${family}</span>`).join(' ')
@@ -4679,12 +4619,13 @@ class ThreatIntelligenceDashboard {
                 <td class="whois-actors">
                     <div class="actors-list">
                         ${item.threat_actors && item.threat_actors !== 'None' ? (() => {
-                            // Split by comma and clean up
-                            const actors = item.threat_actors
-                                .split(',')
-                                .map(actor => actor.trim())
-                                .filter(actor => actor && actor !== '')
-                                .slice(0, 4); // Show up to 4 actors
+                            // Split by comma, clean up, and deduplicate
+                            const actors = [...new Set(
+                                item.threat_actors
+                                    .split(',')
+                                    .map(actor => actor.trim())
+                                    .filter(actor => actor && actor !== '')
+                            )]; // Show all unique actors
                             
                             return actors.length > 0 
                                 ? actors.map(actor => `<span class="actor-tag">${actor}</span>`).join(' ')
@@ -4720,7 +4661,7 @@ class ThreatIntelligenceDashboard {
             return;
         }
 
-        tbody.innerHTML = data.slice(0, 20).map((item, index) => {
+        tbody.innerHTML = data.map((item, index) => {
             return `
                 <tr class="attributed-case-row" data-case="${item.case_number}">
                     <td class="case-number">
@@ -4978,7 +4919,7 @@ class ThreatIntelligenceDashboard {
                         <p>Size indicates relative threat volume</p>
                     </div>
                     <div class="country-bubbles">
-                        ${data.countries.slice(0, 8).map(country => {
+                        ${data.countries.map(country => {
                             const size = Math.max(30, (country.count / maxCases) * 100);
                             return `
                                 <div class="country-bubble" style="width: ${size}px; height: ${size}px;" title="${country.country}: ${country.count} cases">
@@ -5061,10 +5002,10 @@ class ThreatIntelligenceDashboard {
 
         // Create advanced provider analysis chart
         const chartData = {
-            labels: data.providers.slice(0, 8).map(p => this.truncateText(p.isp, 15)),
+            labels: data.providers.map(p => this.truncateText(p.isp, 15)),
             datasets: [{
                 label: 'Infrastructure Cases',
-                data: data.providers.slice(0, 8).map(p => p.count),
+                data: data.providers.map(p => p.count),
                 backgroundColor: [
                     'rgba(239, 68, 68, 0.8)',
                     'rgba(245, 158, 11, 0.8)',
@@ -5178,10 +5119,10 @@ class ThreatIntelligenceDashboard {
 
         // Create advanced TLD analysis chart
         const chartData = {
-            labels: data.tlds.slice(0, 8).map(tld => `.${tld.tld}`),
+            labels: data.tlds.map(tld => `.${tld.tld}`),
             datasets: [{
                 label: 'TLD Abuse Cases',
-                data: data.tlds.slice(0, 8).map(tld => tld.count),
+                data: data.tlds.map(tld => tld.count),
                 backgroundColor: [
                     'rgba(239, 68, 68, 0.8)',
                     'rgba(245, 158, 11, 0.8)',
@@ -5239,130 +5180,6 @@ class ThreatIntelligenceDashboard {
                                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
                                 const percentage = ((context.parsed / total) * 100).toFixed(1);
                                 return `Cases: ${context.parsed} (${percentage}%)`;
-                            }
-                        }
-                    }
-                },
-                animation: {
-                    duration: 2000,
-                    easing: 'easeInOutQuart'
-                }
-            }
-        });
-    }
-
-    renderInfrastructureTimeline(data) {
-        // Render infrastructure evolution timeline
-        const ctx = document.getElementById('infrastructureTimelineChart');
-        if (!ctx) return;
-
-        // Destroy existing chart
-        if (this.charts['infrastructureTimelineChart']) {
-            this.charts['infrastructureTimelineChart'].destroy();
-        }
-
-        // Generate timeline data (simplified for demo)
-        const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const timelineData = days.map((day, index) => ({
-            day: day,
-            infrastructure: Math.floor(Math.random() * 20) + 5,
-            threats: Math.floor(Math.random() * 15) + 3
-        }));
-
-        const peakDay = timelineData.reduce((max, day) => day.infrastructure > max.infrastructure ? day : max, timelineData[0]);
-        const growthRate = timelineData[0].infrastructure > 0 ? 
-            ((timelineData[timelineData.length - 1].infrastructure - timelineData[0].infrastructure) / timelineData[0].infrastructure * 100).toFixed(1) : 
-            '0';
-
-        const peakDateElement = document.getElementById('peakInfrastructureDate');
-        const growthRateElement = document.getElementById('infrastructureGrowthRate');
-        
-        if (peakDateElement) peakDateElement.textContent = `${peakDay.day} (${peakDay.infrastructure} points)`;
-        if (growthRateElement) growthRateElement.textContent = `${growthRate}%`;
-
-        // Create timeline chart
-        this.charts['infrastructureTimelineChart'] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: timelineData.map(d => d.day),
-                datasets: [
-                    {
-                        label: 'Infrastructure Points',
-                        data: timelineData.map(d => d.infrastructure),
-                        borderColor: 'rgba(78, 205, 196, 1)',
-                        backgroundColor: 'rgba(78, 205, 196, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: 'rgba(78, 205, 196, 1)',
-                        pointBorderColor: 'white',
-                        pointBorderWidth: 2,
-                        pointRadius: 6,
-                        pointHoverRadius: 8
-                    },
-                    {
-                        label: 'Threat Activity',
-                        data: timelineData.map(d => d.threats),
-                        borderColor: 'rgba(239, 68, 68, 1)',
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: 'rgba(239, 68, 68, 1)',
-                        pointBorderColor: 'white',
-                        pointBorderWidth: 2,
-                        pointRadius: 6,
-                        pointHoverRadius: 8
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: {
-                            usePointStyle: true,
-                            padding: 20,
-                            font: {
-                                size: 12,
-                                weight: '600'
-                            }
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: 'white',
-                        bodyColor: 'white',
-                        borderColor: '#4ECDC4',
-                        borderWidth: 1,
-                        cornerRadius: 8,
-                        mode: 'index',
-                        intersect: false
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.1)'
-                        },
-                        ticks: {
-                            color: '#64748b',
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            color: '#64748b',
-                            font: {
-                                size: 12
                             }
                         }
                     }
@@ -5548,7 +5365,6 @@ class ThreatIntelligenceDashboard {
         if (count >= 5) return 'medium';
         return 'low';
     }
-
     populateInfrastructureDropdowns(actorData, familyData) {
         const actorSelect = document.getElementById('infrastructureActorSelect');
         const familySelect = document.getElementById('infrastructureFamilySelect');
@@ -5569,10 +5385,20 @@ class ThreatIntelligenceDashboard {
         
         // Populate family dropdown
         if (familyData && familyData.length > 0) {
+            // Extract unique threat families, handling different possible field names
+            const uniqueFamilies = new Set();
             familyData.forEach(family => {
+                const familyName = family.threat_family || family.family || family.name;
+                if (familyName && familyName.trim() !== '') {
+                    uniqueFamilies.add(familyName.trim());
+                }
+            });
+            
+            // Sort families alphabetically and add to dropdown
+            Array.from(uniqueFamilies).sort().forEach(familyName => {
                 const option = document.createElement('option');
-                option.value = family.family || family.name;
-                option.textContent = family.family || family.name;
+                option.value = familyName;
+                option.textContent = familyName;
                 familySelect.appendChild(option);
             });
         }
@@ -5987,7 +5813,7 @@ class SocialExecutiveDashboard {
             return;
         }
 
-        tbody.innerHTML = data.slice(0, 20).map(item => `
+        tbody.innerHTML = data.map(item => `
             <tr>
                 <td><span class="executive-name">${item.executive_name || 'N/A'}</span></td>
                 <td><span class="executive-title">${item.title || 'N/A'}</span></td>
@@ -6043,7 +5869,7 @@ class SocialExecutiveDashboard {
             return;
         }
 
-        tbody.innerHTML = data.slice(0, 20).map(item => `
+        tbody.innerHTML = data.map(item => `
             <tr>
                 <td><span class="company-name">${item.company_name || 'N/A'}</span></td>
                 <td><span class="industry">${item.industry || 'N/A'}</span></td>
@@ -6304,7 +6130,6 @@ class SocialExecutiveDashboard {
             }
         });
     }
-
     renderTrendForecastChart(data) {
         const ctx = document.getElementById('socialTrendsChart');
         if (!ctx) return;
@@ -6912,7 +6737,7 @@ class SocialExecutiveDashboard {
             if (threatData && !threatData.error && threatData.length > 0) {
                 this.renderThreatTypeChart(threatData);
                 if (chartCanvas) chartCanvas.style.display = 'block';
-                if (centerInfo) centerInfo.style.display = 'block';
+                if (centerInfo) centerInfo.style.display = 'none';
                 if (noDataMessage) noDataMessage.style.display = 'none';
             } else {
                 if (chartCanvas) chartCanvas.style.display = 'none';
@@ -7016,7 +6841,6 @@ class SocialExecutiveDashboard {
             `;
         }).join('');
     }
-
     renderThreatTypeChart(data) {
         const ctx = document.getElementById('threatTypeChart');
         if (!ctx) return;
@@ -7047,16 +6871,10 @@ class SocialExecutiveDashboard {
         const values = sortedData.map(([,value]) => value);
         const total = values.reduce((sum, val) => sum + val, 0);
         
-        // Show the center info container and update just the number
+        // Hide the HTML center info since we're drawing directly on canvas
         const centerInfoContainer = document.getElementById('threatTypeCenterInfo');
-        const centerValue = document.getElementById('threatTypeTotal');
-        
         if (centerInfoContainer) {
-            centerInfoContainer.style.display = 'block';
-        }
-        
-        if (centerValue) {
-            centerValue.textContent = total.toLocaleString();
+            centerInfoContainer.style.display = 'none';
         }
     
         // Show canvas, hide loading
@@ -7174,6 +6992,19 @@ class SocialExecutiveDashboard {
                                 return ` ${value.toLocaleString()} cases (${percentage}%)`;
                             }
                         }
+                    },
+                    // Center text plugin - draws text directly on canvas, automatically centered
+                    centerText: {
+                        display: true,
+                        text: total.toLocaleString(),
+                        subtext: 'TOTAL CASES',
+                        fontSize: 36,
+                        subFontSize: 13,
+                        fontFamily: "system-ui, -apple-system, sans-serif",
+                        fontColor: '#1E293B',
+                        subFontColor: '#64748B',
+                        fontWeight: 'bold',
+                        subFontWeight: '500'
                     }
                 },
                 animation: {
@@ -7186,7 +7017,33 @@ class SocialExecutiveDashboard {
                     intersect: false,
                     mode: 'nearest'
                 }
-            }
+            },
+            plugins: [{
+                id: 'centerTextPlugin',
+                afterDraw: (chart) => {
+                    const centerTextPlugin = chart.options.plugins.centerText;
+                    if (!centerTextPlugin || !centerTextPlugin.display) return;
+                    
+                    const ctx = chart.ctx;
+                    const chartArea = chart.chartArea;
+                    const centerX = (chartArea.left + chartArea.right) / 2;
+                    const centerY = (chartArea.top + chartArea.bottom) / 2;
+                    
+                    // Draw main text (total cases)
+                    ctx.save();
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = `${centerTextPlugin.fontWeight || 'bold'} ${centerTextPlugin.fontSize || 36}px ${centerTextPlugin.fontFamily || 'system-ui, -apple-system, sans-serif'}`;
+                    ctx.fillStyle = centerTextPlugin.fontColor || '#1E293B';
+                    ctx.fillText(centerTextPlugin.text || '0', centerX, centerY - 8);
+                    
+                    // Draw subtext (label)
+                    ctx.font = `${centerTextPlugin.subFontWeight || '500'} ${centerTextPlugin.subFontSize || 13}px ${centerTextPlugin.fontFamily || 'system-ui, -apple-system, sans-serif'}`;
+                    ctx.fillStyle = centerTextPlugin.subFontColor || '#64748B';
+                    ctx.fillText(centerTextPlugin.subtext || 'TOTAL CASES', centerX, centerY + 16);
+                    ctx.restore();
+                }
+            }]
         });
     }
     
@@ -7566,23 +7423,19 @@ class SocialExecutiveDashboard {
     }
 
     updateSLAMetrics(slaData, casesData) {
-        // Count cases by SLA status from the cases data
-        let greenCount = 0, amberCount = 0, redCount = 0;
-        
-        if (Array.isArray(casesData)) {
-            casesData.forEach(item => {
-                if (item.sla_status === 'excellent') greenCount++;
-                else if (item.sla_status === 'good') amberCount++;
-                else redCount++;
-            });
-        }
+        // Use counts directly from slaData (day-based thresholds: Within SLA 1-14 days, At Risk 15-28 days, Breached >28 days)
+        const greenCount = slaData.sla_within_sla || 0;
+        const amberCount = slaData.sla_at_risk || 0;
+        const redCount = slaData.sla_breached || 0;
         
         console.log('SLA Metrics Data:', {
-            totalCases: casesData ? casesData.length : 0,
+            totalCases: slaData.total_cases || 0,
             greenCount,
             amberCount,
             redCount,
-            casesDataSample: casesData ? casesData.slice(0, 3) : null
+            withinSlaPct: slaData.within_sla_pct || 0,
+            atRiskPct: slaData.at_risk_pct || 0,
+            breachedPct: slaData.breached_pct || 0
         });
         
         // Update the metric counts
@@ -7604,16 +7457,17 @@ class SocialExecutiveDashboard {
             this.socialSlaComplianceChart.destroy();
         }
 
-        // Calculate counts from percentages
+        // Use counts directly from slaData (day-based thresholds: Within SLA 1-14 days, At Risk 15-28 days, Breached >28 days)
         const totalCases = slaData.total_cases || 0;
-        const greenCount = Math.round((slaData.sla_24hr || 0) * totalCases / 100);
-        const amberCount = Math.round(((slaData.sla_48hr || 0) - (slaData.sla_24hr || 0)) * totalCases / 100);
-        const redCount = totalCases - greenCount - amberCount;
+        const greenCount = slaData.sla_within_sla || 0;
+        const amberCount = slaData.sla_at_risk || 0;
+        const redCount = slaData.sla_breached || 0;
         
         console.log('SLA Chart Data:', {
             totalCases,
-            sla_24hr: slaData.sla_24hr,
-            sla_48hr: slaData.sla_48hr,
+            withinSla: slaData.sla_within_sla,
+            atRisk: slaData.sla_at_risk,
+            breached: slaData.sla_breached,
             greenCount,
             amberCount,
             redCount
@@ -7681,8 +7535,7 @@ class SocialExecutiveDashboard {
             }]
         });
     }
-
-
+    
     renderSLATable(casesData) {
         const tbody = document.getElementById('socialSlaTableBody');
         if (!tbody) return;
@@ -7692,12 +7545,12 @@ class SocialExecutiveDashboard {
             return;
         }
 
-        // Sort cases by SLA status: Red first, then Amber, then Green
+        // Sort cases by SLA status: Breached first, then At Risk, then Within SLA
         const sortedCases = casesData.sort((a, b) => {
             const getPriority = (status) => {
-                if (status === 'excellent') return 3; // Green - lowest priority
-                if (status === 'good') return 2; // Amber - medium priority
-                return 1; // Red - highest priority
+                if (status === 'within_sla') return 3; // Green - lowest priority
+                if (status === 'at_risk') return 2; // Amber - medium priority
+                return 1; // Breached - highest priority
             };
             return getPriority(a.sla_status) - getPriority(b.sla_status);
         });
@@ -7713,15 +7566,15 @@ class SocialExecutiveDashboard {
             });
 
             let statusClass, statusText;
-            if (item.sla_status === 'excellent') {
+            if (item.sla_status === 'within_sla') {
                 statusClass = 'green';
-                statusText = 'GREEN';
-            } else if (item.sla_status === 'good') {
+                statusText = 'Within SLA';
+            } else if (item.sla_status === 'at_risk') {
                 statusClass = 'amber';
-                statusText = 'AMBER';
+                statusText = 'At Risk';
             } else {
                 statusClass = 'red';
-                statusText = 'RED';
+                statusText = 'Breached';
             }
 
             return '<tr>' +
@@ -7781,7 +7634,6 @@ class SocialExecutiveDashboard {
         if (this.impersonationChart) this.impersonationChart.destroy();
     }
 }
-
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -7983,10 +7835,9 @@ function initializeEventListeners() {
         dateFilter.addEventListener('change', handleDateFilterChange);
     }
     
-    const startDate = document.getElementById('startDate');
-    const endDate = document.getElementById('endDate');
-    if (startDate) startDate.addEventListener('change', refreshData);
-    if (endDate) endDate.addEventListener('change', refreshData);
+    // Note: startDate and endDate should NOT auto-refresh
+    // They only apply when the Apply button is clicked
+    // Removed auto-refresh event listeners for custom date inputs
 }
 
 function getFilterParams() {
@@ -8533,7 +8384,6 @@ function filterSLAForCopy(clone) {
     // Keep header counts and donut chart unchanged - they show the complete picture
     // Only the table rows are filtered to show Red and Amber cases only
 }
-
 // ENHANCED EMAIL-READY HTML COPY FUNCTIONALITY
 function copyChartAsHTML(chartElement, chartTitle) {
     try {
@@ -9196,7 +9046,6 @@ function applyInlineStyles(cloneElement, originalElement) {
         }
     });
 }
-
 // Apply Outlook-specific compatibility fixes
 function applyOutlookCompatibilityFixes(cloneElement) {
     // Ensure all elements have proper font family for Outlook
