@@ -11,7 +11,8 @@ class DataQualityDashboard {
         this.data = {
             falseClosures: [],
             duplicates: [],
-            missingParams: []
+            missingParams: [],
+            missingFieldsExternal: { cases: [], summary: {} }
         };
         this.filters = {
             falseClosures: {},
@@ -103,6 +104,13 @@ class DataQualityDashboard {
         return params.toString();
     }
 
+    getDateParamsObject() {
+        if (this.dateFilter === 'custom' && this.startDate && this.endDate) {
+            return { date_filter: 'custom', start_date: this.startDate, end_date: this.endDate };
+        }
+        return { date_filter: this.dateFilter, start_date: null, end_date: null };
+    }
+
     handleDateChange() {
         this.dateFilter = document.getElementById('dateFilter').value;
         const customRange = document.getElementById('customDateRange');
@@ -111,6 +119,8 @@ class DataQualityDashboard {
             customRange.style.display = 'flex';
         } else {
             customRange.style.display = 'none';
+            // Update external tab summary to reflect the new selection
+            this.updateExternalDateSummary();
             this.loadAllData();
         }
     }
@@ -123,8 +133,35 @@ class DataQualityDashboard {
             this.showNotification('Please select both start and end dates', 'warning');
             return;
         }
+        // Update external tab summary to reflect the custom range
+        this.updateExternalDateSummary();
         
         this.loadAllData();
+    }
+
+    getDateFilterLabel() {
+        const map = {
+            'all': 'All Time',
+            'today': 'Today',
+            'yesterday': 'Yesterday',
+            'week': 'Last 7 Days',
+            'month': 'Last 30 Days',
+            'this_month': 'This Month',
+            'last_month': 'Last Month'
+        };
+        if (this.dateFilter === 'custom' && this.startDate && this.endDate) {
+            return `${this.startDate} → ${this.endDate}`;
+        }
+        return map[this.dateFilter] || this.dateFilter.replace('_', ' ');
+    }
+
+    // Keep the external tab date summary in sync with the main toolbar selection
+    updateExternalDateSummary() {
+        const summaryEl = document.getElementById('externalDateSummary');
+        if (!summaryEl) return;
+        const valueEl = summaryEl.querySelector('.value');
+        if (!valueEl) return;
+        valueEl.textContent = this.getDateFilterLabel();
     }
 
     // ============================== TAB SWITCHING ==============================
@@ -139,7 +176,8 @@ class DataQualityDashboard {
         const tabMap = {
             'false-closures': 0,
             'duplicates': 1,
-            'missing-params': 2
+            'missing-params': 2,
+            'missing-fields-external': 3
         };
         
         const tabs = document.querySelectorAll('.quality-tab');
@@ -148,7 +186,17 @@ class DataQualityDashboard {
         if (tabs[tabMap[tabName]]) tabs[tabMap[tabName]].classList.add('active');
         if (contents[tabMap[tabName]]) contents[tabMap[tabName]].classList.add('active');
         
+        if (tabName === 'missing-fields-external') {
+            this.updateExternalDateSummary();
+        }
+        
         this.renderCurrentTab();
+    }
+
+    triggerExternalFetch() {
+        // Ensure summary is up to date before fetching
+        this.updateExternalDateSummary();
+        this.loadMissingFieldsExternal();
     }
 
     // ============================== RENDER CURRENT TAB ==============================
@@ -162,6 +210,9 @@ class DataQualityDashboard {
                 break;
             case 'missing-params':
                 this.renderMissingParams();
+                break;
+            case 'missing-fields-external':
+                this.renderMissingFieldsExternal(this.data.missingFieldsExternal || { cases: [], summary: {} });
                 break;
         }
     }
@@ -408,6 +459,83 @@ class DataQualityDashboard {
             return '<span class="missing-field"><i class="fas fa-times"></i> Missing</span>';
         }
         return '<span class="present-field"><i class="fas fa-check"></i></span>';
+    }
+
+    async loadMissingFieldsExternal() {
+        try {
+            const payload = this.getDateParamsObject();
+            const res = await fetch('/api/data-quality/missing-fields-external', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            this.data.missingFieldsExternal = data || { cases: [], summary: {} };
+            const badge = document.getElementById('missingFieldsExternalBadge');
+            if (badge) badge.textContent = (this.data.missingFieldsExternal.cases || []).length;
+            if (this.currentTab === 'missing-fields-external') {
+                this.renderMissingFieldsExternal(this.data.missingFieldsExternal);
+            }
+        } catch (e) {
+            console.error('Error loading external missing fields:', e);
+            this.data.missingFieldsExternal = { cases: [], summary: {} };
+            const badge = document.getElementById('missingFieldsExternalBadge');
+            if (badge) badge.textContent = 0;
+        }
+    }
+
+    renderMissingFieldsExternal(report) {
+        const container = document.getElementById('missingFieldsExternalContent');
+        if (!container) return;
+        const cases = report?.cases || [];
+        const summary = report?.summary || { totalCasesAnalyzed: 0, casesWithMissingFields: 0, casesComplete: 0 };
+        
+        // Always render top controls inside the section so Apply is visible
+        const controls = `
+            <div class="dq-subtoolbar">
+                <span class="date-summary">Time window: <strong>${this.getDateFilterLabel()}</strong></span>
+                <button class="export-btn" onclick="dataQuality.triggerExternalFetch()"><i class="fas fa-play"></i> Apply</button>
+                <button class="export-btn" onclick="dataQuality.exportTable('missing-fields-external')"><i class="fas fa-download"></i> Export CSV</button>
+            </div>`;
+        
+        if (cases.length === 0) {
+            container.innerHTML = controls + this.renderNoData('No missing fields found for selected range');
+            return;
+        }
+        const header = `
+            <div class="dq-summary">
+                <div>Total analyzed: ${summary.totalCasesAnalyzed}</div>
+                <div>With missing: ${summary.casesWithMissingFields}</div>
+                <div>Complete: ${summary.casesComplete}</div>
+            </div>`;
+        const rows = cases.map(c => `
+            <tr>
+                <td>${c.caseNumber}</td>
+                <td>${c.brand}</td>
+                <td>${c.caseStatus}</td>
+                <td>${c.dateCreated}</td>
+                <td>${c.totalAttackSources}</td>
+                <td>${c.totalAssociatedURLs}</td>
+                <td>${c.missingFieldsList}</td>
+            </tr>
+        `).join('');
+        container.innerHTML = controls + header + `
+            <div class="quality-table-wrapper">
+                <table class="quality-table">
+                    <thead>
+                        <tr>
+                            <th>Case Number</th>
+                            <th>Brand</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Attack Sources</th>
+                            <th>Associated URLs</th>
+                            <th>Missing Fields</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
     }
 
     async fetchData(endpoint) {
@@ -1215,6 +1343,15 @@ class DataQualityDashboard {
                 rows = data.map(row => [
                     row.case_number, row.case_type, row.date_created_local, row.missing_count, row.url, row.url_path,
                     row.fqdn, row.tld, row.ip_address, row.host_isp, row.as_number
+                ]);
+                break;
+                
+            case 'missing-fields-external':
+                data = (this.data.missingFieldsExternal && this.data.missingFieldsExternal.cases) || [];
+                filename = `missing_fields_external_${new Date().toISOString().split('T')[0]}.csv`;
+                headers = ['Case Number', 'Brand', 'Status', 'Created', 'Attack Sources', 'Associated URLs', 'Missing Fields'];
+                rows = data.map(c => [
+                    c.caseNumber, c.brand, c.caseStatus, c.dateCreated, c.totalAttackSources, c.totalAssociatedURLs, c.missingFieldsList
                 ]);
                 break;
                 
