@@ -7,6 +7,7 @@ Comprehensive threat intelligence analysis with campaign tracking
 import pyodbc
 import logging
 from flask import Flask, render_template, jsonify, request
+from missing_fields_analyzer import analyze_missing_fields
 import json
 from datetime import datetime, timedelta
 import os
@@ -828,9 +829,16 @@ class ThreatDashboard:
             return []
 
     def get_comprehensive_threat_family_intelligence(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
-        """Get comprehensive threat family intelligence including WHOIS, URL paths, and brand targeting"""
+        """Get comprehensive threat family intelligence including WHOIS, URL paths, and brand targeting
+        
+        NOTE: This function returns ALL-TIME data regardless of date_filter parameters.
+        This is intentional as Threat Family Intelligence should show comprehensive historical insights.
+        """
         try:
-            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            # Always use all-time data (no date filtering) for comprehensive threat family intelligence
+            # This provides top-level intelligence insights, not time-window-limited data
+            date_condition = "1=1"  # No date filtering - show all historical data
+            logger.info(f"Comprehensive Threat Family Intelligence - Using ALL-TIME data (date filter ignored for intelligence insights)")
             
             # Main threat family intelligence query
             family_query = f"""
@@ -845,38 +853,46 @@ class ThreatDashboard:
                 (SELECT TOP 1 u2.tld FROM phishlabs_case_data_associated_urls u2 
                  JOIN phishlabs_case_data_incidents i2 ON u2.case_number = i2.case_number
                  JOIN phishlabs_case_data_notes n2 ON i2.case_number = n2.case_number
-                 WHERE n2.threat_family = n.threat_family AND {date_condition.replace('i.', 'i2.')}                 GROUP BY u2.tld ORDER BY COUNT(*) DESC) as top_tld,
+                 WHERE n2.threat_family = n.threat_family
+                 GROUP BY u2.tld ORDER BY COUNT(*) DESC) as top_tld,
                 (SELECT TOP 1 u3.host_country FROM phishlabs_case_data_associated_urls u3 
                  JOIN phishlabs_case_data_incidents i3 ON u3.case_number = i3.case_number
                  JOIN phishlabs_case_data_notes n3 ON i3.case_number = n3.case_number
-                 WHERE n3.threat_family = n.threat_family AND {date_condition.replace('i.', 'i3.')}                 GROUP BY u3.host_country ORDER BY COUNT(*) DESC) as top_country,
+                 WHERE n3.threat_family = n.threat_family
+                 GROUP BY u3.host_country ORDER BY COUNT(*) DESC) as top_country,
                 (SELECT TOP 1 u4.host_isp FROM phishlabs_case_data_associated_urls u4 
                  JOIN phishlabs_case_data_incidents i4 ON u4.case_number = i4.case_number
                  JOIN phishlabs_case_data_notes n4 ON i4.case_number = n4.case_number
-                 WHERE n4.threat_family = n.threat_family AND {date_condition.replace('i.', 'i4.')}                 GROUP BY u4.host_isp ORDER BY COUNT(*) DESC) as top_isp,
+                 WHERE n4.threat_family = n.threat_family
+                 GROUP BY u4.host_isp ORDER BY COUNT(*) DESC) as top_isp,
                 (SELECT TOP 1 r.name FROM phishlabs_iana_registry r
                  JOIN phishlabs_case_data_incidents i5 ON r.iana_id = i5.iana_id
                  JOIN phishlabs_case_data_notes n5 ON i5.case_number = n5.case_number
-                 WHERE n5.threat_family = n.threat_family AND {date_condition.replace('i.', 'i5.')}                 GROUP BY r.name ORDER BY COUNT(*) DESC) as top_registrar,
+                 WHERE n5.threat_family = n.threat_family
+                 GROUP BY r.name ORDER BY COUNT(*) DESC) as top_registrar,
                 -- WHOIS intelligence
                 (SELECT TOP 1 n6.flagged_whois_email FROM phishlabs_case_data_notes n6 
                  JOIN phishlabs_case_data_incidents i6 ON n6.case_number = i6.case_number
-                 WHERE n6.threat_family = n.threat_family AND {date_condition.replace('i.', 'i6.')}                 AND n6.flagged_whois_email IS NOT NULL AND n6.flagged_whois_email != ''
+                 WHERE n6.threat_family = n.threat_family
+                 AND n6.flagged_whois_email IS NOT NULL AND n6.flagged_whois_email != ''
                  GROUP BY n6.flagged_whois_email ORDER BY COUNT(*) DESC) as top_whois_email,
                 (SELECT TOP 1 n7.flagged_whois_name FROM phishlabs_case_data_notes n7 
                  JOIN phishlabs_case_data_incidents i7 ON n7.case_number = i7.case_number
-                 WHERE n7.threat_family = n.threat_family AND {date_condition.replace('i.', 'i7.')}                 AND n7.flagged_whois_name IS NOT NULL AND n7.flagged_whois_name != ''
+                 WHERE n7.threat_family = n.threat_family
+                 AND n7.flagged_whois_name IS NOT NULL AND n7.flagged_whois_name != ''
                  GROUP BY n7.flagged_whois_name ORDER BY COUNT(*) DESC) as top_whois_name
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family
             HAVING COUNT(DISTINCT i.case_number) >= 1
             ORDER BY COUNT(DISTINCT i.case_number) DESC
             """
             
+            logger.info(f"Executing comprehensive threat family query (ALL-TIME data, no date filtering)")
             families_data = self.execute_query(family_query)
+            logger.info(f"Comprehensive threat family query returned {len(families_data) if families_data and not isinstance(families_data, dict) else 0} families (ALL-TIME data)")
             
             # Get URL path patterns for each family
             url_paths_query = f"""
@@ -888,14 +904,14 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE n.threat_family IS NOT NULL AND n.threat_family != ''
             GROUP BY n.threat_family, u.url_path
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
             """
             
             url_paths_data = self.execute_query(url_paths_query)
             
-            # Get brand targeting for each family
+            # Get brand targeting for each family (all-time data)
             brand_query = f"""
             SELECT 
                 n.threat_family,
@@ -906,13 +922,17 @@ class ThreatDashboard:
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND n.threat_family IS NOT NULL AND n.threat_family != ''
+            WHERE n.threat_family IS NOT NULL AND n.threat_family != ''
             AND i.brand IS NOT NULL AND i.brand != ''
             GROUP BY n.threat_family, i.brand
             ORDER BY n.threat_family, COUNT(DISTINCT i.case_number) DESC
             """
             
             brand_data = self.execute_query(brand_query)
+            
+            logger.info(f"Comprehensive Threat Family Intelligence Results - Families: {len(families_data) if families_data and not isinstance(families_data, dict) else 0}, "
+                       f"URL Paths: {len(url_paths_data) if url_paths_data and not isinstance(url_paths_data, dict) else 0}, "
+                       f"Brands: {len(brand_data) if brand_data and not isinstance(brand_data, dict) else 0}")
             
             return {
                 "families": families_data,
@@ -2464,12 +2484,14 @@ class ThreatDashboard:
             }
 
     def get_resolution_performance(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
-        """Get resolution performance with median takedown time for Cred Theft and Social Media"""
+        """Get resolution performance with median takedown time for Cred Theft cases closed in time window"""
         try:
-            date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            # Filter by date_closed_local (cases closed in the selected time window)
+            closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
             campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             # Cred Theft Cases (from phishlabs_case_data_incidents)
+            # Only show cases that were CLOSED within the selected time window
             cred_theft_query = f"""
             SELECT 
                 i.case_type,
@@ -2477,7 +2499,7 @@ class ThreatDashboard:
                 COUNT(*) as total_cases,
                 COUNT(CASE WHEN i.date_closed_local IS NOT NULL THEN 1 END) as closed_cases
             FROM phishlabs_case_data_incidents i
-            WHERE {date_condition} AND i.date_closed_local IS NOT NULL
+            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL AND i.date_created_local IS NOT NULL
             GROUP BY i.case_type
             ORDER BY avg_resolution_hours DESC
             """
@@ -2486,27 +2508,9 @@ class ThreatDashboard:
             if isinstance(cred_theft, dict) and 'error' in cred_theft:
                 cred_theft = []
             
-            # Social Media Cases (from phishlabs_incident)
-            social_media_query = f"""
-            SELECT 
-                s.threat_type as case_type,
-                AVG(DATEDIFF(hour, s.created_local, s.closed_local)) as avg_resolution_hours,
-                COUNT(*) as total_cases,
-                COUNT(CASE WHEN s.closed_local IS NOT NULL THEN 1 END) as closed_cases
-            FROM phishlabs_incident s
-            WHERE {self.get_date_filter_condition(date_filter, start_date, end_date, "s.created_local")} 
-            AND s.closed_local IS NOT NULL
-            GROUP BY s.threat_type
-            ORDER BY avg_resolution_hours DESC
-            """
-            
-            social_media = self.execute_query(social_media_query)
-            if isinstance(social_media, dict) and 'error' in social_media:
-                social_media = []
-            
+            # Only return Cred Theft data (Social Media removed per requirements)
             return {
-                'cred_theft': cred_theft or [],
-                'social_media': social_media or []
+                'cred_theft': cred_theft or []
             }
             
         except Exception as e:
@@ -3054,36 +3058,59 @@ class ThreatDashboard:
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             
-            
             # Proper WHOIS attribution query that joins with incidents for date filtering
-            # Query for WHOIS names only
+            # Query for WHOIS names only - using subqueries to get distinct threat families and actors
             whois_name_query = f"""
             SELECT 
                 n.flagged_whois_name,
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                STRING_AGG(CAST(n.threat_family AS VARCHAR(MAX)), ', ') as threat_families,
-                STRING_AGG(CAST(th.name AS VARCHAR(MAX)), ', ') as threat_actors
+                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n3.flagged_whois_name, n3.threat_family
+                       FROM phishlabs_case_data_notes n3
+                       JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
+                       WHERE {date_condition.replace('i.', 'i3.')}
+                       AND n3.flagged_whois_name = n.flagged_whois_name
+                       AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
+                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n4.flagged_whois_name, th4.name
+                       FROM phishlabs_case_data_notes n4
+                       JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
+                       LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
+                       WHERE {date_condition.replace('i.', 'i4.')}
+                       AND n4.flagged_whois_name = n.flagged_whois_name
+                       AND th4.name IS NOT NULL AND th4.name != '') th2) as threat_actors
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
-            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             WHERE {date_condition}
             AND n.flagged_whois_name IS NOT NULL AND n.flagged_whois_name != ''
             GROUP BY n.flagged_whois_name
             HAVING COUNT(DISTINCT i.case_number) >= 1
             """
             
-            # Query for WHOIS emails only
+            # Query for WHOIS emails only - using subqueries to get distinct threat families and actors
             whois_email_query = f"""
             SELECT 
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_name,
                 n.flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                STRING_AGG(CAST(n.threat_family AS VARCHAR(MAX)), ', ') as threat_families,
-                STRING_AGG(CAST(th.name AS VARCHAR(MAX)), ', ') as threat_actors
+                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n3.flagged_whois_email, n3.threat_family
+                       FROM phishlabs_case_data_notes n3
+                       JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
+                       WHERE {date_condition.replace('i.', 'i3.')}
+                       AND n3.flagged_whois_email = n.flagged_whois_email
+                       AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
+                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n4.flagged_whois_email, th4.name
+                       FROM phishlabs_case_data_notes n4
+                       JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
+                       LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
+                       WHERE {date_condition.replace('i.', 'i4.')}
+                       AND n4.flagged_whois_email = n.flagged_whois_email
+                       AND th4.name IS NOT NULL AND th4.name != '') th2) as threat_actors
             FROM phishlabs_case_data_notes n
             JOIN phishlabs_case_data_incidents i ON n.case_number = i.case_number
-            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             WHERE {date_condition}
             AND n.flagged_whois_email IS NOT NULL AND n.flagged_whois_email != ''
             GROUP BY n.flagged_whois_email
@@ -3150,22 +3177,50 @@ class ThreatDashboard:
             campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             priority_query = f"""
-            SELECT TOP 20
+            SELECT 
                 i.case_number,
                 i.brand,
                 i.case_status,
                 i.date_created_local,
-                th.name as threat_actor,
-                n.threat_family,
-                n.flagged_whois_email,
-                n.flagged_whois_name,
-                u.domain,
-                u.host_country
+                -- Aggregate attribution pieces per case via subqueries to avoid DISTINCT limitations
+                (
+                    SELECT STRING_AGG(th2.name, ', ')
+                    FROM phishlabs_case_data_note_threatactor_handles th2
+                    WHERE th2.case_number = i.case_number AND th2.name IS NOT NULL AND th2.name != ''
+                ) as threat_actor,
+                (
+                    SELECT STRING_AGG(n2.threat_family, ', ')
+                    FROM phishlabs_case_data_notes n2
+                    WHERE n2.case_number = i.case_number AND n2.threat_family IS NOT NULL AND n2.threat_family != ''
+                ) as threat_family,
+                (
+                    SELECT STRING_AGG(n3.flagged_whois_email, ', ')
+                    FROM phishlabs_case_data_notes n3
+                    WHERE n3.case_number = i.case_number AND n3.flagged_whois_email IS NOT NULL AND n3.flagged_whois_email != ''
+                ) as flagged_whois_email,
+                (
+                    SELECT STRING_AGG(n4.flagged_whois_name, ', ')
+                    FROM phishlabs_case_data_notes n4
+                    WHERE n4.case_number = i.case_number AND n4.flagged_whois_name IS NOT NULL AND n4.flagged_whois_name != ''
+                ) as flagged_whois_name,
+                (
+                    SELECT TOP 1 u2.domain
+                    FROM phishlabs_case_data_associated_urls u2
+                    WHERE u2.case_number = i.case_number AND u2.domain IS NOT NULL AND u2.domain != ''
+                    ORDER BY LEN(u2.domain) DESC
+                ) as domain,
+                (
+                    SELECT STRING_AGG(u3.host_country, ', ')
+                    FROM phishlabs_case_data_associated_urls u3
+                    WHERE u3.case_number = i.case_number AND u3.host_country IS NOT NULL AND u3.host_country != ''
+                ) as host_country
             FROM phishlabs_case_data_incidents i
-            LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
-            WHERE {date_condition} AND (th.name IS NOT NULL OR n.threat_family IS NOT NULL OR n.flagged_whois_email IS NOT NULL OR n.flagged_whois_name IS NOT NULL)
+            WHERE {date_condition}
+              AND (
+                  EXISTS (SELECT 1 FROM phishlabs_case_data_note_threatactor_handles thx WHERE thx.case_number = i.case_number AND thx.name IS NOT NULL AND thx.name != '')
+               OR EXISTS (SELECT 1 FROM phishlabs_case_data_notes nx WHERE nx.case_number = i.case_number AND nx.threat_family IS NOT NULL AND nx.threat_family != '')
+               OR EXISTS (SELECT 1 FROM phishlabs_case_data_notes ny WHERE ny.case_number = i.case_number AND (ny.flagged_whois_email IS NOT NULL AND ny.flagged_whois_email != '' OR ny.flagged_whois_name IS NOT NULL AND ny.flagged_whois_name != ''))
+              )
             ORDER BY i.date_created_local DESC
             """
             
@@ -5820,13 +5875,16 @@ def api_social_sla_performance():
         end_date = request.args.get('end_date')
         date_conditions = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.created_local")
         
-        # Build base query
+        # Build base query with day-based SLA thresholds:
+        # Within SLA: 1-14 days
+        # At Risk: 15-28 days
+        # Breached: >28 days
         if date_conditions == "1=1":
             base_query = """
             SELECT COUNT(*) as total_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 24 THEN 1 END) as sla_24hr_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 48 THEN 1 END) as sla_48hr_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 72 THEN 1 END) as sla_72hr_cases
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 1 AND 14 THEN 1 END) as sla_within_sla,
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 15 AND 28 THEN 1 END) as sla_at_risk,
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) > 28 THEN 1 END) as sla_breached
             FROM phishlabs_incident i
             WHERE i.incident_type = 'Social Media Monitoring'
             """
@@ -5834,9 +5892,9 @@ def api_social_sla_performance():
         else:
             base_query = f"""
             SELECT COUNT(*) as total_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 24 THEN 1 END) as sla_24hr_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 48 THEN 1 END) as sla_48hr_cases,
-                   COUNT(CASE WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 72 THEN 1 END) as sla_72hr_cases
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 1 AND 14 THEN 1 END) as sla_within_sla,
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 15 AND 28 THEN 1 END) as sla_at_risk,
+                   COUNT(CASE WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) > 28 THEN 1 END) as sla_breached
             FROM phishlabs_incident i
             WHERE i.incident_type = 'Social Media Monitoring'
             AND {date_conditions}
@@ -5848,27 +5906,33 @@ def api_social_sla_performance():
         if results and not isinstance(results, dict) and len(results) > 0:
             result = results[0]
             total_cases = result.get('total_cases', 0)
-            sla_24hr_cases = result.get('sla_24hr_cases', 0)
-            sla_48hr_cases = result.get('sla_48hr_cases', 0)
-            sla_72hr_cases = result.get('sla_72hr_cases', 0)
+            sla_within_sla = result.get('sla_within_sla', 0)
+            sla_at_risk = result.get('sla_at_risk', 0)
+            sla_breached = result.get('sla_breached', 0)
             
             # Calculate percentages
-            sla_24hr = round((sla_24hr_cases / total_cases * 100), 1) if total_cases > 0 else 0
-            sla_48hr = round((sla_48hr_cases / total_cases * 100), 1) if total_cases > 0 else 0
-            sla_72hr = round((sla_72hr_cases / total_cases * 100), 1) if total_cases > 0 else 0
+            within_sla_pct = round((sla_within_sla / total_cases * 100), 1) if total_cases > 0 else 0
+            at_risk_pct = round((sla_at_risk / total_cases * 100), 1) if total_cases > 0 else 0
+            breached_pct = round((sla_breached / total_cases * 100), 1) if total_cases > 0 else 0
             
             return jsonify({
                 'total_cases': total_cases,
-                'sla_24hr': sla_24hr,
-                'sla_48hr': sla_48hr,
-                'sla_72hr': sla_72hr
+                'sla_within_sla': sla_within_sla,
+                'sla_at_risk': sla_at_risk,
+                'sla_breached': sla_breached,
+                'within_sla_pct': within_sla_pct,
+                'at_risk_pct': at_risk_pct,
+                'breached_pct': breached_pct
             })
         else:
             return jsonify({
                 'total_cases': 0,
-                'sla_24hr': 0,
-                'sla_48hr': 0,
-                'sla_72hr': 0
+                'sla_within_sla': 0,
+                'sla_at_risk': 0,
+                'sla_breached': 0,
+                'within_sla_pct': 0,
+                'at_risk_pct': 0,
+                'breached_pct': 0
             })
         
     except Exception as e:
@@ -5896,9 +5960,10 @@ def api_social_sla_cases():
                 i.closed_local,
                 DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) as age_days,
                 CASE 
-                    WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 24 THEN 'excellent'
-                    WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 48 THEN 'good'
-                    ELSE 'poor'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 1 AND 14 THEN 'within_sla'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 15 AND 28 THEN 'at_risk'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) > 28 THEN 'breached'
+                    ELSE 'within_sla'  -- Cases closed on day 0 or less than 1 day are considered within SLA
                 END as sla_status
             FROM phishlabs_incident i
             WHERE i.incident_type = 'Social Media Monitoring'
@@ -5914,9 +5979,10 @@ def api_social_sla_cases():
                 i.closed_local,
                 DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) as age_days,
                 CASE 
-                    WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 24 THEN 'excellent'
-                    WHEN DATEDIFF(hour, i.created_local, COALESCE(i.closed_local, GETDATE())) <= 48 THEN 'good'
-                    ELSE 'poor'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 1 AND 14 THEN 'within_sla'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) BETWEEN 15 AND 28 THEN 'at_risk'
+                    WHEN DATEDIFF(day, i.created_local, COALESCE(i.closed_local, GETDATE())) > 28 THEN 'breached'
+                    ELSE 'within_sla'  -- Cases closed on day 0 or less than 1 day are considered within SLA
                 END as sla_status
             FROM phishlabs_incident i
             WHERE i.incident_type = 'Social Media Monitoring'
@@ -6809,6 +6875,65 @@ def api_priority_cases():
         logger.error(f"Error in priority cases API: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/data-quality/missing-fields-external', methods=['POST'])
+def api_missing_fields_external():
+    """Analyze missing fields via external PhishLabs API (credentials via env or request)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        date_filter = data.get('date_filter', 'month')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        username = data.get('username')
+        password = data.get('password')
+        use_legacy = bool(data.get('use_legacy', False))
+
+        # Resolve dates if missing
+        if not start_date or not end_date:
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            if date_filter == 'today':
+                start_date = today.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            elif date_filter == 'yesterday':
+                y = today - timedelta(days=1)
+                start_date = y.strftime('%Y-%m-%d')
+                end_date = y.strftime('%Y-%m-%d')
+            elif date_filter == 'week':
+                start = today - timedelta(days=6)
+                start_date = start.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            elif date_filter == 'month':
+                # Last 30 days window
+                start = today - timedelta(days=29)
+                start_date = start.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            elif date_filter == 'this_month':
+                start = today.replace(day=1)
+                start_date = start.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            elif date_filter == 'last_month':
+                first_this = today.replace(day=1)
+                last_month_end = first_this - timedelta(days=1)
+                last_month_start = last_month_end.replace(day=1)
+                start_date = last_month_start.strftime('%Y-%m-%d')
+                end_date = last_month_end.strftime('%Y-%m-%d')
+            elif date_filter == 'year':
+                start = today.replace(month=1, day=1)
+                start_date = start.strftime('%Y-%m-%d')
+                end_date = today.strftime('%Y-%m-%d')
+            elif date_filter == 'all':
+                start_date = '1970-01-01'
+                end_date = today.strftime('%Y-%m-%d')
+            else:
+                start_date = (data.get('start_date') or today.strftime('%Y-%m-%d'))
+                end_date = (data.get('end_date') or today.strftime('%Y-%m-%d'))
+
+        report = analyze_missing_fields(start_date, end_date, use_legacy, username, password)
+        return jsonify(report), (200 if 'summary' in report else 400)
+    except Exception as e:
+        logger.error(f"Error in missing fields external API: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/dashboard/risk-configuration')
 def api_risk_configuration():
     """Get dynamic risk configuration from database"""
@@ -7622,17 +7747,20 @@ def api_threat_intelligence_metrics():
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
         
         # IP Reuse Analysis - include host_isp and host_country
+        # Pattern matches WHOIS reuse query structure
         ip_reuse_query = f"""
-        SELECT TOP 15 
-            u.ip_address, 
+        SELECT TOP 15
+            u.ip_address,
             MAX(u.host_isp) as host_isp,
             MAX(u.host_country) as host_country,
-            COUNT(DISTINCT u.case_number) as case_count
+            COUNT(DISTINCT i.case_number) as case_count
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
-        WHERE u.ip_address IS NOT NULL AND {date_condition}
+        WHERE u.ip_address IS NOT NULL 
+        AND u.ip_address != ''
+        AND {date_condition}
         GROUP BY u.ip_address
-        HAVING COUNT(DISTINCT u.case_number) > 1
+        HAVING COUNT(DISTINCT i.case_number) > 1
         ORDER BY case_count DESC
         """
         
@@ -9154,11 +9282,12 @@ def api_case_type_analysis():
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
         closed_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
         
-        # Query for case type analysis - ONLY Cred Theft cases
-        # Total cases: Cases opened in time window (date_created_local)
-        # Active cases: ALL time cases where date_closed_local IS NULL (not closed yet)
-        # Closed cases: Cases closed in time window (date_closed_local)
-        # Note: Using separate conditions for active vs closed
+        # Generate case type analysis for Cred Theft cases, 
+        # showing types with at least one case closed in the selected period.
+        # "Total cases" includes all matching cases, 
+        # "Active" means not yet closed, 
+        # "Closed" means cases closed in the filter window.
+        # Separate logic used for active and closed cases.
         active_condition = "i.date_closed_local IS NULL"
         case_type_query = f"""
         SELECT 
@@ -9169,8 +9298,8 @@ def api_case_type_analysis():
         FROM phishlabs_case_data_incidents i
         WHERE i.case_type IS NOT NULL AND i.case_type != ''
         GROUP BY i.case_type
-        HAVING COUNT(DISTINCT i.case_number) > 0
-        ORDER BY total_cases DESC
+        HAVING COUNT(DISTINCT CASE WHEN {closed_condition} THEN i.case_number END) > 0
+        ORDER BY closed_cases DESC
         """
         
         results = dashboard.execute_query(case_type_query)
