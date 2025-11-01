@@ -20,9 +20,8 @@ class MissingFieldsAnalyzer:
     ]
 
     def __init__(self, username: str, password: str, use_legacy: bool = False):
-        self.session = requests.Session()
-        self.session.auth = HTTPBasicAuth(username, password)
-        self.session.verify = False
+        self.username = username
+        self.password = password
         self.base_url = self.LEGACY_URL if use_legacy else self.BASE_URL
 
     def convert_est_to_utc(self, date_str: str, time_str: str = "00:00:00", date_only: bool = False) -> str:
@@ -32,36 +31,64 @@ class MissingFieldsAnalyzer:
         return dt_utc.strftime('%Y-%m-%d') if date_only else dt_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
 
     def fetch_cases(self, date_begin: str, date_end: str, case_types: List[str], date_field: str = "caseOpen", max_records: int = 100, offset: int = 0) -> Dict:
+        import logging
+        logger = logging.getLogger(__name__)
+        
         endpoint = f"{self.base_url}/cases"
+        # Build query params according to API documentation
+        # caseType should be an array (requests will create multiple query params)
+        # dateField should be a single string value
         query_params = {
-            "caseType": case_types,
-            "dateField": [date_field],
+            "caseType": case_types,  # Array - requests will handle as multiple params
+            "dateField": date_field,  # Single string value
             "format": "json",
             "maxRecords": max_records,
             "offset": offset,
             "dateBegin": date_begin,
             "dateEnd": date_end
         }
-        # Basic auth header (API sometimes needs explicit header)
+        # Basic auth header
         import base64
-        auth_string = base64.b64encode(f"{self.session.auth.username}:{self.session.auth.password}".encode()).decode()
+        auth_string = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
         headers = {"Authorization": f"Basic {auth_string}"}
 
         try:
-            # Use params for GET request (not json) - flatten caseType list
-            get_params = {}
-            for key, value in query_params.items():
-                if key == 'caseType' and isinstance(value, list):
-                    # Handle caseType as a list - API might expect multiple params or comma-separated
-                    get_params[key] = ','.join(value) if value else ''
-                elif key == 'dateField' and isinstance(value, list):
-                    get_params[key] = value[0] if value else ''
-                else:
-                    get_params[key] = value
-            
-            response = requests.get(endpoint, params=get_params, headers=headers, auth=self.session.auth, timeout=60, verify=False)
+            # API expects GET request with query parameters
+            # caseType array will be converted to multiple query params: caseType=Phishing&caseType=Crimeware
+            response = requests.get(
+                endpoint, 
+                params=query_params, 
+                headers=headers, 
+                auth=HTTPBasicAuth(self.username, self.password), 
+                timeout=60, 
+                verify=False
+            )
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            
+            # Log response structure for debugging
+            logger.info(f"PhishLabs API response type: {type(result)}, keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+            
+            # Check if API returned an error response
+            if isinstance(result, dict):
+                # Some APIs return error in 'error' key
+                if 'error' in result:
+                    error_msg = result.get('error')
+                    logger.error(f"PhishLabs API returned error: {error_msg}")
+                    return {'error': f"PhishLabs API error: {error_msg}"}
+                # Some APIs return error in 'message' key
+                if 'message' in result and result.get('message'):
+                    msg = result.get('message')
+                    if 'error' in str(msg).lower() or 'fail' in str(msg).lower():
+                        logger.error(f"PhishLabs API returned error message: {msg}")
+                        return {'error': f"PhishLabs API error: {msg}"}
+                # Check if response indicates failure (e.g., status: 'error')
+                if result.get('status') == 'error' or result.get('success') == False:
+                    error_msg = result.get('message') or result.get('error') or 'Unknown API error'
+                    logger.error(f"PhishLabs API returned error status: {error_msg}")
+                    return {'error': f"PhishLabs API error: {error_msg}"}
+            
+            return result
         except requests.exceptions.HTTPError as e:
             # Log HTTP errors (like 404, 401, etc.)
             import logging
@@ -76,6 +103,8 @@ class MissingFieldsAnalyzer:
             return {'error': f'PhishLabs API request failed: {str(e)}'}
 
     def fetch_all_cases(self, date_begin: str, date_end: str, case_types: List[str], date_field: str = "caseOpen", max_per_request: int = 100) -> List[Dict]:
+        import logging
+        logger = logging.getLogger(__name__)
         all_cases: List[Dict] = []
         offset = 0
         
@@ -84,19 +113,55 @@ class MissingFieldsAnalyzer:
         if isinstance(res, dict) and 'error' in res:
             return res  # Return error immediately
         
-        while True:
-            cases = res.get('data', [])
-            if not cases:
-                break
-            all_cases.extend(cases)
-            if len(cases) < max_per_request:
-                break
-            offset += max_per_request
+        # Check if response has expected structure
+        if not isinstance(res, dict):
+            return {'error': f'Unexpected API response format: {type(res).__name__}'}
+        
+        # Check for error first
+        if 'error' in res:
+            return res
+        
+        # Extract cases from response
+        cases = res.get('data', [])
+        if not isinstance(cases, list):
+            # If 'data' doesn't exist or isn't a list, maybe response is directly a list
+            if isinstance(res, list):
+                cases = res
+            else:
+                logger.warning(f"API response missing 'data' array. Response keys: {list(res.keys()) if isinstance(res, dict) else 'N/A'}")
+                cases = []
+        
+        all_cases.extend(cases)
+        
+        # If first batch has fewer than max_records, we're done
+        if len(cases) < max_per_request:
+            return all_cases
             
-            # Fetch next batch
+        # Continue fetching remaining batches
+        offset += max_per_request
+        while True:
             res = self.fetch_cases(date_begin, date_end, case_types, date_field, max_per_request, offset)
             if isinstance(res, dict) and 'error' in res:
                 return res  # Return error if subsequent request fails
+            
+            if not isinstance(res, dict):
+                return {'error': f'Unexpected API response format in subsequent request: {type(res).__name__}'}
+            
+            cases = res.get('data', [])
+            if not isinstance(cases, list):
+                if isinstance(res, list):
+                    cases = res
+                else:
+                    break  # No more data or unexpected format
+            
+            if not cases:
+                break
+                
+            all_cases.extend(cases)
+            if len(cases) < max_per_request:
+                break
+                
+            offset += max_per_request
                 
         return all_cases
 
@@ -217,10 +282,23 @@ def analyze_missing_fields(date_begin_est: str, date_end_est: str, use_legacy: b
         
         # Check if fetch_all_cases returned an error
         if isinstance(cases, dict) and 'error' in cases:
+            logger.error(f"Failed to fetch cases: {cases.get('error')}")
             return cases
+        
+        if not isinstance(cases, list):
+            error_msg = f"Expected list of cases but got {type(cases).__name__}: {cases}"
+            logger.error(error_msg)
+            return {'error': error_msg}
             
         logger.info(f"Fetched {len(cases)} cases from PhishLabs API")
         report = analyzer.generate_missing_fields_report(cases or [])
+        
+        # Ensure report has expected structure
+        if not isinstance(report, dict) or 'summary' not in report:
+            error_msg = f"Invalid report structure. Expected dict with 'summary' key, got {type(report).__name__}"
+            logger.error(error_msg)
+            return {'error': error_msg}
+            
         return report
     except Exception as e:
         logger.error(f"Error in analyze_missing_fields: {str(e)}", exc_info=True)
