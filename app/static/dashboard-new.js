@@ -3855,7 +3855,6 @@ class ThreatIntelligenceDashboard {
         console.log('<i class="fas fa-rocket"></i> Starting updateInfrastructurePatterns...');
         try {
             const params = getFilterParams();
-            console.log('<i class="fas fa-chart-bar"></i> Fetching infrastructure patterns with params:', params);
             const data = await fetchAPI(`/api/dashboard/infrastructure-patterns?${params}`);
             console.log('<i class="fas fa-chart-bar"></i> Infrastructure patterns response:', data);
             
@@ -3883,8 +3882,9 @@ class ThreatIntelligenceDashboard {
     renderInfrastructureOverview(data) {
         // Top TLDs
         const tldsContainer = document.getElementById('topTLDs');
-        if (tldsContainer && data.tlds) {
-            tldsContainer.innerHTML = data.tlds.slice(0, 8).map((item, index) => `
+        if (tldsContainer) {
+            if (data.tlds && Array.isArray(data.tlds) && data.tlds.length > 0) {
+                tldsContainer.innerHTML = data.tlds.slice(0, 8).map((item, index) => `
                 <div class="infra-item" style="animation-delay: ${index * 0.1}s">
                     <span class="infra-name">.${item.tld}</span>
                     <span class="infra-count">${item.count}</span>
@@ -3893,12 +3893,16 @@ class ThreatIntelligenceDashboard {
                     </div>
                 </div>
             `).join('');
+            } else {
+                tldsContainer.innerHTML = '<div class="no-data">No TLD data available</div>';
+            }
         }
 
         // Host Countries
         const countriesContainer = document.getElementById('hostCountries');
-        if (countriesContainer && data.countries) {
-            countriesContainer.innerHTML = data.countries.slice(0, 8).map((item, index) => `
+        if (countriesContainer) {
+            if (data.countries && Array.isArray(data.countries) && data.countries.length > 0) {
+                countriesContainer.innerHTML = data.countries.slice(0, 8).map((item, index) => `
                 <div class="infra-item" style="animation-delay: ${index * 0.1}s">
                     <span class="infra-name">${item.country}</span>
                     <span class="infra-count">${item.count}</span>
@@ -3907,12 +3911,16 @@ class ThreatIntelligenceDashboard {
                     </div>
                 </div>
             `).join('');
+            } else {
+                countriesContainer.innerHTML = '<div class="no-data">No country data available</div>';
+            }
         }
 
         // Hosting Providers
         const providersContainer = document.getElementById('hostingProviders');
-        if (providersContainer && data.providers) {
-            providersContainer.innerHTML = data.providers.slice(0, 8).map((item, index) => `
+        if (providersContainer) {
+            if (data.providers && Array.isArray(data.providers) && data.providers.length > 0) {
+                providersContainer.innerHTML = data.providers.slice(0, 8).map((item, index) => `
                 <div class="infra-item" style="animation-delay: ${index * 0.1}s">
                     <span class="infra-name" title="${item.isp}">${this.truncateText(item.isp, 20)}</span>
                     <span class="infra-count">${item.count}</span>
@@ -3921,6 +3929,9 @@ class ThreatIntelligenceDashboard {
                     </div>
                 </div>
             `).join('');
+            } else {
+                providersContainer.innerHTML = '<div class="no-data">No provider data available</div>';
+            }
         }
 
         // Render the completely redesigned infrastructure intelligence overview
@@ -4583,7 +4594,6 @@ class ThreatIntelligenceDashboard {
     async updateWHOISAttribution() {
         try {
             const params = getFilterParams();
-            console.log('<i class="fas fa-bullseye"></i> Loading WHOIS attribution with params:', params);
             const data = await fetchAPI(`/api/dashboard/whois-attribution?${params}`);
             console.log('<i class="fas fa-bullseye"></i> WHOIS attribution data received:', data);
             
