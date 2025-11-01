@@ -2339,7 +2339,29 @@ class OperationalDashboard {
                         backgroundColor: 'rgba(17, 24, 39, 0.95)',
                         padding: 14,
                         titleFont: { size: 14, weight: 'bold' },
-                        bodyFont: { size: 13 }
+                        bodyFont: { size: 13 },
+                        callbacks: {
+                            title: (tooltipItems) => {
+                                const itemIndex = tooltipItems[0].dataIndex;
+                                return allData[itemIndex]?.case_type || 'Unknown';
+                            },
+                            label: (context) => {
+                                const itemIndex = context.dataIndex;
+                                const dataItem = allData[itemIndex];
+                                
+                                if (context.datasetIndex === 0) {
+                                    // First dataset: Median Resolution (hours)
+                                    const medianHours = Math.round((dataItem?.median_days_to_close || 0) * 24);
+                                    return `Median Resolution: ${medianHours} hours`;
+                                } else if (context.datasetIndex === 1) {
+                                    // Second dataset: Total Cases
+                                    const totalCases = dataItem?.total_cases || 0;
+                                    const closedCases = dataItem?.closed_cases || 0;
+                                    return `Total Cases: ${totalCases} (Closed: ${closedCases})`;
+                                }
+                                return '';
+                            }
+                        }
                     }
                 },
                 scales: {
@@ -4049,18 +4071,13 @@ class ThreatIntelligenceDashboard {
         
         console.log('<i class="fas fa-check-circle"></i> Rendered comprehensive threat family intelligence for', data.families.length, 'families');
         
-        // Populate detailed infrastructure dropdowns with family data
+        // Populate detailed infrastructure dropdowns with all-time actor and family data
+        // Note: We pass empty arrays here because populateInfrastructureDropdowns will fetch all-time data
         if (window.populateInfrastructureDropdowns) {
-            console.log('Populating infrastructure dropdowns with families:', data.families.length);
-            // Get current actor data from the dropdown
-            const actorSelect = document.getElementById('infrastructureActorSelect');
-            const actorData = [];
-            if (actorSelect) {
-                for (let i = 1; i < actorSelect.options.length; i++) {
-                    actorData.push({ threat_actor: actorSelect.options[i].value });
-                }
-            }
-            window.populateInfrastructureDropdowns(actorData, data.families);
+            console.log('Populating infrastructure dropdowns with all-time data...');
+            window.populateInfrastructureDropdowns([], []).catch(err => {
+                console.error('Error populating infrastructure dropdowns:', err);
+            });
         }
     }
 
@@ -4332,10 +4349,13 @@ class ThreatIntelligenceDashboard {
         
         console.log('<i class="fas fa-check-circle"></i> Rendered threat actor infrastructure table with', actors.length, 'actors');
         
-        // Populate detailed infrastructure dropdowns with actor data
+        // Populate detailed infrastructure dropdowns with all-time actor and family data
+        // Note: We pass empty arrays here because populateInfrastructureDropdowns will fetch all-time data
         if (window.populateInfrastructureDropdowns) {
-            console.log('Populating infrastructure dropdowns with actors:', actors.length);
-            window.populateInfrastructureDropdowns(actors, []);
+            console.log('Populating infrastructure dropdowns with all-time data...');
+            window.populateInfrastructureDropdowns([], []).catch(err => {
+                console.error('Error populating infrastructure dropdowns:', err);
+            });
         }
     }
 
@@ -5365,7 +5385,7 @@ class ThreatIntelligenceDashboard {
         if (count >= 5) return 'medium';
         return 'low';
     }
-    populateInfrastructureDropdowns(actorData, familyData) {
+    async populateInfrastructureDropdowns(actorData, familyData) {
         const actorSelect = document.getElementById('infrastructureActorSelect');
         const familySelect = document.getElementById('infrastructureFamilySelect');
         
@@ -5373,34 +5393,92 @@ class ThreatIntelligenceDashboard {
         actorSelect.innerHTML = '<option value="">Select a threat actor...</option>';
         familySelect.innerHTML = '<option value="">Select a threat family...</option>';
         
-        // Populate actor dropdown
-        if (actorData && actorData.length > 0) {
-            actorData.forEach(actor => {
-                const option = document.createElement('option');
-                option.value = actor.threat_actor || actor.actor;
-                option.textContent = actor.threat_actor || actor.actor;
-                actorSelect.appendChild(option);
-            });
+        // Fetch ALL threat actors (all-time, not filtered by date window)
+        try {
+            const allActors = await fetchAPI('/api/dashboard/all-threat-actors');
+            if (allActors && !allActors.error && Array.isArray(allActors)) {
+                // Merge with any existing actorData to avoid duplicates
+                const actorMap = new Map();
+                if (actorData && actorData.length > 0) {
+                    actorData.forEach(actor => {
+                        const name = actor.threat_actor || actor.actor;
+                        if (name) actorMap.set(name, name);
+                    });
+                }
+                allActors.forEach(actor => {
+                    const name = actor.threat_actor;
+                    if (name) actorMap.set(name, name);
+                });
+                
+                // Populate actor dropdown with all actors (sorted)
+                Array.from(actorMap.keys()).sort().forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    actorSelect.appendChild(option);
+                });
+                console.log(`Populated actor dropdown with ${actorMap.size} threat actors (all-time)`);
+            }
+        } catch (error) {
+            console.error('Error fetching all threat actors:', error);
+            // Fallback to actorData if available
+            if (actorData && actorData.length > 0) {
+                actorData.forEach(actor => {
+                    const option = document.createElement('option');
+                    option.value = actor.threat_actor || actor.actor;
+                    option.textContent = actor.threat_actor || actor.actor;
+                    actorSelect.appendChild(option);
+                });
+            }
         }
         
-        // Populate family dropdown
-        if (familyData && familyData.length > 0) {
-            // Extract unique threat families, handling different possible field names
-            const uniqueFamilies = new Set();
-            familyData.forEach(family => {
-                const familyName = family.threat_family || family.family || family.name;
-                if (familyName && familyName.trim() !== '') {
-                    uniqueFamilies.add(familyName.trim());
+        // Fetch ALL threat families (all-time, not filtered by date window)
+        try {
+            const allFamilies = await fetchAPI('/api/dashboard/all-threat-families');
+            if (allFamilies && !allFamilies.error && Array.isArray(allFamilies)) {
+                // Merge with any existing familyData to avoid duplicates
+                const familyMap = new Map();
+                if (familyData && familyData.length > 0) {
+                    familyData.forEach(family => {
+                        const name = family.threat_family || family.family || family.name;
+                        if (name && name.trim() !== '') familyMap.set(name.trim(), name.trim());
+                    });
                 }
-            });
-            
-            // Sort families alphabetically and add to dropdown
-            Array.from(uniqueFamilies).sort().forEach(familyName => {
-                const option = document.createElement('option');
-                option.value = familyName;
-                option.textContent = familyName;
-                familySelect.appendChild(option);
-            });
+                allFamilies.forEach(family => {
+                    const name = family.threat_family;
+                    if (name) familyMap.set(name, name);
+                });
+                
+                // Populate family dropdown with all families (sorted)
+                Array.from(familyMap.keys()).sort().forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    familySelect.appendChild(option);
+                });
+                console.log(`Populated family dropdown with ${familyMap.size} threat families (all-time)`);
+            }
+        } catch (error) {
+            console.error('Error fetching all threat families:', error);
+            // Fallback to familyData if available
+            if (familyData && familyData.length > 0) {
+                // Extract unique threat families, handling different possible field names
+                const uniqueFamilies = new Set();
+                familyData.forEach(family => {
+                    const familyName = family.threat_family || family.family || family.name;
+                    if (familyName && familyName.trim() !== '') {
+                        uniqueFamilies.add(familyName.trim());
+                    }
+                });
+                
+                // Sort families alphabetically and add to dropdown
+                Array.from(uniqueFamilies).sort().forEach(familyName => {
+                    const option = document.createElement('option');
+                    option.value = familyName;
+                    option.textContent = familyName;
+                    familySelect.appendChild(option);
+                });
+            }
         }
         
         console.log(`Populated dropdowns: ${actorSelect.options.length - 1} actors, ${familySelect.options.length - 1} families`);
@@ -9451,9 +9529,9 @@ window.loadDetailedInfrastructure = async function(type) {
     console.error('ThreatIntelligenceDashboard not available');
 };
 
-window.populateInfrastructureDropdowns = function(actorData, familyData) {
+window.populateInfrastructureDropdowns = async function(actorData, familyData) {
     if (typeof threatIntelligenceDashboard !== 'undefined' && threatIntelligenceDashboard) {
-        return threatIntelligenceDashboard.populateInfrastructureDropdowns(actorData, familyData);
+        return await threatIntelligenceDashboard.populateInfrastructureDropdowns(actorData, familyData);
     }
     console.error('ThreatIntelligenceDashboard not available');
 };
