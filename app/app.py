@@ -209,8 +209,7 @@ class ThreatDashboard:
         elif date_filter == "this_month":
             return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -1))"
         elif date_filter == "last_month":
-            # Include full last month: from first day at 00:00:00 to last day at 23:59:59.999
-            return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} < DATEADD(day, 1, EOMONTH(GETDATE(), -1))"
+            return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} <= EOMONTH(GETDATE(), -1)"
         else:
             return "1=1"  # All dates
     
@@ -3127,15 +3126,15 @@ class ThreatDashboard:
                 n.flagged_whois_name,
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
-                 FROM (SELECT DISTINCT n3.flagged_whois_name, n3.threat_family
+                (SELECT STRING_AGG(CAST(threat_family AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY threat_family)
+                 FROM (SELECT DISTINCT TOP 100 n3.flagged_whois_name, n3.threat_family
                        FROM phishlabs_case_data_notes n3
                        JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
                        WHERE {date_condition.replace('i.', 'i3.')}
                        AND n3.flagged_whois_name = n.flagged_whois_name
                        AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
-                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
-                 FROM (SELECT DISTINCT n4.flagged_whois_name, th4.name
+                (SELECT STRING_AGG(CAST(name AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY name)
+                 FROM (SELECT DISTINCT TOP 100 n4.flagged_whois_name, th4.name
                        FROM phishlabs_case_data_notes n4
                        JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
                        LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
@@ -3156,15 +3155,15 @@ class ThreatDashboard:
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_name,
                 n.flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
-                 FROM (SELECT DISTINCT n3.flagged_whois_email, n3.threat_family
+                (SELECT STRING_AGG(CAST(threat_family AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY threat_family)
+                 FROM (SELECT DISTINCT TOP 100 n3.flagged_whois_email, n3.threat_family
                        FROM phishlabs_case_data_notes n3
                        JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
                        WHERE {date_condition.replace('i.', 'i3.')}
                        AND n3.flagged_whois_email = n.flagged_whois_email
                        AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
-                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
-                 FROM (SELECT DISTINCT n4.flagged_whois_email, th4.name
+                (SELECT STRING_AGG(CAST(name AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY name)
+                 FROM (SELECT DISTINCT TOP 100 n4.flagged_whois_email, th4.name
                        FROM phishlabs_case_data_notes n4
                        JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
                        LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
@@ -3536,11 +3535,10 @@ class ThreatDashboard:
             logger.error(traceback.format_exc())
             return {"timeline": [], "insights": {"active_actors": 0, "new_actors": 0, "avg_campaign_duration": 0}}
 
-    def get_infrastructure_patterns(self, date_filter="all", campaign_filter="all", start_date=None, end_date=None):
+    def get_infrastructure_patterns(self, date_filter="today", start_date=None, end_date=None):
         """Get infrastructure patterns showing threat actor preferences"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
             # Top TLDs - Start from incidents table to properly apply date filter
             tld_query = f"""
@@ -3549,7 +3547,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
             FROM phishlabs_case_data_incidents i
-            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
+            JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             WHERE {date_condition} AND u.tld IS NOT NULL AND u.tld != ''
             GROUP BY u.tld
@@ -3563,7 +3561,7 @@ class ThreatDashboard:
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
             FROM phishlabs_case_data_incidents i
-            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
+            JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
             WHERE {date_condition} AND u.host_country IS NOT NULL AND u.host_country != ''
             GROUP BY u.host_country
@@ -5779,11 +5777,11 @@ def api_social_timeline_cases():
             avg_query = """
                 SELECT AVG(daily_count) as avg_cases
                 FROM (
-                    SELECT CAST(created_date as DATE) as date, COUNT(*) as daily_count
+                    SELECT CAST(created_local as DATE) as date, COUNT(*) as daily_count
                     FROM phishlabs_incident 
                     WHERE incident_type = 'Social Media Monitoring'
-                    AND created_date >= ? AND created_date <= ?
-                    GROUP BY CAST(created_date as DATE)
+                    AND created_local >= ? AND created_local <= ?
+                    GROUP BY CAST(created_local as DATE)
                 ) daily_counts
             """
             
@@ -6755,7 +6753,7 @@ def api_ioc_tracking():
 def api_attribution_coverage():
     """Get attribution coverage metrics - percentage of cases with different types of attribution"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6769,7 +6767,7 @@ def api_attribution_coverage():
 def api_threat_actors():
     """Get top threat actors by activity"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6783,7 +6781,7 @@ def api_threat_actors():
 def api_kit_families():
     """Get phishing kit family distribution"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6797,7 +6795,7 @@ def api_kit_families():
 def api_attribution_timeline():
     """Get attribution timeline data"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6811,7 +6809,7 @@ def api_attribution_timeline():
 def api_infrastructure_patterns():
     """Get infrastructure patterns by threat actors"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6915,7 +6913,7 @@ def api_campaign_lifecycle():
 def api_whois_attribution():
     """Get WHOIS attribution data for repeat offenders"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6929,7 +6927,7 @@ def api_whois_attribution():
 def api_priority_cases():
     """Get high-priority cases with strong attribution signals"""
     try:
-        date_filter = request.args.get('date_filter', 'all')
+        date_filter = request.args.get('date_filter', 'today')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
