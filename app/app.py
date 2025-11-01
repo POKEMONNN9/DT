@@ -16,35 +16,6 @@ import random
 import tempfile
 import shutil
 import traceback
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-try:
-    # Try loading from app directory first, then parent directory
-    env_paths = [
-        os.path.join(os.path.dirname(__file__), '.env'),  # app/.env
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')  # project root/.env
-    ]
-    loaded = False
-    for env_path in env_paths:
-        if os.path.exists(env_path):
-            load_dotenv(env_path)
-            logger_env = logging.getLogger(__name__)
-            logger_env.info(f"Loaded environment variables from .env file: {env_path}")
-            loaded = True
-            break
-    if not loaded:
-        # Try default location (project root)
-        load_dotenv()
-        logger_env = logging.getLogger(__name__)
-        logger_env.info("Attempted to load .env file from default location")
-except ImportError:
-    # python-dotenv not installed, skip .env loading
-    logger_env = logging.getLogger(__name__)
-    logger_env.warning("python-dotenv not installed. Install with: pip install python-dotenv")
-except Exception as e:
-    logger_env = logging.getLogger(__name__)
-    logger_env.warning(f"Could not load .env file: {e}")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -790,7 +761,9 @@ class ThreatDashboard:
             JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             WHERE {date_condition}            AND th.name IS NOT NULL AND th.name != ''
+            AND u.domain IS NOT NULL AND u.domain != ''
             GROUP BY th.name
+            HAVING COUNT(DISTINCT i.case_number) >= 2
             ORDER BY COUNT(DISTINCT i.case_number) DESC
             """
             
@@ -1083,11 +1056,7 @@ class ThreatDashboard:
             return {"tlds": [], "registrars": [], "isps": [], "countries": []}
 
     def get_detailed_infrastructure(self, infra_type, infra_value):
-        """Get detailed infrastructure data for a specific threat actor or family
-        
-        Note: This function returns ALL-TIME data (not filtered by date window).
-        All queries filter only by threat actor name or threat family name.
-        """
+        """Get detailed infrastructure data for a specific threat actor or family"""
         try:
             if infra_type == 'actor':
                 # Get basic actor info
@@ -2346,119 +2315,89 @@ class ThreatDashboard:
     def get_case_status_overview_comprehensive(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get comprehensive case status overview across all three table types"""
         try:
-            # Get date conditions
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
-            closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
             
             # Cred Theft Cases (from phishlabs_case_data_incidents)
-            # Active cases: ALL active cases (all-time, not filtered by time window)
-            # Closed cases: Cases closed within the selected time window (based on date_closed_local)
-            cred_theft_active_query = """
+            cred_theft_query = f"""
             SELECT 
-                'Active' as status,
+                CASE 
+                    WHEN i.date_closed_local IS NULL THEN 'Active'
+                    WHEN i.date_closed_local IS NOT NULL THEN 'Closed'
+                    ELSE 'Other'
+                END as status,
                 COUNT(*) as count
             FROM phishlabs_case_data_incidents i
-            WHERE i.date_closed_local IS NULL
-            AND (i.case_status != 'Duplicate' AND i.case_status != 'Rejected' AND i.case_status != 'Closed')
+            WHERE {date_condition}            GROUP BY CASE 
+                WHEN i.date_closed_local IS NULL THEN 'Active'
+                WHEN i.date_closed_local IS NOT NULL THEN 'Closed'
+                ELSE 'Other'
+            END
             """
             
-            cred_theft_closed_query = f"""
-            SELECT 
-                'Closed' as status,
-                COUNT(*) as count
-            FROM phishlabs_case_data_incidents i
-            WHERE {closed_condition} AND i.date_closed_local IS NOT NULL
-            """
-            
-            # Execute both queries and combine results
-            cred_theft_active = self.execute_query(cred_theft_active_query)
-            cred_theft_closed = self.execute_query(cred_theft_closed_query)
-            
-            # Combine active and closed results
-            cred_theft = []
-            if cred_theft_active and not isinstance(cred_theft_active, dict):
-                cred_theft.extend(cred_theft_active)
-            if cred_theft_closed and not isinstance(cred_theft_closed, dict):
-                cred_theft.extend(cred_theft_closed)
-            
-            if not cred_theft or isinstance(cred_theft, dict):
+            cred_theft = self.execute_query(cred_theft_query)
+            if isinstance(cred_theft, dict) and 'error' in cred_theft:
                 cred_theft = []
             
             # Domain Monitoring Cases (from phishlabs_threat_intelligence_incident)
-            # Monitoring: Cases created in the selected time window that are still being monitored (date_resolved IS NULL)
-            # Closed: Cases resolved within the selected time window (based on date_resolved)
-            domain_monitoring_created_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "ti.create_date")
-            domain_monitoring_resolved_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "ti.date_resolved")
+            domain_monitoring_date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "ti.create_date")
             
-            domain_monitoring_active_query = f"""
+            domain_monitoring_query = f"""
             SELECT 
-                'Monitoring' as status,
+                CASE 
+                    WHEN ti.date_resolved IS NULL THEN 'Monitoring'
+                    WHEN ti.date_resolved IS NOT NULL THEN 'Closed'
+                    ELSE 'Other'
+                END as status,
                 COUNT(*) as count
             FROM phishlabs_threat_intelligence_incident ti
-            WHERE {domain_monitoring_created_condition} AND ti.date_resolved IS NULL
+            WHERE {domain_monitoring_date_condition}
+            GROUP BY CASE 
+                WHEN ti.date_resolved IS NULL THEN 'Monitoring'
+                WHEN ti.date_resolved IS NOT NULL THEN 'Closed'
+                ELSE 'Other'
+            END
             """
             
-            domain_monitoring_closed_query = f"""
-            SELECT 
-                'Closed' as status,
-                COUNT(*) as count
-            FROM phishlabs_threat_intelligence_incident ti
-            WHERE {domain_monitoring_resolved_condition} AND ti.date_resolved IS NOT NULL
-            """
-            
-            # Execute both queries and combine results
-            domain_monitoring_active = self.execute_query(domain_monitoring_active_query)
-            domain_monitoring_closed = self.execute_query(domain_monitoring_closed_query)
-            
-            # Combine active and closed results
-            domain_monitoring = []
-            if domain_monitoring_active and not isinstance(domain_monitoring_active, dict):
-                domain_monitoring.extend(domain_monitoring_active)
-            if domain_monitoring_closed and not isinstance(domain_monitoring_closed, dict):
-                domain_monitoring.extend(domain_monitoring_closed)
-            
-            if not domain_monitoring or isinstance(domain_monitoring, dict):
+            domain_monitoring = self.execute_query(domain_monitoring_query)
+            if isinstance(domain_monitoring, dict) and 'error' in domain_monitoring:
                 domain_monitoring = []
             
             # Social Media Cases (from phishlabs_incident)
-            # Active cases: ALL active cases (all-time, not filtered by time window)
-            # Closed cases: Cases closed within the selected time window (based on closed_local)
-            social_media_closed_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "s.closed_local")
+            # Filter by created_local for total cases (cases opened in time window)
+            # This ensures we count cases that were opened within the selected timeframe
+            created_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "s.created_local")
             
-            social_media_active_query = """
+            social_media_query = f"""
             SELECT 
-                'Active' as status,
+                CASE 
+                    WHEN s.closed_local IS NULL THEN 'Active'
+                    WHEN s.closed_local IS NOT NULL THEN 'Closed'
+                    ELSE 'Other'
+                END as status,
                 COUNT(*) as count
             FROM phishlabs_incident s
-            WHERE s.closed_local IS NULL
+            WHERE {created_condition}
+            GROUP BY CASE 
+                WHEN s.closed_local IS NULL THEN 'Active'
+                WHEN s.closed_local IS NOT NULL THEN 'Closed'
+                ELSE 'Other'
+            END
             """
             
-            social_media_closed_query = f"""
-            SELECT 
-                'Closed' as status,
-                COUNT(*) as count
-            FROM phishlabs_incident s
-            WHERE {social_media_closed_condition} AND s.closed_local IS NOT NULL
-            """
+            # Log the query for debugging
+            logger.info(f"Social Media Case Status Query: {social_media_query}")
             
-            # Execute both queries and combine results
-            social_media_active = self.execute_query(social_media_active_query)
-            social_media_closed = self.execute_query(social_media_closed_query)
-            
-            # Combine active and closed results
-            social_media = []
-            if social_media_active and not isinstance(social_media_active, dict):
-                social_media.extend(social_media_active)
-            if social_media_closed and not isinstance(social_media_closed, dict):
-                social_media.extend(social_media_closed)
-            
-            if not social_media or isinstance(social_media, dict):
+            social_media = self.execute_query(social_media_query)
+            if isinstance(social_media, dict) and 'error' in social_media:
+                logger.error(f"Social Media query error: {social_media.get('error', 'Unknown error')}")
                 social_media = []
-            
-            # Log the results for debugging
-            if isinstance(social_media, list):
-                total_count = sum(row.get('count', 0) for row in social_media)
-                logger.info(f"Total Social Media cases counted: {total_count} (Active: {sum(r.get('count', 0) for r in social_media if r.get('status') == 'Active')}, Closed: {sum(r.get('count', 0) for r in social_media if r.get('status') == 'Closed')})")
+            else:
+                logger.info(f"Social Media query results: {social_media}")
+                if isinstance(social_media, list):
+                    total_count = sum(row.get('count', 0) for row in social_media)
+                else:
+                    total_count = 0
+                logger.info(f"Total Social Media cases counted: {total_count}")
             
             return {
                 'cred_theft': cred_theft or [],
@@ -3126,15 +3065,15 @@ class ThreatDashboard:
                 n.flagged_whois_name,
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                (SELECT STRING_AGG(CAST(threat_family AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY threat_family)
-                 FROM (SELECT DISTINCT TOP 100 n3.flagged_whois_name, n3.threat_family
+                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n3.flagged_whois_name, n3.threat_family
                        FROM phishlabs_case_data_notes n3
                        JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
                        WHERE {date_condition.replace('i.', 'i3.')}
                        AND n3.flagged_whois_name = n.flagged_whois_name
                        AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
-                (SELECT STRING_AGG(CAST(name AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY name)
-                 FROM (SELECT DISTINCT TOP 100 n4.flagged_whois_name, th4.name
+                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n4.flagged_whois_name, th4.name
                        FROM phishlabs_case_data_notes n4
                        JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
                        LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
@@ -3155,15 +3094,15 @@ class ThreatDashboard:
                 CAST(NULL AS VARCHAR(MAX)) as flagged_whois_name,
                 n.flagged_whois_email,
                 COUNT(DISTINCT i.case_number) as total_cases,
-                (SELECT STRING_AGG(CAST(threat_family AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY threat_family)
-                 FROM (SELECT DISTINCT TOP 100 n3.flagged_whois_email, n3.threat_family
+                (SELECT STRING_AGG(CAST(n2.threat_family AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n3.flagged_whois_email, n3.threat_family
                        FROM phishlabs_case_data_notes n3
                        JOIN phishlabs_case_data_incidents i3 ON n3.case_number = i3.case_number
                        WHERE {date_condition.replace('i.', 'i3.')}
                        AND n3.flagged_whois_email = n.flagged_whois_email
                        AND n3.threat_family IS NOT NULL AND n3.threat_family != '') n2) as threat_families,
-                (SELECT STRING_AGG(CAST(name AS VARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY name)
-                 FROM (SELECT DISTINCT TOP 100 n4.flagged_whois_email, th4.name
+                (SELECT STRING_AGG(CAST(th2.name AS VARCHAR(MAX)), ', ') 
+                 FROM (SELECT DISTINCT n4.flagged_whois_email, th4.name
                        FROM phishlabs_case_data_notes n4
                        JOIN phishlabs_case_data_incidents i4 ON n4.case_number = i4.case_number
                        LEFT JOIN phishlabs_case_data_note_threatactor_handles th4 ON i4.case_number = th4.case_number
@@ -3367,7 +3306,7 @@ class ThreatDashboard:
             actor_query = f"""
             SELECT TOP 10
                 th.name as threat_actor,
-                MAX(th.record_type) as record_type,
+                th.record_type,
                 COUNT(DISTINCT i.case_number) as total_attacks,
                 COUNT(DISTINCT u.domain) as unique_domains,
                 COUNT(DISTINCT u.ip_address) as unique_ips,
@@ -3387,8 +3326,7 @@ class ThreatDashboard:
             INNER JOIN phishlabs_case_data_incidents i ON th.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_associated_urls u ON i.case_number = u.case_number
             LEFT JOIN phishlabs_case_data_notes n ON i.case_number = n.case_number
-            WHERE {date_condition}
-            GROUP BY th.name
+            WHERE {date_condition}            GROUP BY th.name, th.record_type
             ORDER BY total_attacks DESC, unique_domains DESC
             """
             
@@ -3535,49 +3473,50 @@ class ThreatDashboard:
             logger.error(traceback.format_exc())
             return {"timeline": [], "insights": {"active_actors": 0, "new_actors": 0, "avg_campaign_duration": 0}}
 
-    def get_infrastructure_patterns(self, date_filter="today", start_date=None, end_date=None):
+    def get_infrastructure_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
         """Get infrastructure patterns showing threat actor preferences"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
+            campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
-            # Top TLDs - Start from incidents table to properly apply date filter
+            # Top TLDs
             tld_query = f"""
             SELECT TOP 10
                 u.tld,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_incidents i
-            JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
+            FROM phishlabs_case_data_associated_urls u
+            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.tld IS NOT NULL AND u.tld != ''
+            WHERE {date_condition} AND u.tld IS NOT NULL
             GROUP BY u.tld
             ORDER BY count DESC
             """
             
-            # Host Countries - Start from incidents table to properly apply date filter
+            # Host Countries
             country_query = f"""
             SELECT TOP 10
                 u.host_country as country,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_incidents i
-            JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
+            FROM phishlabs_case_data_associated_urls u
+            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.host_country IS NOT NULL AND u.host_country != ''
+            WHERE {date_condition} AND u.host_country IS NOT NULL
             GROUP BY u.host_country
             ORDER BY count DESC
             """
             
-            # Hosting Providers - Start from incidents table to properly apply date filter
+            # Hosting Providers
             isp_query = f"""
             SELECT TOP 10
                 u.host_isp as isp,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_incidents i
-            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
+            FROM phishlabs_case_data_associated_urls u
+            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.host_isp IS NOT NULL AND u.host_isp != ''
+            WHERE {date_condition} AND u.host_isp IS NOT NULL
             GROUP BY u.host_isp
             ORDER BY count DESC
             """
@@ -3602,12 +3541,11 @@ class ThreatDashboard:
             isps = self.execute_query(isp_query)
             registrars = self.execute_query(registrar_query)
             
-            # Ensure we return lists, not error dictionaries
             return {
-                "tlds": tlds if isinstance(tlds, list) else [],
-                "countries": countries if isinstance(countries, list) else [],
-                "providers": isps if isinstance(isps, list) else [],
-                "registrars": registrars if isinstance(registrars, list) else []
+                "tlds": tlds if not isinstance(tlds, dict) else [],
+                "countries": countries if not isinstance(countries, dict) else [],
+                "providers": isps if not isinstance(isps, dict) else [],
+                "registrars": registrars if not isinstance(registrars, dict) else []
             }
             
         except Exception as e:
@@ -5777,11 +5715,11 @@ def api_social_timeline_cases():
             avg_query = """
                 SELECT AVG(daily_count) as avg_cases
                 FROM (
-                    SELECT CAST(created_local as DATE) as date, COUNT(*) as daily_count
+                    SELECT CAST(created_date as DATE) as date, COUNT(*) as daily_count
                     FROM phishlabs_incident 
                     WHERE incident_type = 'Social Media Monitoring'
-                    AND created_local >= ? AND created_local <= ?
-                    GROUP BY CAST(created_local as DATE)
+                    AND created_date >= ? AND created_date <= ?
+                    GROUP BY CAST(created_date as DATE)
                 ) daily_counts
             """
             
@@ -6991,18 +6929,7 @@ def api_missing_fields_external():
                 end_date = (data.get('end_date') or today.strftime('%Y-%m-%d'))
 
         report = analyze_missing_fields(start_date, end_date, use_legacy, username, password)
-        
-        # If report contains an error, return appropriate status code
-        if 'error' in report:
-            logger.error(f"Missing fields external API error: {report.get('error')}")
-            return jsonify(report), 400
-        
-        # If report doesn't have summary, something went wrong
-        if 'summary' not in report:
-            logger.error(f"Missing fields external API: Report missing summary. Report keys: {list(report.keys())}")
-            return jsonify({'error': 'Invalid response from analysis'}), 500
-        
-        return jsonify(report), 200
+        return jsonify(report), (200 if 'summary' in report else 400)
     except Exception as e:
         logger.error(f"Error in missing fields external API: {e}")
         return jsonify({'error': str(e)}), 500
@@ -7081,48 +7008,6 @@ def api_detailed_infrastructure():
         return jsonify(detailed_data)
     except Exception as e:
         logger.error(f"Error fetching detailed infrastructure: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/dashboard/all-threat-actors')
-def api_all_threat_actors():
-    """Get all unique threat actors (all-time, no date filtering) for dropdown population"""
-    try:
-        actors_query = """
-        SELECT DISTINCT th.name as threat_actor
-        FROM phishlabs_case_data_note_threatactor_handles th
-        WHERE th.name IS NOT NULL AND th.name != ''
-        ORDER BY th.name
-        """
-        
-        actors = dashboard.execute_query(actors_query)
-        if isinstance(actors, dict) and 'error' in actors:
-            return jsonify({"error": actors.get('error', 'Unknown error')}), 500
-        
-        actors_list = [{"threat_actor": item['threat_actor']} for item in (actors if actors and not isinstance(actors, dict) else [])]
-        return jsonify(actors_list)
-    except Exception as e:
-        logger.error(f"Error fetching all threat actors: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/dashboard/all-threat-families')
-def api_all_threat_families():
-    """Get all unique threat families (all-time, no date filtering) for dropdown population"""
-    try:
-        families_query = """
-        SELECT DISTINCT n.threat_family
-        FROM phishlabs_case_data_notes n
-        WHERE n.threat_family IS NOT NULL AND n.threat_family != ''
-        ORDER BY n.threat_family
-        """
-        
-        families = dashboard.execute_query(families_query)
-        if isinstance(families, dict) and 'error' in families:
-            return jsonify({"error": families.get('error', 'Unknown error')}), 500
-        
-        families_list = [{"threat_family": item['threat_family']} for item in (families if families and not isinstance(families, dict) else [])]
-        return jsonify(families_list)
-    except Exception as e:
-        logger.error(f"Error fetching all threat families: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/insert-test-data', methods=['POST'])
@@ -7863,10 +7748,8 @@ def api_threat_intelligence_metrics():
         
         # IP Reuse Analysis - include host_isp and host_country
         # Pattern matches WHOIS reuse query structure
-        
-        # Get all reused IPs (no TOP limit) - we'll calculate summary from results
         ip_reuse_query = f"""
-        SELECT 
+        SELECT TOP 15
             u.ip_address,
             MAX(u.host_isp) as host_isp,
             MAX(u.host_country) as host_country,
@@ -7904,34 +7787,27 @@ def api_threat_intelligence_metrics():
         ORDER BY abuse_count DESC
         """
         
-        # URL Path Analysis - show all URL paths reused across multiple cases (no TOP limit)
+        # URL Path Analysis - show number of cases for each URL path
         url_path_query = f"""
-        SELECT 
-            u.url_path, 
-            COUNT(DISTINCT u.case_number) as case_count
+        SELECT TOP 15 u.url_path, COUNT(DISTINCT u.case_number) as case_count
         FROM phishlabs_case_data_associated_urls u
         INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
         WHERE u.url_path IS NOT NULL AND u.url_path != '' AND {date_condition}
         GROUP BY u.url_path
-        HAVING COUNT(DISTINCT u.case_number) > 1
         ORDER BY case_count DESC
         """
         
-        # Execute IP reuse query and calculate summary from results
+        # Execute queries
         ip_reuse = dashboard.execute_query(ip_reuse_query)
         if isinstance(ip_reuse, dict) and 'error' in ip_reuse:
             logger.error(f"Error in IP reuse query: {ip_reuse.get('error', 'Unknown error')}")
             ip_reuse = []
         
-        # Calculate summary totals from the detailed results
-        total_reused_ips = len(ip_reuse) if ip_reuse else 0
-        total_cases_with_reused_ips = sum(item.get('case_count', 0) or 0 for item in ip_reuse) if ip_reuse else 0
-        
         # Log IP reuse detection results
         if not ip_reuse or len(ip_reuse) == 0:
             logger.info("No IP reuse detected (no IPs used in multiple cases)")
         else:
-            logger.info(f"Found {total_reused_ips} IP addresses reused across {total_cases_with_reused_ips} cases")
+            logger.info(f"Found {len(ip_reuse)} IP addresses with reuse (used in 2+ cases)")
         
         isp_data = dashboard.execute_query(isp_query)
         if isinstance(isp_data, dict) and 'error' in isp_data:
@@ -7945,7 +7821,9 @@ def api_threat_intelligence_metrics():
         if isinstance(url_path_data, dict) and 'error' in url_path_data:
             url_path_data = []
         
-        # Summary for IP reuse is calculated from the detail query results above
+        # Calculate summary for IP reuse
+        total_reused_ips = len(ip_reuse) if ip_reuse else 0
+        total_cases_with_reused_ips = sum(item.get('case_count', 0) for item in (ip_reuse or []))
         
         return jsonify({
             'ip_reuse': ip_reuse or [],
@@ -9404,23 +9282,23 @@ def api_case_type_analysis():
         date_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
         closed_condition = dashboard.get_date_filter_condition(date_filter, start_date, end_date, "i.date_closed_local")
         
-        # Generate case type analysis for Cred Theft cases created in the selected time window.
-        # "Total cases" = cases created in the time window
-        # "Active" = cases created in the time window that are still open
-        # "Closed" = cases created in the time window that have been closed (within or outside the window)
-        # Show only case types with at least one closed case in the selected period
-        active_condition = f"{date_condition} AND i.date_closed_local IS NULL"
+        # Generate case type analysis for Cred Theft cases, 
+        # showing types with at least one case closed in the selected period.
+        # "Total cases" includes all matching cases, 
+        # "Active" means not yet closed, 
+        # "Closed" means cases closed in the filter window.
+        # Separate logic used for active and closed cases.
+        active_condition = "i.date_closed_local IS NULL"
         case_type_query = f"""
         SELECT 
             i.case_type,
             COUNT(DISTINCT i.case_number) as total_cases,
             COUNT(DISTINCT CASE WHEN {active_condition} THEN i.case_number END) as active_cases,
-            COUNT(DISTINCT CASE WHEN {date_condition} AND i.date_closed_local IS NOT NULL THEN i.case_number END) as closed_cases
+            COUNT(DISTINCT CASE WHEN {closed_condition} THEN i.case_number END) as closed_cases
         FROM phishlabs_case_data_incidents i
         WHERE i.case_type IS NOT NULL AND i.case_type != ''
-        AND {date_condition}
         GROUP BY i.case_type
-        HAVING COUNT(DISTINCT CASE WHEN {date_condition} AND i.date_closed_local IS NOT NULL THEN i.case_number END) > 0
+        HAVING COUNT(DISTINCT CASE WHEN {closed_condition} THEN i.case_number END) > 0
         ORDER BY closed_cases DESC
         """
         
@@ -9479,17 +9357,15 @@ def api_case_type_analysis():
             if avg_result and isinstance(avg_result, list) and len(avg_result) > 0:
                 avg_days = avg_result[0].get('avg_days', 0) or 0
             
-            # Get resolution status breakdown for this case type (cases created in time window)
+            # Get resolution status breakdown for this case type
             resolution_query = f"""
             SELECT 
                 i.resolution_status,
                 COUNT(DISTINCT i.case_number) as count,
                 ROUND(COUNT(DISTINCT i.case_number) * 100.0 / {total_cases}, 1) as percentage
             FROM phishlabs_case_data_incidents i
-            WHERE i.case_type = '{case_type.replace("'", "''")}' 
-            AND i.resolution_status IS NOT NULL 
-            AND i.resolution_status != '' 
-            AND {date_condition}
+            WHERE i.case_type = '{case_type}' AND i.resolution_status IS NOT NULL 
+            AND i.resolution_status != '' AND {date_condition}
             GROUP BY i.resolution_status
             ORDER BY count DESC
             """
