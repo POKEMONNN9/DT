@@ -1,3 +1,4 @@
+// Updated
 // Global variables
 let currentData = {};
 let refreshInterval;
