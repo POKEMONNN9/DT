@@ -209,7 +209,8 @@ class ThreatDashboard:
         elif date_filter == "this_month":
             return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -1))"
         elif date_filter == "last_month":
-            return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} <= EOMONTH(GETDATE(), -1)"
+            # Include full last month: from first day at 00:00:00 to last day at 23:59:59.999
+            return f"{date_column} >= DATEADD(day, 1, EOMONTH(GETDATE(), -2)) AND {date_column} < DATEADD(day, 1, EOMONTH(GETDATE(), -1))"
         else:
             return "1=1"  # All dates
     
@@ -3535,50 +3536,50 @@ class ThreatDashboard:
             logger.error(traceback.format_exc())
             return {"timeline": [], "insights": {"active_actors": 0, "new_actors": 0, "avg_campaign_duration": 0}}
 
-    def get_infrastructure_patterns(self, date_filter="today", campaign_filter="all", start_date=None, end_date=None):
+    def get_infrastructure_patterns(self, date_filter="all", campaign_filter="all", start_date=None, end_date=None):
         """Get infrastructure patterns showing threat actor preferences"""
         try:
             date_condition = self.get_date_filter_condition(date_filter, start_date, end_date, "i.date_created_local")
             campaign_condition = self.get_campaign_filter_conditions("i", campaign_filter)
             
-            # Top TLDs
+            # Top TLDs - Start from incidents table to properly apply date filter
             tld_query = f"""
             SELECT TOP 10
                 u.tld,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_associated_urls u
-            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+            FROM phishlabs_case_data_incidents i
+            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.tld IS NOT NULL
+            WHERE {date_condition} AND u.tld IS NOT NULL AND u.tld != ''
             GROUP BY u.tld
             ORDER BY count DESC
             """
             
-            # Host Countries
+            # Host Countries - Start from incidents table to properly apply date filter
             country_query = f"""
             SELECT TOP 10
                 u.host_country as country,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_associated_urls u
-            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+            FROM phishlabs_case_data_incidents i
+            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.host_country IS NOT NULL
+            WHERE {date_condition} AND u.host_country IS NOT NULL AND u.host_country != ''
             GROUP BY u.host_country
             ORDER BY count DESC
             """
             
-            # Hosting Providers
+            # Hosting Providers - Start from incidents table to properly apply date filter
             isp_query = f"""
             SELECT TOP 10
                 u.host_isp as isp,
                 COUNT(DISTINCT i.case_number) as count,
                 COUNT(DISTINCT th.name) as actor_count
-            FROM phishlabs_case_data_associated_urls u
-            INNER JOIN phishlabs_case_data_incidents i ON u.case_number = i.case_number
+            FROM phishlabs_case_data_incidents i
+            INNER JOIN phishlabs_case_data_associated_urls u ON u.case_number = i.case_number
             LEFT JOIN phishlabs_case_data_note_threatactor_handles th ON i.case_number = th.case_number
-            WHERE {date_condition} AND u.host_isp IS NOT NULL
+            WHERE {date_condition} AND u.host_isp IS NOT NULL AND u.host_isp != ''
             GROUP BY u.host_isp
             ORDER BY count DESC
             """
@@ -3603,11 +3604,12 @@ class ThreatDashboard:
             isps = self.execute_query(isp_query)
             registrars = self.execute_query(registrar_query)
             
+            # Ensure we return lists, not error dictionaries
             return {
-                "tlds": tlds if not isinstance(tlds, dict) else [],
-                "countries": countries if not isinstance(countries, dict) else [],
-                "providers": isps if not isinstance(isps, dict) else [],
-                "registrars": registrars if not isinstance(registrars, dict) else []
+                "tlds": tlds if isinstance(tlds, list) else [],
+                "countries": countries if isinstance(countries, list) else [],
+                "providers": isps if isinstance(isps, list) else [],
+                "registrars": registrars if isinstance(registrars, list) else []
             }
             
         except Exception as e:
@@ -6753,7 +6755,7 @@ def api_ioc_tracking():
 def api_attribution_coverage():
     """Get attribution coverage metrics - percentage of cases with different types of attribution"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6767,7 +6769,7 @@ def api_attribution_coverage():
 def api_threat_actors():
     """Get top threat actors by activity"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6781,7 +6783,7 @@ def api_threat_actors():
 def api_kit_families():
     """Get phishing kit family distribution"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6795,7 +6797,7 @@ def api_kit_families():
 def api_attribution_timeline():
     """Get attribution timeline data"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6809,7 +6811,7 @@ def api_attribution_timeline():
 def api_infrastructure_patterns():
     """Get infrastructure patterns by threat actors"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6913,7 +6915,7 @@ def api_campaign_lifecycle():
 def api_whois_attribution():
     """Get WHOIS attribution data for repeat offenders"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6927,7 +6929,7 @@ def api_whois_attribution():
 def api_priority_cases():
     """Get high-priority cases with strong attribution signals"""
     try:
-        date_filter = request.args.get('date_filter', 'today')
+        date_filter = request.args.get('date_filter', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
@@ -6991,7 +6993,18 @@ def api_missing_fields_external():
                 end_date = (data.get('end_date') or today.strftime('%Y-%m-%d'))
 
         report = analyze_missing_fields(start_date, end_date, use_legacy, username, password)
-        return jsonify(report), (200 if 'summary' in report else 400)
+        
+        # If report contains an error, return appropriate status code
+        if 'error' in report:
+            logger.error(f"Missing fields external API error: {report.get('error')}")
+            return jsonify(report), 400
+        
+        # If report doesn't have summary, something went wrong
+        if 'summary' not in report:
+            logger.error(f"Missing fields external API: Report missing summary. Report keys: {list(report.keys())}")
+            return jsonify({'error': 'Invalid response from analysis'}), 500
+        
+        return jsonify(report), 200
     except Exception as e:
         logger.error(f"Error in missing fields external API: {e}")
         return jsonify({'error': str(e)}), 500
