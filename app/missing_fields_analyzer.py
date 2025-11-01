@@ -4,6 +4,10 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import requests
 from requests.auth import HTTPBasicAuth
+import urllib3
+
+# Suppress InsecureRequestWarning for requests with verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class MissingFieldsAnalyzer:
@@ -44,17 +48,43 @@ class MissingFieldsAnalyzer:
         headers = {"Authorization": f"Basic {auth_string}"}
 
         try:
-            response = requests.get(endpoint, headers=headers, json=query_params, timeout=60, verify=False)
+            # Use params for GET request (not json) - flatten caseType list
+            get_params = {}
+            for key, value in query_params.items():
+                if key == 'caseType' and isinstance(value, list):
+                    # Handle caseType as a list - API might expect multiple params or comma-separated
+                    get_params[key] = ','.join(value) if value else ''
+                elif key == 'dateField' and isinstance(value, list):
+                    get_params[key] = value[0] if value else ''
+                else:
+                    get_params[key] = value
+            
+            response = requests.get(endpoint, params=get_params, headers=headers, auth=self.session.auth, timeout=60, verify=False)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.RequestException:
-            return {}
+        except requests.exceptions.HTTPError as e:
+            # Log HTTP errors (like 404, 401, etc.)
+            import logging
+            logger = logging.getLogger(__name__)
+            error_text = e.response.text[:500] if e.response else 'No response'
+            logger.error(f"PhishLabs API HTTP error: {e.response.status_code} - URL: {endpoint} - Error: {error_text}")
+            return {'error': f'PhishLabs API returned {e.response.status_code}: {error_text}'}
+        except requests.exceptions.RequestException as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"PhishLabs API request error: {str(e)}")
+            return {'error': f'PhishLabs API request failed: {str(e)}'}
 
     def fetch_all_cases(self, date_begin: str, date_end: str, case_types: List[str], date_field: str = "caseOpen", max_per_request: int = 100) -> List[Dict]:
         all_cases: List[Dict] = []
         offset = 0
+        
+        # Check for error on first request
+        res = self.fetch_cases(date_begin, date_end, case_types, date_field, max_per_request, offset)
+        if isinstance(res, dict) and 'error' in res:
+            return res  # Return error immediately
+        
         while True:
-            res = self.fetch_cases(date_begin, date_end, case_types, date_field, max_per_request, offset)
             cases = res.get('data', [])
             if not cases:
                 break
@@ -62,6 +92,12 @@ class MissingFieldsAnalyzer:
             if len(cases) < max_per_request:
                 break
             offset += max_per_request
+            
+            # Fetch next batch
+            res = self.fetch_cases(date_begin, date_end, case_types, date_field, max_per_request, offset)
+            if isinstance(res, dict) and 'error' in res:
+                return res  # Return error if subsequent request fails
+                
         return all_cases
 
     def check_field_in_object(self, obj: Dict, field: str) -> bool:
@@ -158,14 +194,34 @@ class MissingFieldsAnalyzer:
 def analyze_missing_fields(date_begin_est: str, date_end_est: str, use_legacy: bool = False, username: Optional[str] = None, password: Optional[str] = None) -> Dict:
     user = username or os.getenv('PHISHLABS_USER')
     pw = password or os.getenv('PHISHLABS_PASS')
+    
+    # Log credential status (without showing actual values)
+    import logging
+    logger = logging.getLogger(__name__)
+    has_user_env = bool(os.getenv('PHISHLABS_USER'))
+    has_pass_env = bool(os.getenv('PHISHLABS_PASS'))
+    has_user_req = bool(username)
+    has_pass_req = bool(password)
+    logger.info(f"Credential check - Env: USER={has_user_env}, PASS={has_pass_env}, Request: USER={has_user_req}, PASS={has_pass_req}")
+    
     if not user or not pw:
-        return { 'error': 'Missing PhishLabs credentials. Set PHISHLABS_USER/PHISHLABS_PASS or provide in request.' }
-    analyzer = MissingFieldsAnalyzer(user, pw, use_legacy)
-    date_begin_utc = analyzer.convert_est_to_utc(date_begin_est, "00:00:00", date_only=True)
-    date_end_utc = analyzer.convert_est_to_utc(date_end_est, "23:59:59", date_only=True)
-    case_types = ["Crimeware", "Mobile Abuse", "Job Scam", "Other", "Pharming", "Phishing", "Phishing Redirect"]
-    cases = analyzer.fetch_all_cases(date_begin_utc, date_end_utc, case_types, date_field="caseOpen")
-    report = analyzer.generate_missing_fields_report(cases or [])
-    return report
-
-
+        return { 'error': 'Missing PhishLabs credentials. Set PHISHLABS_USER/PHISHLABS_PASS in .env file or provide in request body.' }
+    
+    try:
+        analyzer = MissingFieldsAnalyzer(user, pw, use_legacy)
+        date_begin_utc = analyzer.convert_est_to_utc(date_begin_est, "00:00:00", date_only=True)
+        date_end_utc = analyzer.convert_est_to_utc(date_end_est, "23:59:59", date_only=True)
+        case_types = ["Crimeware", "Mobile Abuse", "Phishing", "Phishing Redirect"]
+        logger.info(f"Fetching cases from PhishLabs API: {date_begin_utc} to {date_end_utc}, types: {case_types}")
+        cases = analyzer.fetch_all_cases(date_begin_utc, date_end_utc, case_types, date_field="caseOpen")
+        
+        # Check if fetch_all_cases returned an error
+        if isinstance(cases, dict) and 'error' in cases:
+            return cases
+            
+        logger.info(f"Fetched {len(cases)} cases from PhishLabs API")
+        report = analyzer.generate_missing_fields_report(cases or [])
+        return report
+    except Exception as e:
+        logger.error(f"Error in analyze_missing_fields: {str(e)}", exc_info=True)
+        return {'error': f'Analysis failed: {str(e)}'}
