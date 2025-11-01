@@ -470,7 +470,7 @@
                     <div class="chart-container">
                         <div class="chart-header">
                             <div class="chart-title-group">
-                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Registrar Abuse Analysis Chart')" title="Click to copy chart for email">Registrar Abuse Analysis</h3>
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Top 10 Registrar Abuse Analysis Chart')" title="Click to copy chart for email">Top 10 Registrar Abuse Analysis</h3>
                                 <p class="chart-subtitle">Most abused domain registrars</p>
                             </div>
                         </div>
@@ -482,7 +482,7 @@
                     <div class="chart-container">
                         <div class="chart-header">
                             <div class="chart-title-group">
-                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'ISP Distribution Chart')" title="Click to copy chart for email">ISP Distribution</h3>
+                                <h3 class="chart-title clickable-title" onclick="copyChartAsHTML(this.closest('.chart-container'), 'Top 10 ISP Distribution Chart')" title="Click to copy chart for email">Top 10 ISP Distribution</h3>
                                 <p class="chart-subtitle">Hosting providers by threat volume</p>
                             </div>
                         </div>
@@ -824,7 +824,7 @@
                 <div class="threat-actors-full-width-section">
                     <div class="intel-card threat-actors-card full-width">
                         <div class="intel-header">
-                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Top Threat Actors')" title="Click to copy chart for email">Top Threat Actors</h3>
+                            <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Top 10 Threat Actors')" title="Click to copy chart for email">Top 10 Threat Actors</h3>
                             <p class="intel-subtitle">Most active adversaries by attack volume</p>
                         </div>
                         <div class="intel-body">
@@ -929,7 +929,7 @@
                                     <!-- Geographic Threat Heatmap -->
                                     <div class="threat-heatmap-section">
                                         <div class="section-header">
-                                            <h4 class="section-title">Geographic Threat Landscape</h4>
+                                            <h4 class="section-title">Top 10 Geographic Threat Landscape</h4>
                                             <p class="section-description">Countries hosting the most malicious infrastructure</p>
                                         </div>
                                         <div class="heatmap-container">
@@ -956,8 +956,8 @@
                                     <!-- Infrastructure Provider Analysis -->
                                     <div class="provider-analysis-section">
                                         <div class="section-header">
-                                            <h4 class="section-title">Infrastructure Provider Intelligence</h4>
-                                            <p class="section-description">Analysis of hosting providers and registrars used by threat actors</p>
+                                            <h4 class="section-title">Top 10 Infrastructure Provider Intelligence</h4>
+                                            <p class="section-description">Top hosting providers and registrars used by threat actors</p>
                                         </div>
                                         <div class="provider-analysis-grid">
                                             <div class="provider-chart-container">
@@ -993,7 +993,7 @@
                                     <!-- TLD Abuse Analysis -->
                                     <div class="tld-analysis-section">
                                         <div class="section-header">
-                                            <h4 class="section-title">Top-Level Domain Abuse Analysis</h4>
+                                            <h4 class="section-title">Top 10 TLD Abuse Analysis</h4>
                                             <p class="section-description">Most abused domain extensions and their threat patterns</p>
                                         </div>
                                         <div class="tld-analysis-container">
@@ -1136,6 +1136,10 @@
                         <div class="intel-header">
                             <h3 class="intel-title clickable-title" onclick="copyChartAsHTML(this.closest('.intel-card'), 'Detailed Infrastructure Analysis')" title="Click to copy chart for email">Detailed Infrastructure Analysis</h3>
                             <p class="intel-subtitle">Select a threat actor or family to view complete infrastructure details</p>
+                            <div class="all-time-indicator" style="margin-top: 10px; padding: 8px 12px; background-color: #EFF6FF; border-left: 3px solid #3B82F6; border-radius: 4px; font-size: 13px; color: #1E40AF;">
+                                <i class="fas fa-info-circle" style="margin-right: 6px;"></i>
+                                <strong>Note:</strong> This section displays <strong>all-time historical data</strong> for the selected threat actor or family and is not filtered by the selected date range above.
+                            </div>
                         </div>
                         <div class="intel-body">
                             <div class="selection-controls-sidebar">
